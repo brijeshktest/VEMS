@@ -2,7 +2,7 @@ import express from "express";
 import Voucher from "../models/Voucher.js";
 import Vendor from "../models/Vendor.js";
 import Material from "../models/Material.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth, requirePermission } from "../middleware/auth.js";
 import { calculateTotals } from "../utils/calc.js";
 import { requireFields, ensurePositive } from "../utils/validators.js";
 
@@ -31,12 +31,12 @@ function normalizeItems(items) {
   }));
 }
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requirePermission("vouchers", "view"), async (req, res) => {
   const vouchers = await Voucher.find().sort({ dateOfPurchase: -1 });
   return res.json(vouchers);
 });
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, requirePermission("vouchers", "view"), async (req, res) => {
   const voucher = await Voucher.findById(req.params.id);
   if (!voucher) {
     return res.status(404).json({ error: "Voucher not found" });
@@ -44,7 +44,7 @@ router.get("/:id", requireAuth, async (req, res) => {
   return res.json(voucher);
 });
 
-router.post("/", requireAuth, requireRole(["admin", "accountant"]), async (req, res) => {
+router.post("/", requireAuth, requirePermission("vouchers", "create"), async (req, res) => {
   const missing = requireFields(req.body, ["vendorId", "items", "dateOfPurchase", "paymentMethod", "paymentStatus"]);
   if (missing.length) {
     return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
@@ -88,7 +88,7 @@ router.post("/", requireAuth, requireRole(["admin", "accountant"]), async (req, 
   return res.status(201).json(voucher);
 });
 
-router.put("/:id", requireAuth, requireRole(["admin", "accountant"]), async (req, res) => {
+router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), async (req, res) => {
   const voucher = await Voucher.findById(req.params.id);
   if (!voucher) {
     return res.status(404).json({ error: "Voucher not found" });
@@ -132,7 +132,7 @@ router.put("/:id", requireAuth, requireRole(["admin", "accountant"]), async (req
   return res.json(voucher);
 });
 
-router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.delete("/:id", requireAuth, requirePermission("vouchers", "delete"), async (req, res) => {
   const voucher = await Voucher.findById(req.params.id);
   if (!voucher) {
     return res.status(404).json({ error: "Voucher not found" });

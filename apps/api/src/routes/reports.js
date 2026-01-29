@@ -1,6 +1,6 @@
 import express from "express";
 import Voucher from "../models/Voucher.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, requirePermission } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -15,7 +15,7 @@ function buildDateMatch(start, end) {
   return Object.keys(match).length ? { dateOfPurchase: match } : {};
 }
 
-router.get("/vendor-expenses", requireAuth, async (req, res) => {
+router.get("/vendor-expenses", requireAuth, requirePermission("reports", "view"), async (req, res) => {
   const dateMatch = buildDateMatch(req.query.start, req.query.end);
   const results = await Voucher.aggregate([
     { $match: dateMatch },
@@ -40,7 +40,7 @@ router.get("/vendor-expenses", requireAuth, async (req, res) => {
   return res.json(results);
 });
 
-router.get("/material-summary", requireAuth, async (req, res) => {
+router.get("/material-summary", requireAuth, requirePermission("reports", "view"), async (req, res) => {
   const dateMatch = buildDateMatch(req.query.start, req.query.end);
   const results = await Voucher.aggregate([
     { $match: dateMatch },
@@ -66,7 +66,7 @@ router.get("/material-summary", requireAuth, async (req, res) => {
   return res.json(results);
 });
 
-router.get("/expenses", requireAuth, async (req, res) => {
+router.get("/expenses", requireAuth, requirePermission("reports", "view"), async (req, res) => {
   const dateMatch = buildDateMatch(req.query.start, req.query.end);
   const [summary] = await Voucher.aggregate([
     { $match: dateMatch },
@@ -82,7 +82,7 @@ router.get("/expenses", requireAuth, async (req, res) => {
   return res.json(summary || { totalSpend: 0, totalTax: 0, voucherCount: 0 });
 });
 
-router.get("/tax-payments", requireAuth, async (req, res) => {
+router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), async (req, res) => {
   const dateMatch = buildDateMatch(req.query.start, req.query.end);
   const taxSummary = await Voucher.aggregate([
     { $match: dateMatch },

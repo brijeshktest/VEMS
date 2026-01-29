@@ -8,11 +8,14 @@ export default function DashboardPage() {
   const [vendors, setVendors] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [tax, setTax] = useState(null);
+  const [roomPrompts, setRoomPrompts] = useState([]);
+  const [roomSummary, setRoomSummary] = useState([]);
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
       try {
+        const permissionsData = await apiFetch("/auth/permissions");
         const [summaryData, vendorData, materialData, taxData] = await Promise.all([
           apiFetch("/reports/expenses"),
           apiFetch("/reports/vendor-expenses"),
@@ -23,12 +26,37 @@ export default function DashboardPage() {
         setVendors(vendorData.slice(0, 5));
         setMaterials(materialData.slice(0, 5));
         setTax(taxData);
+        const allowRoomStages =
+          permissionsData.permissions === "all" ||
+          permissionsData.permissions?.roomStages?.edit ||
+          permissionsData.permissions?.roomStages?.view;
+        if (allowRoomStages) {
+          const roomData = await apiFetch("/rooms/status");
+          setRoomPrompts(roomData.filter((room) => room.dueNextStage));
+          setRoomSummary(roomData);
+        } else {
+          setRoomPrompts([]);
+          setRoomSummary([]);
+        }
       } catch (err) {
         setError(err.message);
       }
     }
     load();
   }, []);
+
+  async function moveRoom(roomId) {
+    try {
+      await apiFetch(`/rooms/${roomId}/move-stage`, {
+        method: "POST",
+        body: JSON.stringify({})
+      });
+      const roomData = await apiFetch("/rooms/status");
+      setRoomPrompts(roomData.filter((room) => room.dueNextStage));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   return (
     <div className="grid" style={{ gap: 24 }}>
@@ -53,6 +81,68 @@ export default function DashboardPage() {
           <p>{summary ? summary.voucherCount : "-"}</p>
         </div>
       </div>
+
+      {roomPrompts.length ? (
+        <div className="card">
+          <h3>Room Stage Prompts</h3>
+          <p>These rooms have reached the end of their current stage.</p>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Current Stage</th>
+                <th>Notes</th>
+                <th>Next Stage</th>
+                <th>Notes</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roomPrompts.map((room) => (
+                <tr key={room.id} className="highlight-row">
+                  <td>{room.name}</td>
+                  <td>{room.currentStage?.name || "-"}</td>
+                  <td>{room.currentStage?.notes || "-"}</td>
+                  <td>{room.nextStage?.name || "-"}</td>
+                  <td>{room.nextStage?.notes || "-"}</td>
+                  <td>
+                    <button className="btn btn-secondary" type="button" onClick={() => moveRoom(room.id)}>
+                      Move to next stage
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {roomSummary.length ? (
+        <div className="card">
+          <h3>Room Ops Summary</h3>
+          <p>Current stage status across all rooms.</p>
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Room</th>
+                <th>Current Stage</th>
+                <th>Day</th>
+                <th>Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {roomSummary.map((room) => (
+                <tr key={room.id} className={room.dueNextStage ? "highlight-row" : ""}>
+                  <td>{room.name}</td>
+                  <td>{room.currentStage?.name || "-"}</td>
+                  <td>{room.currentStage ? `Day ${room.daysElapsed}` : "-"}</td>
+                  <td>{room.dueNextStage ? "Overdue" : "No"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
 
       <div className="grid grid-2">
         <div className="card">

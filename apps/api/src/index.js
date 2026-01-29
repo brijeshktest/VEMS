@@ -7,6 +7,10 @@ import vendorRoutes from "./routes/vendors.js";
 import materialRoutes from "./routes/materials.js";
 import voucherRoutes from "./routes/vouchers.js";
 import reportRoutes from "./routes/reports.js";
+import roleRoutes from "./routes/roles.js";
+import userRoutes from "./routes/users.js";
+import roomRoutes, { ensureRoomsSeeded } from "./routes/rooms.js";
+import stageRoutes from "./routes/stages.js";
 
 dotenv.config();
 
@@ -23,6 +27,10 @@ app.use("/vendors", vendorRoutes);
 app.use("/materials", materialRoutes);
 app.use("/vouchers", voucherRoutes);
 app.use("/reports", reportRoutes);
+app.use("/roles", roleRoutes);
+app.use("/users", userRoutes);
+app.use("/rooms", roomRoutes);
+app.use("/stages", stageRoutes);
 
 app.use((err, req, res, next) => {
   // eslint-disable-next-line no-console
@@ -33,6 +41,9 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 4000;
 
 connectDb()
+  .then(() => {
+    return ensureRoomsSeeded();
+  })
   .then(() => {
     app.listen(port, () => {
       // eslint-disable-next-line no-console

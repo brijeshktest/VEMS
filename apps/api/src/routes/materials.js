@@ -1,7 +1,7 @@
 import express from "express";
 import Material from "../models/Material.js";
 import Vendor from "../models/Vendor.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth, requirePermission } from "../middleware/auth.js";
 import { requireFields } from "../utils/validators.js";
 
 const router = express.Router();
@@ -19,12 +19,12 @@ async function syncMaterialVendors(materialId, vendorIds) {
   }
 }
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requirePermission("materials", "view"), async (req, res) => {
   const materials = await Material.find().sort({ name: 1 });
   return res.json(materials);
 });
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, requirePermission("materials", "view"), async (req, res) => {
   const material = await Material.findById(req.params.id);
   if (!material) {
     return res.status(404).json({ error: "Material not found" });
@@ -32,7 +32,7 @@ router.get("/:id", requireAuth, async (req, res) => {
   return res.json(material);
 });
 
-router.post("/", requireAuth, requireRole(["admin", "accountant"]), async (req, res) => {
+router.post("/", requireAuth, requirePermission("materials", "create"), async (req, res) => {
   const missing = requireFields(req.body, ["name"]);
   if (missing.length) {
     return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
@@ -54,7 +54,7 @@ router.post("/", requireAuth, requireRole(["admin", "accountant"]), async (req, 
   return res.status(201).json(material);
 });
 
-router.put("/:id", requireAuth, requireRole(["admin", "accountant"]), async (req, res) => {
+router.put("/:id", requireAuth, requirePermission("materials", "edit"), async (req, res) => {
   const material = await Material.findById(req.params.id);
   if (!material) {
     return res.status(404).json({ error: "Material not found" });
@@ -75,7 +75,7 @@ router.put("/:id", requireAuth, requireRole(["admin", "accountant"]), async (req
   return res.json(material);
 });
 
-router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.delete("/:id", requireAuth, requirePermission("materials", "delete"), async (req, res) => {
   const material = await Material.findById(req.params.id);
   if (!material) {
     return res.status(404).json({ error: "Material not found" });

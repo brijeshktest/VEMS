@@ -1,6 +1,13 @@
 node_modules/
 .next/
 dist/
+.turbo/
+.cache/
+coverage/
+.env.*
 .env
 .env.local
 *.log
+*.pid
+*.seed
+.DS_Store

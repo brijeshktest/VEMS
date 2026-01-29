@@ -1,16 +1,16 @@
 import express from "express";
 import Vendor from "../models/Vendor.js";
-import { requireAuth, requireRole } from "../middleware/auth.js";
+import { requireAuth, requirePermission } from "../middleware/auth.js";
 import { requireFields } from "../utils/validators.js";
 
 const router = express.Router();
 
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requirePermission("vendors", "view"), async (req, res) => {
   const vendors = await Vendor.find().sort({ name: 1 });
   return res.json(vendors);
 });
 
-router.get("/:id", requireAuth, async (req, res) => {
+router.get("/:id", requireAuth, requirePermission("vendors", "view"), async (req, res) => {
   const vendor = await Vendor.findById(req.params.id);
   if (!vendor) {
     return res.status(404).json({ error: "Vendor not found" });
@@ -18,7 +18,7 @@ router.get("/:id", requireAuth, async (req, res) => {
   return res.json(vendor);
 });
 
-router.post("/", requireAuth, requireRole(["admin", "accountant"]), async (req, res) => {
+router.post("/", requireAuth, requirePermission("vendors", "create"), async (req, res) => {
   const missing = requireFields(req.body, ["name"]);
   if (missing.length) {
     return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
@@ -35,7 +35,7 @@ router.post("/", requireAuth, requireRole(["admin", "accountant"]), async (req, 
   return res.status(201).json(vendor);
 });
 
-router.put("/:id", requireAuth, requireRole(["admin", "accountant"]), async (req, res) => {
+router.put("/:id", requireAuth, requirePermission("vendors", "edit"), async (req, res) => {
   const vendor = await Vendor.findById(req.params.id);
   if (!vendor) {
     return res.status(404).json({ error: "Vendor not found" });
@@ -51,7 +51,7 @@ router.put("/:id", requireAuth, requireRole(["admin", "accountant"]), async (req
   return res.json(vendor);
 });
 
-router.delete("/:id", requireAuth, requireRole(["admin"]), async (req, res) => {
+router.delete("/:id", requireAuth, requirePermission("vendors", "delete"), async (req, res) => {
   const vendor = await Vendor.findById(req.params.id);
   if (!vendor) {
     return res.status(404).json({ error: "Vendor not found" });

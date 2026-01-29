@@ -2,7 +2,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
-import { requireAuth } from "../middleware/auth.js";
+import { requireAuth, resolvePermissions } from "../middleware/auth.js";
 
 const router = express.Router();
 
@@ -20,9 +20,15 @@ router.post("/seed", async (req, res) => {
     name,
     email,
     passwordHash,
-    role: role || "admin"
+    role: role || "admin",
+    roleIds: []
   });
   return res.status(201).json({ id: user._id, email: user.email, role: user.role });
+});
+
+router.get("/seed-status", async (req, res) => {
+  const count = await User.countDocuments();
+  return res.json({ hasAdmin: count > 0 });
 });
 
 router.post("/login", async (req, res) => {
@@ -38,16 +44,37 @@ router.post("/login", async (req, res) => {
   if (!ok) {
     return res.status(401).json({ error: "Invalid credentials" });
   }
+  const roleIds = (user.roleIds || []).map((id) => id.toString());
   const token = jwt.sign(
-    { id: user._id.toString(), role: user.role, email: user.email, name: user.name },
+    { id: user._id.toString(), role: user.role, roleIds, email: user.email, name: user.name },
     process.env.JWT_SECRET || "change-me",
     { expiresIn: "8h" }
   );
-  return res.json({ token, role: user.role, name: user.name });
+  return res.json({ token, role: user.role, roleIds, name: user.name });
 });
 
-router.get("/me", requireAuth, (req, res) => {
-  return res.json({ user: req.user });
+router.get("/me", requireAuth, async (req, res) => {
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+  return res.json({
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      roleIds: user.roleIds || []
+    }
+  });
+});
+
+router.get("/permissions", requireAuth, async (req, res) => {
+  if (req.user.role === "admin") {
+    return res.json({ permissions: "all" });
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  return res.json({ permissions });
 });
 
 export default router;
