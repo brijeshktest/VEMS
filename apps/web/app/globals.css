@@ -44,6 +44,19 @@ main {
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
 }
 
+.stat-link {
+  display: block;
+}
+
+.stat-link .card {
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.stat-link:hover .card {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+}
+
 .grid {
   display: grid;
   gap: 18px;

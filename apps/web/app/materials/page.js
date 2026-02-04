@@ -7,6 +7,7 @@ const initialForm = {
   name: "",
   category: "",
   unit: "",
+  description: "",
   vendorIds: []
 };
 
@@ -76,6 +77,7 @@ export default function MaterialsPage() {
       name: material.name || "",
       category: material.category || "",
       unit: material.unit || "",
+      description: material.description || "",
       vendorIds: material.vendorIds || []
     });
   }
@@ -122,6 +124,12 @@ export default function MaterialsPage() {
             value={form.unit}
             onChange={(e) => setForm({ ...form, unit: e.target.value })}
           />
+          <input
+            className="input"
+            placeholder="Description"
+            value={form.description}
+            onChange={(e) => setForm({ ...form, description: e.target.value })}
+          />
           <div className="card" style={{ gridColumn: "1 / -1" }}>
             <p>Vendors</p>
             <div className="grid grid-3">
@@ -156,6 +164,7 @@ export default function MaterialsPage() {
               <th>Name</th>
               <th>Category</th>
               <th>Unit</th>
+              <th>Description</th>
               <th>Vendor Count</th>
               <th>Actions</th>
             </tr>
@@ -166,6 +175,7 @@ export default function MaterialsPage() {
                 <td>{material.name}</td>
                 <td>{material.category || "-"}</td>
                 <td>{material.unit || "-"}</td>
+                <td>{material.description || "-"}</td>
                 <td>{material.vendorIds?.length || 0}</td>
                 <td>
                   <button className="btn btn-secondary" type="button" onClick={() => startEdit(material)}>

@@ -48,6 +48,7 @@ router.post("/", requireAuth, requirePermission("materials", "create"), async (r
     name: req.body.name,
     category: req.body.category,
     unit: req.body.unit,
+    description: req.body.description,
     vendorIds
   });
   await syncMaterialVendors(material._id, vendorIds);
@@ -69,6 +70,7 @@ router.put("/:id", requireAuth, requirePermission("materials", "edit"), async (r
   material.name = req.body.name ?? material.name;
   material.category = req.body.category ?? material.category;
   material.unit = req.body.unit ?? material.unit;
+  material.description = req.body.description ?? material.description;
   material.vendorIds = vendorIds;
   await material.save();
   await syncMaterialVendors(material._id, vendorIds);

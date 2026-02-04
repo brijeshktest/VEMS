@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api.js";
+import Link from "next/link";
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
@@ -68,18 +69,24 @@ export default function DashboardPage() {
       {error ? <div className="card">{error}</div> : null}
 
       <div className="grid grid-3">
-        <div className="card">
-          <h3>Total Spend</h3>
-          <p>{summary ? summary.totalSpend.toFixed(2) : "-"}</p>
-        </div>
-        <div className="card">
-          <h3>Total Tax</h3>
-          <p>{summary ? summary.totalTax.toFixed(2) : "-"}</p>
-        </div>
-        <div className="card">
-          <h3>Vouchers</h3>
-          <p>{summary ? summary.voucherCount : "-"}</p>
-        </div>
+        <Link className="stat-link" href="/reports">
+          <div className="card">
+            <h3>Total Spend</h3>
+            <p>{summary ? summary.totalSpend.toFixed(2) : "-"}</p>
+          </div>
+        </Link>
+        <Link className="stat-link" href="/reports">
+          <div className="card">
+            <h3>Total Tax</h3>
+            <p>{summary ? summary.totalTax.toFixed(2) : "-"}</p>
+          </div>
+        </Link>
+        <Link className="stat-link" href="/vouchers">
+          <div className="card">
+            <h3>Vouchers</h3>
+            <p>{summary ? summary.voucherCount : "-"}</p>
+          </div>
+        </Link>
       </div>
 
       {roomPrompts.length ? (

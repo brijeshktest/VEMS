@@ -83,7 +83,13 @@ router.post("/", requireAuth, requirePermission("vouchers", "create"), async (re
     discountValue,
     finalAmount: totals.finalAmount,
     paymentMethod: req.body.paymentMethod,
-    paymentStatus: req.body.paymentStatus
+    paymentStatus: req.body.paymentStatus,
+    paymentDate: req.body.paymentDate ? new Date(req.body.paymentDate) : undefined,
+    paidByMode: req.body.paidByMode || "",
+    paymentComments: req.body.paymentComments || "",
+    createdByName: req.user?.name || "",
+    statusUpdatedByName: req.user?.name || "",
+    statusUpdatedAt: new Date()
   });
   return res.status(201).json(voucher);
 });
@@ -127,7 +133,20 @@ router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), async (re
   voucher.discountValue = discountValue;
   voucher.finalAmount = totals.finalAmount;
   voucher.paymentMethod = req.body.paymentMethod ?? voucher.paymentMethod;
-  voucher.paymentStatus = req.body.paymentStatus ?? voucher.paymentStatus;
+  if (req.body.paymentStatus && req.body.paymentStatus !== voucher.paymentStatus) {
+    voucher.paymentStatus = req.body.paymentStatus;
+    voucher.statusUpdatedByName = req.user?.name || "";
+    voucher.statusUpdatedAt = new Date();
+  }
+  if (req.body.paymentDate !== undefined) {
+    voucher.paymentDate = req.body.paymentDate ? new Date(req.body.paymentDate) : null;
+  }
+  if (req.body.paidByMode !== undefined) {
+    voucher.paidByMode = req.body.paidByMode || "";
+  }
+  if (req.body.paymentComments !== undefined) {
+    voucher.paymentComments = req.body.paymentComments || "";
+  }
   await voucher.save();
   return res.json(voucher);
 });

@@ -22,7 +22,13 @@ const VoucherSchema = new mongoose.Schema(
     discountValue: { type: Number, default: 0 },
     finalAmount: { type: Number, required: true },
     paymentMethod: { type: String, required: true },
-    paymentStatus: { type: String, enum: ["Paid", "Pending", "Partially Paid"], required: true }
+    paymentStatus: { type: String, enum: ["Paid", "Pending", "Partially Paid"], required: true },
+    paymentDate: { type: Date },
+    paidByMode: { type: String, trim: true },
+    paymentComments: { type: String, trim: true },
+    createdByName: { type: String, trim: true },
+    statusUpdatedByName: { type: String, trim: true },
+    statusUpdatedAt: { type: Date }
   },
   { timestamps: true }
 );

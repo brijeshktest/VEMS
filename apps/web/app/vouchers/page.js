@@ -10,7 +10,10 @@ const initialForm = {
   discountType: "none",
   discountValue: 0,
   paymentMethod: "Cash",
-  paymentStatus: "Pending"
+  paymentStatus: "Pending",
+  paymentDate: "",
+  paidByMode: "",
+  paymentComments: ""
 };
 
 function computeTotals(items, taxPercent, discountType, discountValue) {
@@ -81,7 +84,10 @@ export default function VouchersPage() {
           method: "PUT",
           body: JSON.stringify({
             ...form,
-            items
+          items,
+          paymentDate: form.paymentStatus === "Paid" ? form.paymentDate : null,
+          paidByMode: form.paymentStatus === "Paid" ? form.paidByMode : "",
+          paymentComments: form.paymentStatus === "Paid" ? form.paymentComments : ""
           })
         });
       } else {
@@ -111,7 +117,10 @@ export default function VouchersPage() {
       discountType: voucher.discountType ?? "none",
       discountValue: voucher.discountValue ?? 0,
       paymentMethod: voucher.paymentMethod || "Cash",
-      paymentStatus: voucher.paymentStatus || "Pending"
+      paymentStatus: voucher.paymentStatus || "Pending",
+      paymentDate: voucher.paymentDate ? new Date(voucher.paymentDate).toISOString().slice(0, 10) : "",
+      paidByMode: voucher.paidByMode || "",
+      paymentComments: voucher.paymentComments || ""
     });
     setItems(
       (voucher.items || []).map((item) => ({
@@ -206,15 +215,20 @@ export default function VouchersPage() {
                 </div>
                 <div>
                   <label>Quantity</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={item.quantity}
-                    onChange={(e) => updateItem(index, "quantity", Number(e.target.value))}
-                    required
-                  />
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={item.quantity}
+                      onChange={(e) => updateItem(index, "quantity", Number(e.target.value))}
+                      required
+                    />
+                    <span style={{ minWidth: 60 }}>
+                      {availableMaterials.find((mat) => mat._id === item.materialId)?.unit || "-"}
+                    </span>
+                  </div>
                 </div>
                 <div>
                   <label>Price per unit</label>
@@ -290,7 +304,16 @@ export default function VouchersPage() {
               <select
                 className="input"
                 value={form.paymentStatus}
-                onChange={(e) => setForm({ ...form, paymentStatus: e.target.value })}
+                onChange={(e) => {
+                  const value = e.target.value;
+                  setForm((prev) => ({
+                    ...prev,
+                    paymentStatus: value,
+                    paymentDate: value === "Paid" ? prev.paymentDate || prev.dateOfPurchase : "",
+                    paidByMode: value === "Paid" ? prev.paidByMode || prev.paymentMethod : "",
+                    paymentComments: value === "Paid" ? prev.paymentComments : ""
+                  }));
+                }}
               >
                 <option>Paid</option>
                 <option>Pending</option>
@@ -298,6 +321,45 @@ export default function VouchersPage() {
               </select>
             </div>
           </div>
+
+          {form.paymentStatus === "Paid" ? (
+            <div className="grid grid-3">
+              <div>
+                <label>Payment date</label>
+                <input
+                  className="input"
+                  type="date"
+                  value={form.paymentDate}
+                  onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
+                />
+              </div>
+              <div>
+                <label>Paid by mode</label>
+                <select
+                  className="input"
+                  value={form.paidByMode}
+                  onChange={(e) => setForm({ ...form, paidByMode: e.target.value })}
+                >
+                  <option value="">Select mode</option>
+                  <option>Cash</option>
+                  <option>Bank Transfer</option>
+                  <option>Cheque</option>
+                  <option>UPI</option>
+                  <option>Credit</option>
+                </select>
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label>Payment comments</label>
+                <input
+                  className="input"
+                  type="text"
+                  value={form.paymentComments}
+                  onChange={(e) => setForm({ ...form, paymentComments: e.target.value })}
+                  placeholder="Enter URT, transaction number, or reference details"
+                />
+              </div>
+            </div>
+          ) : null}
 
           <div className="card">
             <p>Subtotal: {totals.subTotal.toFixed(2)}</p>
@@ -325,6 +387,8 @@ export default function VouchersPage() {
               <th>Vendor</th>
               <th>Total</th>
               <th>Status</th>
+              <th>Created By</th>
+              <th>Status Updated By</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -337,6 +401,8 @@ export default function VouchersPage() {
                   <td>{vendor?.name || "Unknown"}</td>
                   <td>{voucher.finalAmount.toFixed(2)}</td>
                   <td>{voucher.paymentStatus}</td>
+                  <td>{voucher.createdByName || "-"}</td>
+                  <td>{voucher.statusUpdatedByName || "-"}</td>
                   <td>
                     <button className="btn btn-secondary" type="button" onClick={() => startEdit(voucher)}>
                       Edit
