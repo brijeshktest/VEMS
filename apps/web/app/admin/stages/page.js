@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { apiFetch } from "../../../lib/api.js";
+import PageHeader from "../../../components/PageHeader.js";
 
 const initialForm = {
   name: "",
@@ -119,24 +121,33 @@ export default function StagesPage() {
   }
 
   return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Room Stages</h1>
-        <p>Define stage order, duration, and activities for the 60-day cycle.</p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Administration"
+        title="Room stages"
+        description="Define sequence, duration, environment targets, and activities for the growing cycle."
+      >
+        <Link href="/admin" className="btn btn-ghost">
+          ← Admin home
+        </Link>
+      </PageHeader>
 
-      {error ? <div className="card">{error}</div> : null}
-
-      <div className="card">
-        <h3>Cycle Summary</h3>
-        <p>
-          Total days: <strong>{summary.totalDays}</strong>{" "}
-          {summary.isValid ? "(valid cycle)" : "(target 60 days)"}
-        </p>
-      </div>
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card">
-        <h3>{editingId ? "Edit Stage" : "Create Stage"}</h3>
+        <h3 className="panel-title">Cycle summary</h3>
+        <div className="panel-inset">
+          <p style={{ margin: 0, fontSize: 15 }}>
+            Total days: <strong>{summary.totalDays}</strong>{" "}
+            <span style={{ color: "var(--muted)" }}>
+              {summary.isValid ? "(valid cycle)" : "(target 60 days)"}
+            </span>
+          </p>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 className="panel-title">{editingId ? "Edit stage" : "Create stage"}</h3>
         <form className="grid grid-3" onSubmit={onSubmit}>
           <div>
             <label>Stage name</label>
@@ -215,7 +226,7 @@ export default function StagesPage() {
               placeholder="Add stage notes..."
             />
           </div>
-          <div className="card" style={{ gridColumn: "1 / -1" }}>
+          <div className="panel-inset" style={{ gridColumn: "1 / -1" }}>
             <h4>Activities</h4>
             <div className="grid grid-3">
               <label>
@@ -256,8 +267,9 @@ export default function StagesPage() {
       </div>
 
       <div className="card">
-        <h3>Stage List</h3>
-        <table className="table">
+        <h3 className="panel-title">All stages</h3>
+        <div className="table-wrap">
+          <table className="table">
           <thead>
             <tr>
               <th>Name</th>
@@ -296,6 +308,7 @@ export default function StagesPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

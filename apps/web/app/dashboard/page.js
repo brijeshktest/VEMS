@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api.js";
 import Link from "next/link";
+import PageHeader from "../../components/PageHeader.js";
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState(null);
@@ -60,40 +61,47 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Dashboard</h1>
-        <p>Overview of spend, vendors, materials, and tax totals.</p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Overview"
+        title="Dashboard"
+        description="Spend, tax, and voucher activity at a glance. Jump to reports or vouchers for detail."
+      />
 
-      {error ? <div className="card">{error}</div> : null}
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="grid grid-3">
         <Link className="stat-link" href="/reports">
-          <div className="card">
-            <h3>Total Spend</h3>
-            <p>{summary ? summary.totalSpend.toFixed(2) : "-"}</p>
+          <div className="card stat-card">
+            <span className="stat-label">Total spend</span>
+            <span className="stat-value">{summary ? summary.totalSpend.toFixed(2) : "—"}</span>
+            <span className="stat-hint">Open reports →</span>
           </div>
         </Link>
         <Link className="stat-link" href="/reports">
-          <div className="card">
-            <h3>Total Tax</h3>
-            <p>{summary ? summary.totalTax.toFixed(2) : "-"}</p>
+          <div className="card stat-card">
+            <span className="stat-label">Total tax</span>
+            <span className="stat-value">{summary ? summary.totalTax.toFixed(2) : "—"}</span>
+            <span className="stat-hint">Open reports →</span>
           </div>
         </Link>
         <Link className="stat-link" href="/vouchers">
-          <div className="card">
-            <h3>Vouchers</h3>
-            <p>{summary ? summary.voucherCount : "-"}</p>
+          <div className="card stat-card">
+            <span className="stat-label">Vouchers</span>
+            <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
+            <span className="stat-hint">View vouchers →</span>
           </div>
         </Link>
       </div>
 
       {roomPrompts.length ? (
         <div className="card">
-          <h3>Room Stage Prompts</h3>
-          <p>These rooms have reached the end of their current stage.</p>
-          <table className="table">
+          <h3 className="panel-title">Room stage prompts</h3>
+          <p className="page-lead" style={{ marginBottom: 16 }}>
+            These rooms are due to advance to the next stage.
+          </p>
+          <div className="table-wrap">
+            <table className="table">
             <thead>
               <tr>
                 <th>Room</th>
@@ -121,14 +129,18 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : null}
 
       {roomSummary.length ? (
         <div className="card">
-          <h3>Room Ops Summary</h3>
-          <p>Current stage status across all rooms.</p>
-          <table className="table">
+          <h3 className="panel-title">Room operations summary</h3>
+          <p className="page-lead" style={{ marginBottom: 16 }}>
+            Current stage and timing across all growing rooms.
+          </p>
+          <div className="table-wrap">
+            <table className="table">
             <thead>
               <tr>
                 <th>Room</th>
@@ -148,13 +160,15 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       ) : null}
 
       <div className="grid grid-2">
         <div className="card">
-          <h3>Top Vendors</h3>
-          <table className="table">
+          <h3 className="panel-title">Top vendors</h3>
+          <div className="table-wrap">
+            <table className="table">
             <thead>
               <tr>
                 <th>Vendor</th>
@@ -170,10 +184,12 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
         <div className="card">
-          <h3>Top Materials</h3>
-          <table className="table">
+          <h3 className="panel-title">Top materials</h3>
+          <div className="table-wrap">
+            <table className="table">
             <thead>
               <tr>
                 <th>Material</th>
@@ -191,11 +207,12 @@ export default function DashboardPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
       <div className="card">
-        <h3>Payment Summary</h3>
+        <h3 className="panel-title">Payment summary</h3>
         {tax ? (
           <div className="grid grid-2">
             <div>
@@ -214,7 +231,7 @@ export default function DashboardPage() {
             </div>
           </div>
         ) : (
-          <p>Loading...</p>
+          <p className="page-lead">Loading payment data…</p>
         )}
       </div>
     </div>

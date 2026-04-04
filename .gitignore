@@ -1,4 +1,5 @@
 node_modules/
+apps/api/uploads/
 .next/
 dist/
 .turbo/

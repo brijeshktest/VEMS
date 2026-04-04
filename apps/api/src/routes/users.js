@@ -4,6 +4,7 @@ import User from "../models/User.js";
 import Role from "../models/Role.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { requireFields } from "../utils/validators.js";
+import { validateRequiredEmail } from "../utils/indianValidators.js";
 
 const router = express.Router();
 
@@ -38,10 +39,14 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   if (validRoleIds === null) {
     return res.status(400).json({ error: "One or more roles not found" });
   }
+  const emailCheck = validateRequiredEmail(req.body.email);
+  if (!emailCheck.ok) {
+    return res.status(400).json({ error: emailCheck.message });
+  }
   const passwordHash = await bcrypt.hash(req.body.password, 10);
   const user = await User.create({
     name: req.body.name,
-    email: req.body.email,
+    email: emailCheck.value,
     passwordHash,
     role: req.body.role || "viewer",
     roleIds: validRoleIds
@@ -66,7 +71,13 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
     return res.status(400).json({ error: "One or more roles not found" });
   }
   user.name = req.body.name ?? user.name;
-  user.email = req.body.email ?? user.email;
+  if (req.body.email !== undefined) {
+    const emailCheck = validateRequiredEmail(req.body.email);
+    if (!emailCheck.ok) {
+      return res.status(400).json({ error: emailCheck.message });
+    }
+    user.email = emailCheck.value;
+  }
   user.role = req.body.role ?? user.role;
   user.roleIds = validRoleIds;
   if (req.body.password) {

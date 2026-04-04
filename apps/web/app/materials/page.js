@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api.js";
+import PageHeader from "../../components/PageHeader.js";
 
 const initialForm = {
   name: "",
@@ -88,16 +89,17 @@ export default function MaterialsPage() {
   }
 
   return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Materials</h1>
-        <p>Manage materials and vendor associations.</p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Catalog"
+        title="Materials"
+        description="Define items you buy and link them to vendors so vouchers can validate line items."
+      />
 
-      {error ? <div className="card">{error}</div> : null}
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card">
-        <h3>{editingId ? "Edit Material" : "Add Material"}</h3>
+        <h3 className="panel-title">{editingId ? "Edit material" : "Add material"}</h3>
         <form className="grid grid-3" onSubmit={onSubmit}>
           <input
             className="input"
@@ -130,8 +132,8 @@ export default function MaterialsPage() {
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
-          <div className="card" style={{ gridColumn: "1 / -1" }}>
-            <p>Vendors</p>
+          <div className="panel-inset" style={{ gridColumn: "1 / -1" }}>
+            <h4>Linked vendors</h4>
             <div className="grid grid-3">
               {vendors.map((vendor) => (
                 <label key={vendor._id}>
@@ -157,8 +159,9 @@ export default function MaterialsPage() {
       </div>
 
       <div className="card">
-        <h3>Material List</h3>
-        <table className="table">
+        <h3 className="panel-title">All materials</h3>
+        <div className="table-wrap">
+          <table className="table">
           <thead>
             <tr>
               <th>Name</th>
@@ -186,6 +189,7 @@ export default function MaterialsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

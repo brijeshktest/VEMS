@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { apiFetch } from "../../../lib/api.js";
+import PageHeader from "../../../components/PageHeader.js";
 
 const initialForm = {
   name: "",
@@ -122,16 +124,21 @@ export default function GrowingRoomsPage() {
   }
 
   return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Growing Rooms</h1>
-        <p>Manage pre-seeded rooms and their attributes.</p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Administration"
+        title="Growing rooms"
+        description="Configure room capacity, backup power, and monitor stage assignment from the admin console."
+      >
+        <Link href="/admin" className="btn btn-ghost">
+          ← Admin home
+        </Link>
+      </PageHeader>
 
-      {error ? <div className="card">{error}</div> : null}
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card">
-        <h3>{editingId ? "Edit Room" : "Add Room"}</h3>
+        <h3 className="panel-title">{editingId ? "Edit room" : "Add room"}</h3>
         <form className="grid grid-3" onSubmit={onSubmit}>
           <div>
             <label>Room name</label>
@@ -176,8 +183,9 @@ export default function GrowingRoomsPage() {
       </div>
 
       <div className="card">
-        <h3>Room List</h3>
-        <table className="table">
+        <h3 className="panel-title">All rooms</h3>
+        <div className="table-wrap">
+          <table className="table">
           <thead>
             <tr>
               <th>Name</th>
@@ -251,6 +259,7 @@ export default function GrowingRoomsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

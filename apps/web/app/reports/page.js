@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { apiFetch } from "../../lib/api.js";
+import PageHeader from "../../components/PageHeader.js";
 
 export default function ReportsPage() {
   const [range, setRange] = useState({ start: "", end: "" });
@@ -34,99 +35,138 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Reports</h1>
-        <p>Vendor-wise and material-wise summaries with date filters.</p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Analytics"
+        title="Reports"
+        description="Filter by purchase date, then refresh vendor spend, material usage, and tax and payment rollups."
+      />
 
-      {error ? <div className="card">{error}</div> : null}
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
-      <div className="card grid grid-3">
-        <input
-          className="input"
-          type="date"
-          value={range.start}
-          onChange={(e) => setRange({ ...range, start: e.target.value })}
-        />
-        <input
-          className="input"
-          type="date"
-          value={range.end}
-          onChange={(e) => setRange({ ...range, end: e.target.value })}
-        />
-        <button className="btn" onClick={runReports}>
-          Run Reports
+      <div className="card toolbar-card">
+        <div style={{ flex: "1 1 200px" }}>
+          <label htmlFor="report-start">From</label>
+          <input
+            id="report-start"
+            className="input"
+            type="date"
+            value={range.start}
+            onChange={(e) => setRange({ ...range, start: e.target.value })}
+          />
+        </div>
+        <div style={{ flex: "1 1 200px" }}>
+          <label htmlFor="report-end">To</label>
+          <input
+            id="report-end"
+            className="input"
+            type="date"
+            value={range.end}
+            onChange={(e) => setRange({ ...range, end: e.target.value })}
+          />
+        </div>
+        <button className="btn" type="button" onClick={runReports}>
+          Run reports
         </button>
       </div>
 
       <div className="grid grid-2">
         <div className="card">
-          <h3>Vendor-wise Expense</h3>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Vendor</th>
-                <th>Total</th>
-                <th>Vouchers</th>
-              </tr>
-            </thead>
-            <tbody>
-              {vendorData.map((row) => (
-                <tr key={row._id}>
-                  <td>{row.vendor?.name}</td>
-                  <td>{row.totalSpend.toFixed(2)}</td>
-                  <td>{row.voucherCount}</td>
+          <h3 className="panel-title">Vendor-wise expense</h3>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Vendor</th>
+                  <th>Total</th>
+                  <th>Vouchers</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {vendorData.length ? (
+                  vendorData.map((row) => (
+                    <tr key={row._id}>
+                      <td>{row.vendor?.name}</td>
+                      <td>{row.totalSpend.toFixed(2)}</td>
+                      <td>{row.voucherCount}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3} style={{ color: "var(--muted)" }}>
+                      Run reports to load data.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
         <div className="card">
-          <h3>Material-wise Summary</h3>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Material</th>
-                <th>Quantity</th>
-                <th>Spend</th>
-              </tr>
-            </thead>
-            <tbody>
-              {materialData.map((row) => (
-                <tr key={row._id}>
-                  <td>{row.material?.name}</td>
-                  <td>{row.totalQuantity}</td>
-                  <td>{row.totalSpend.toFixed(2)}</td>
+          <h3 className="panel-title">Material-wise summary</h3>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Material</th>
+                  <th>Quantity</th>
+                  <th>Spend</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {materialData.length ? (
+                  materialData.map((row) => (
+                    <tr key={row._id}>
+                      <td>{row.material?.name}</td>
+                      <td>{row.totalQuantity}</td>
+                      <td>{row.totalSpend.toFixed(2)}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td colSpan={3} style={{ color: "var(--muted)" }}>
+                      Run reports to load data.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-2">
         <div className="card">
-          <h3>Expense Summary</h3>
+          <h3 className="panel-title">Expense summary</h3>
           {summary ? (
-            <>
-              <p>Total Spend: {summary.totalSpend.toFixed(2)}</p>
-              <p>Total Tax: {summary.totalTax.toFixed(2)}</p>
-              <p>Voucher Count: {summary.voucherCount}</p>
-            </>
+            <div className="panel-inset">
+              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+                <strong>Total spend:</strong> {summary.totalSpend.toFixed(2)}
+              </p>
+              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+                <strong>Total tax:</strong> {summary.totalTax.toFixed(2)}
+              </p>
+              <p style={{ margin: 0, fontSize: 14 }}>
+                <strong>Voucher count:</strong> {summary.voucherCount}
+              </p>
+            </div>
           ) : (
-            <p>Run a report to see summary.</p>
+            <p className="page-lead">Run reports to see totals for the selected range.</p>
           )}
         </div>
         <div className="card">
-          <h3>Tax & Payment Summary</h3>
+          <h3 className="panel-title">Tax and payment summary</h3>
           {taxData ? (
-            <>
-              <p>Total Tax: {taxData.tax.totalTax.toFixed(2)}</p>
-              <p>Total Payable: {taxData.tax.totalPayable.toFixed(2)}</p>
-            </>
+            <div className="panel-inset">
+              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+                <strong>Total tax:</strong> {taxData.tax.totalTax.toFixed(2)}
+              </p>
+              <p style={{ margin: 0, fontSize: 14 }}>
+                <strong>Total payable:</strong> {taxData.tax.totalPayable.toFixed(2)}
+              </p>
+            </div>
           ) : (
-            <p>Run a report to see payment totals.</p>
+            <p className="page-lead">Run reports to see payment rollups.</p>
           )}
         </div>
       </div>

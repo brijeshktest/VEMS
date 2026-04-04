@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import AttachmentSchema from "./Attachment.js";
 
 const VoucherItemSchema = new mongoose.Schema(
   {
@@ -28,7 +29,8 @@ const VoucherSchema = new mongoose.Schema(
     paymentComments: { type: String, trim: true },
     createdByName: { type: String, trim: true },
     statusUpdatedByName: { type: String, trim: true },
-    statusUpdatedAt: { type: Date }
+    statusUpdatedAt: { type: Date },
+    attachments: { type: [AttachmentSchema], default: [] }
   },
   { timestamps: true }
 );

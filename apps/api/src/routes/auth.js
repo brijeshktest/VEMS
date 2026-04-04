@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import { requireAuth, resolvePermissions } from "../middleware/auth.js";
+import { validateRequiredEmail, validateOptionalEmail } from "../utils/indianValidators.js";
 
 const router = express.Router();
 
@@ -15,10 +16,14 @@ router.post("/seed", async (req, res) => {
   if (!name || !email || !password) {
     return res.status(400).json({ error: "name, email, and password are required" });
   }
+  const emailCheck = validateRequiredEmail(email);
+  if (!emailCheck.ok) {
+    return res.status(400).json({ error: emailCheck.message });
+  }
   const passwordHash = await bcrypt.hash(password, 10);
   const user = await User.create({
     name,
-    email,
+    email: emailCheck.value,
     passwordHash,
     role: role || "admin",
     roleIds: []
@@ -36,7 +41,11 @@ router.post("/login", async (req, res) => {
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
   }
-  const user = await User.findOne({ email: email.toLowerCase() });
+  const emailCheck = validateOptionalEmail(email);
+  if (!emailCheck.ok) {
+    return res.status(400).json({ error: emailCheck.message });
+  }
+  const user = await User.findOne({ email: emailCheck.value });
   if (!user) {
     return res.status(401).json({ error: "Invalid credentials" });
   }

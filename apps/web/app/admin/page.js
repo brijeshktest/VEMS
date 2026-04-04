@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { apiFetch } from "../../lib/api.js";
+import PageHeader from "../../components/PageHeader.js";
 
 const modules = [
   "dashboard",
@@ -189,30 +191,33 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Admin Console</h1>
-        <p>Create roles, define module permissions, and manage user access.</p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Administration"
+        title="Admin console"
+        description="Define custom roles, map module permissions, and manage who can sign in. Configure growing infrastructure from the shortcuts below."
+      />
 
       <div className="card">
-        <h3>Growing Rooms</h3>
-        <p>Manage growing rooms, stages, and activity schedules.</p>
+        <h3 className="panel-title">Growing operations</h3>
+        <p className="page-lead" style={{ marginBottom: 16 }}>
+          Rooms and stages are managed in dedicated screens for clearer workflows.
+        </p>
         <div className="grid grid-2">
-          <a className="btn btn-secondary" href="/admin/rooms">
-            Open Growing Rooms
-          </a>
-          <a className="btn btn-secondary" href="/admin/stages">
-            Open Stages
-          </a>
+          <Link className="btn btn-secondary" href="/admin/rooms">
+            Growing rooms
+          </Link>
+          <Link className="btn btn-secondary" href="/admin/stages">
+            Room stages
+          </Link>
         </div>
       </div>
 
-      {error ? <div className="card">{error}</div> : null}
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="grid grid-2">
         <div className="card">
-          <h3>{editingRoleId ? "Edit Role" : "Create Role"}</h3>
+          <h3 className="panel-title">{editingRoleId ? "Edit role" : "Create role"}</h3>
           <form className="grid" onSubmit={saveRole}>
             <input
               className="input"
@@ -227,9 +232,10 @@ export default function AdminPage() {
               value={roleForm.description}
               onChange={(e) => setRoleForm((prev) => ({ ...prev, description: e.target.value }))}
             />
-            <div className="card">
-              <h4>Module Permissions</h4>
-              <table className="table">
+            <div className="panel-inset">
+              <h4>Module permissions</h4>
+              <div className="table-wrap">
+                <table className="table">
                 <thead>
                   <tr>
                     <th>Module</th>
@@ -255,6 +261,7 @@ export default function AdminPage() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
             <button className="btn" type="submit">
               {editingRoleId ? "Update Role" : "Save Role"}
@@ -263,8 +270,9 @@ export default function AdminPage() {
         </div>
 
         <div className="card">
-          <h3>Roles</h3>
-          <table className="table">
+          <h3 className="panel-title">Roles</h3>
+          <div className="table-wrap">
+            <table className="table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -289,12 +297,13 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 
       <div className="grid grid-2">
         <div className="card">
-          <h3>{editingUserId ? "Edit User" : "Create User"}</h3>
+          <h3 className="panel-title">{editingUserId ? "Edit user" : "Create user"}</h3>
           <form className="grid" onSubmit={saveUser}>
             <input
               className="input"
@@ -319,8 +328,8 @@ export default function AdminPage() {
               onChange={(e) => setUserForm((prev) => ({ ...prev, password: e.target.value }))}
               required={!editingUserId}
             />
-            <div className="card">
-              <h4>Assign Roles</h4>
+            <div className="panel-inset">
+              <h4>Assign roles</h4>
               <div className="grid grid-2">
                 {roles.map((role) => (
                   <label key={role._id}>
@@ -341,8 +350,9 @@ export default function AdminPage() {
         </div>
 
         <div className="card">
-          <h3>Users</h3>
-          <table className="table">
+          <h3 className="panel-title">Users</h3>
+          <div className="table-wrap">
+            <table className="table">
             <thead>
               <tr>
                 <th>Name</th>
@@ -369,6 +379,7 @@ export default function AdminPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
     </div>

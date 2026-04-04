@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api.js";
+import PageHeader from "../../components/PageHeader.js";
 
 export default function RoomOpsPage() {
   const [rooms, setRooms] = useState([]);
@@ -68,17 +69,19 @@ export default function RoomOpsPage() {
   }
 
   return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Room Operations</h1>
-        <p>Move stages and mark activities for each growing room.</p>
-      </div>
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Operations"
+        title="Room operations"
+        description="Advance growing rooms through stages and complete daily activities when your role allows."
+      />
 
-      {error ? <div className="card">{error}</div> : null}
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card">
-        <h3>Rooms</h3>
-        <table className="table">
+        <h3 className="panel-title">All rooms</h3>
+        <div className="table-wrap">
+          <table className="table">
           <thead>
             <tr>
               <th>Room</th>
@@ -152,6 +155,7 @@ export default function RoomOpsPage() {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

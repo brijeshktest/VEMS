@@ -1,7 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "../../lib/api.js";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { apiFetch, apiFetchForm, downloadAttachment } from "../../lib/api.js";
+import PageHeader from "../../components/PageHeader.js";
+import AttachmentListCell from "../../components/AttachmentListCell.js";
 
 const initialForm = {
   vendorId: "",
@@ -36,6 +38,9 @@ export default function VouchersPage() {
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const [pendingFiles, setPendingFiles] = useState([]);
+  const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
+  const fileInputRef = useRef(null);
 
   async function load() {
     try {
@@ -79,29 +84,32 @@ export default function VouchersPage() {
     event.preventDefault();
     setError("");
     try {
+      const payload = {
+        ...form,
+        items,
+        paymentDate: form.paymentStatus === "Paid" ? form.paymentDate : null,
+        paidByMode: form.paymentStatus === "Paid" ? form.paidByMode : "",
+        paymentComments: form.paymentStatus === "Paid" ? form.paymentComments : ""
+      };
+      const fd = new FormData();
+      fd.append("data", JSON.stringify(payload));
+      for (const file of pendingFiles) {
+        fd.append("files", file);
+      }
+      if (editingId && removedAttachmentIds.length) {
+        fd.append("removedAttachmentIds", JSON.stringify(removedAttachmentIds));
+      }
       if (editingId) {
-        await apiFetch(`/vouchers/${editingId}`, {
-          method: "PUT",
-          body: JSON.stringify({
-            ...form,
-          items,
-          paymentDate: form.paymentStatus === "Paid" ? form.paymentDate : null,
-          paidByMode: form.paymentStatus === "Paid" ? form.paidByMode : "",
-          paymentComments: form.paymentStatus === "Paid" ? form.paymentComments : ""
-          })
-        });
+        await apiFetchForm(`/vouchers/${editingId}`, fd, { method: "PUT" });
       } else {
-        await apiFetch("/vouchers", {
-          method: "POST",
-          body: JSON.stringify({
-            ...form,
-            items
-          })
-        });
+        await apiFetchForm("/vouchers", fd, { method: "POST" });
       }
       setForm(initialForm);
       setItems([{ materialId: "", quantity: 1, pricePerUnit: 0, comment: "" }]);
       setEditingId(null);
+      setPendingFiles([]);
+      setRemovedAttachmentIds([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
       await load();
     } catch (err) {
       setError(err.message);
@@ -130,25 +138,52 @@ export default function VouchersPage() {
         comment: item.comment || ""
       }))
     );
+    setPendingFiles([]);
+    setRemovedAttachmentIds([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function cancelEdit() {
     setEditingId(null);
     setForm(initialForm);
     setItems([{ materialId: "", quantity: 1, pricePerUnit: 0, comment: "" }]);
+    setPendingFiles([]);
+    setRemovedAttachmentIds([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  return (
-    <div className="grid" style={{ gap: 24 }}>
-      <div>
-        <h1>Expense / Purchase Vouchers</h1>
-        <p>Create and track purchases with auto-calculated totals.</p>
-      </div>
+  function onFilePick(e) {
+    const picked = Array.from(e.target.files || []);
+    if (picked.length) {
+      setPendingFiles((prev) => [...prev, ...picked]);
+    }
+    e.target.value = "";
+  }
 
-      {error ? <div className="card">{error}</div> : null}
+  function removePendingFile(index) {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  }
+
+  function markAttachmentRemoved(id) {
+    setRemovedAttachmentIds((prev) => [...prev, id]);
+  }
+
+  const editingVoucher = editingId ? vouchers.find((v) => v._id === editingId) : null;
+  const visibleVoucherAttachments =
+    (editingVoucher?.attachments || []).filter((a) => !removedAttachmentIds.includes(a._id)) || [];
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Purchasing"
+        title="Expense vouchers"
+        description="Line items, tax, discounts, and payment details with automatic totals. Attach invoices or receipts as needed."
+      />
+
+      {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card">
-        <h3>{editingId ? "Edit Voucher" : "Create Voucher"}</h3>
+        <h3 className="panel-title">{editingId ? "Edit voucher" : "Create voucher"}</h3>
         <form className="grid" onSubmit={onSubmit} style={{ gap: 16 }}>
           <div className="grid grid-3">
             <div>
@@ -193,8 +228,8 @@ export default function VouchersPage() {
             </div>
           </div>
 
-          <div className="card">
-            <h4>Items</h4>
+          <div className="panel-inset">
+            <h4>Line items</h4>
             {items.map((item, index) => (
               <div className="grid grid-3" key={index}>
                 <div>
@@ -361,10 +396,56 @@ export default function VouchersPage() {
             </div>
           ) : null}
 
-          <div className="card">
-            <p>Subtotal: {totals.subTotal.toFixed(2)}</p>
-            <p>Tax: {totals.taxAmount.toFixed(2)}</p>
-            <p>Final Amount: {totals.finalAmount.toFixed(2)}</p>
+          <div className="panel-inset">
+            <p style={{ margin: "0 0 6px", fontSize: 14 }}>
+              <strong>Subtotal:</strong> {totals.subTotal.toFixed(2)}
+            </p>
+            <p style={{ margin: "0 0 6px", fontSize: 14 }}>
+              <strong>Tax:</strong> {totals.taxAmount.toFixed(2)}
+            </p>
+            <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+              <strong>Final amount:</strong> {totals.finalAmount.toFixed(2)}
+            </p>
+          </div>
+
+          <div>
+            <label>Attachments (optional, multiple files)</label>
+            <input ref={fileInputRef} className="input" type="file" multiple onChange={onFilePick} />
+            {pendingFiles.length ? (
+              <ul className="file-chips">
+                {pendingFiles.map((file, index) => (
+                  <li key={`${file.name}-${index}`}>
+                    <span>{file.name}</span>
+                    <button type="button" className="btn btn-secondary btn-tiny" onClick={() => removePendingFile(index)}>
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {editingId && visibleVoucherAttachments.length ? (
+              <div style={{ marginTop: 12 }}>
+                <label>Current files</label>
+                <ul className="file-chips">
+                  {visibleVoucherAttachments.map((att) => (
+                    <li key={att._id}>
+                      <button
+                        type="button"
+                        className="link-btn"
+                        onClick={() =>
+                          downloadAttachment(`/vouchers/${editingId}/attachments/download/${att.storedName}`)
+                        }
+                      >
+                        {att.originalName}
+                      </button>
+                      <button type="button" className="btn btn-secondary btn-tiny" onClick={() => markAttachmentRemoved(att._id)}>
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
           </div>
 
           <button className="btn" type="submit">
@@ -379,13 +460,15 @@ export default function VouchersPage() {
       </div>
 
       <div className="card">
-        <h3>Voucher List</h3>
-        <table className="table">
+        <h3 className="panel-title">All vouchers</h3>
+        <div className="table-wrap">
+          <table className="table">
           <thead>
             <tr>
               <th>Date</th>
               <th>Vendor</th>
               <th>Total</th>
+              <th>Documents</th>
               <th>Status</th>
               <th>Created By</th>
               <th>Status Updated By</th>
@@ -400,6 +483,9 @@ export default function VouchersPage() {
                   <td>{new Date(voucher.dateOfPurchase).toLocaleDateString()}</td>
                   <td>{vendor?.name || "Unknown"}</td>
                   <td>{voucher.finalAmount.toFixed(2)}</td>
+                  <td>
+                    <AttachmentListCell entity={voucher} kind="voucher" />
+                  </td>
                   <td>{voucher.paymentStatus}</td>
                   <td>{voucher.createdByName || "-"}</td>
                   <td>{voucher.statusUpdatedByName || "-"}</td>
@@ -413,6 +499,7 @@ export default function VouchersPage() {
             })}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );

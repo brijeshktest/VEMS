@@ -13,6 +13,13 @@ const links = [
   { href: "/reports", label: "Reports" }
 ];
 
+function linkClass(pathname, href) {
+  if (href === "/admin") {
+    return pathname === "/admin" || pathname.startsWith("/admin/") ? "nav-link nav-link--active" : "nav-link";
+  }
+  return pathname === href ? "nav-link nav-link--active" : "nav-link";
+}
+
 export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
@@ -47,7 +54,7 @@ export default function Nav() {
           permData.permissions?.roomActivities?.view || permData.permissions?.roomActivities?.edit
         );
         setAllowRoomOps(canRoomStages || canRoomActivities);
-      } catch (error) {
+      } catch {
         setIsAdmin(false);
         setAllowRoomOps(false);
       }
@@ -66,33 +73,36 @@ export default function Nav() {
     <nav className="nav">
       <div className="container nav-inner">
         <div className="brand">
-          <span className="brand-title">Vendor and Expense Management System</span>
+          <span className="brand-title">Carlson Farms</span>
+          <span className="brand-tagline">Vendor &amp; expense management</span>
         </div>
         <div className="nav-links">
           {isAuthenticated ? (
             <>
-              {links.map((link) => (
-                <Link key={link.href} href={link.href}>
-                  <span style={{ fontWeight: pathname === link.href ? 700 : 400 }}>{link.label}</span>
+              {links.map((item) => (
+                <Link key={item.href} href={item.href} className={linkClass(pathname, item.href)}>
+                  {item.label}
                 </Link>
               ))}
               {isAdmin ? (
-                <Link href="/admin">
-                  <span style={{ fontWeight: pathname === "/admin" ? 700 : 400 }}>Admin</span>
+                <Link href="/admin" className={linkClass(pathname, "/admin")}>
+                  Admin
                 </Link>
               ) : null}
               {allowRoomOps ? (
-                <Link href="/room-ops">
-                  <span style={{ fontWeight: pathname === "/room-ops" ? 700 : 400 }}>Room Ops</span>
+                <Link href="/room-ops" className={linkClass(pathname, "/room-ops")}>
+                  Room ops
                 </Link>
               ) : null}
-              <button className="btn btn-secondary" type="button" onClick={handleLogout}>
-                Logout
-              </button>
+              <span className="nav-actions">
+                <button className="btn btn-secondary btn-nav-logout" type="button" onClick={handleLogout}>
+                  Log out
+                </button>
+              </span>
             </>
           ) : (
-            <Link href="/login">
-              <span style={{ fontWeight: pathname === "/login" ? 700 : 400 }}>Login</span>
+            <Link href="/login" className={linkClass(pathname, "/login")}>
+              Sign in
             </Link>
           )}
         </div>
