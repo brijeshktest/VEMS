@@ -102,72 +102,169 @@ main.main-surface:has(.login-page) .container {
 .login-page {
   flex: 1;
   display: grid;
+  grid-template-columns: 1fr;
   min-height: calc(100vh - var(--nav-height));
+  position: relative;
+  overflow: hidden;
 }
 
-@media (min-width: 880px) {
+@media (min-width: 900px) {
   .login-page {
-    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.35fr) minmax(280px, 380px);
   }
 }
 
-.login-aside {
-  display: none;
-  background: linear-gradient(155deg, var(--primary) 0%, #062e27 55%, #041f1a 100%);
-  color: #f0f5f3;
-  padding: clamp(32px, 6vw, 64px);
-  flex-direction: column;
-  justify-content: center;
-  gap: 16px;
+.login-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  min-height: 42vh;
+  padding: clamp(20px, 4vw, 40px);
+  color: #f4faf7;
 }
 
-@media (min-width: 880px) {
-  .login-aside {
-    display: flex;
+@media (min-width: 900px) {
+  .login-hero {
+    align-items: center;
+    min-height: unset;
+    padding: clamp(32px, 5vw, 56px);
   }
 }
 
-.login-aside h2 {
-  margin: 0;
-  font-size: clamp(1.5rem, 3vw, 2rem);
+.login-hero-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  background-color: #0a241c;
+  background-image:
+    linear-gradient(105deg, rgba(6, 28, 22, 0.94) 0%, rgba(6, 28, 22, 0.72) 42%, rgba(10, 36, 28, 0.55) 100%),
+    url("https://images.unsplash.com/photo-1598373145186-356dbbd1ee22?auto=format&fit=crop&w=1600&q=80");
+  background-size: cover;
+  background-position: 35% center;
+}
+
+.login-hero-bg::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background-image: url("https://images.unsplash.com/photo-1464226184884-fa280b87c399?auto=format&fit=crop&w=1400&q=80");
+  background-size: cover;
+  background-position: 70% 40%;
+  mix-blend-mode: soft-light;
+  pointer-events: none;
+}
+
+.login-hero-content {
+  position: relative;
+  z-index: 1;
+  max-width: 38rem;
+}
+
+.login-hero-eyebrow {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(244, 250, 247, 0.85);
+}
+
+.login-hero-content h2 {
+  margin: 0 0 12px;
+  font-size: clamp(1.35rem, 3.2vw, 2rem);
   font-weight: 700;
   letter-spacing: -0.02em;
   line-height: 1.2;
+  text-shadow: 0 1px 24px rgba(0, 0, 0, 0.35);
 }
 
-.login-aside p {
+.login-hero-lead {
+  margin: 0 0 14px;
+  font-size: 14px;
+  line-height: 1.65;
+  opacity: 0.92;
+  max-width: 40ch;
+}
+
+.login-hero-list {
   margin: 0;
-  font-size: 15px;
-  opacity: 0.88;
-  max-width: 36ch;
-  line-height: 1.6;
+  padding-left: 1.15rem;
+  font-size: 13px;
+  line-height: 1.55;
+  opacity: 0.9;
 }
 
-.login-aside .login-accent-line {
-  width: 48px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--accent);
+.login-hero-list li {
+  margin-bottom: 6px;
 }
 
-.login-main {
+.login-panel {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: clamp(24px, 5vw, 48px);
+  padding: clamp(16px, 3vw, 28px);
   background: var(--surface);
+  border-top: 1px solid var(--border);
 }
 
-.login-main-inner {
+@media (min-width: 900px) {
+  .login-panel {
+    align-items: center;
+    border-top: none;
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 32px rgba(12, 15, 14, 0.06);
+  }
+}
+
+.login-panel-inner {
   width: 100%;
-  max-width: 420px;
+  max-width: 340px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 14px;
 }
 
-.login-main-inner .page-title {
-  font-size: 1.5rem;
+.login-panel-inner .login-heading {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.login-panel-inner .login-sub {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.login-panel-inner .card {
+  padding: 14px 16px;
+}
+
+.login-panel-inner .panel-title {
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+
+.login-panel-inner label {
+  font-size: 12px;
+}
+
+.login-panel-inner .input {
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.login-panel-inner .btn {
+  padding: 9px 14px;
+  font-size: 14px;
+}
+
+.login-panel-inner .page-lead {
+  font-size: 12px;
+  margin-bottom: 10px;
 }
 
 /* Page header */

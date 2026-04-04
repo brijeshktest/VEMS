@@ -1,5 +1,5 @@
 {
-  "name": "carlson-farms-llp",
+  "name": "shroom-agritech-llp",
   "private": true,
   "workspaces": [
     "apps/*",

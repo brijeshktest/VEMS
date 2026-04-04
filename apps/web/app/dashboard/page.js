@@ -214,20 +214,98 @@ export default function DashboardPage() {
       <div className="card">
         <h3 className="panel-title">Payment summary</h3>
         {tax ? (
-          <div className="grid grid-2">
-            <div>
-              <p className="tag">Total Payable: {tax.tax.totalPayable.toFixed(2)}</p>
-              <p className="tag">Total Tax: {tax.tax.totalTax.toFixed(2)}</p>
+          <div className="panel-inset" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+            <div className="grid grid-2">
+              <div>
+                <p className="tag">Total Payable: {tax.tax.totalPayable.toFixed(2)}</p>
+                <p className="tag">Total Tax: {tax.tax.totalTax.toFixed(2)}</p>
+              </div>
+              <div>
+                <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Payment status</h4>
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
+                  {(tax.paymentStatus || []).map((row) => (
+                    <li key={row._id ?? "unknown"}>
+                      {row._id}: {row.total.toFixed(2)} ({row.count} vouchers)
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
+
             <div>
-              <h4>Payment Status</h4>
-              <ul>
-                {tax.paymentStatus.map((row) => (
-                  <li key={row._id}>
-                    {row._id}: {row.total.toFixed(2)} ({row.count})
-                  </li>
-                ))}
-              </ul>
+              <h4 style={{ margin: "0 0 10px", fontSize: 14 }}>Vendor-wise (payable &amp; tax)</h4>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Vendor</th>
+                      <th>Vouchers</th>
+                      <th>Tax</th>
+                      <th>Payable</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(tax.vendorPayments || []).length ? (
+                      (tax.vendorPayments || []).map((row) => (
+                        <tr key={String(row._id)}>
+                          <td>{row.vendor?.name || "—"}</td>
+                          <td>{row.voucherCount}</td>
+                          <td>{row.totalTax.toFixed(2)}</td>
+                          <td>{row.totalPayable.toFixed(2)}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4}>
+                          <span className="page-lead" style={{ margin: 0 }}>
+                            No vouchers in range.
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <h4 style={{ margin: "0 0 10px", fontSize: 14 }}>Voucher-wise (latest 30)</h4>
+              <div className="table-wrap">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Vendor</th>
+                      <th>Payable</th>
+                      <th>Tax</th>
+                      <th>Status</th>
+                      <th>Method</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(tax.voucherPayments || []).length ? (
+                      (tax.voucherPayments || []).map((row) => (
+                        <tr key={String(row._id)}>
+                          <td>{new Date(row.dateOfPurchase).toLocaleDateString()}</td>
+                          <td>{row.vendorName || "—"}</td>
+                          <td>{row.finalAmount.toFixed(2)}</td>
+                          <td>{row.taxAmount.toFixed(2)}</td>
+                          <td>{row.paymentStatus}</td>
+                          <td>{row.paymentMethod}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={6}>
+                          <span className="page-lead" style={{ margin: 0 }}>
+                            No vouchers in range.
+                          </span>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         ) : (

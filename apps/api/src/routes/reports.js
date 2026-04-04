@@ -114,10 +114,58 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
       }
     }
   ]);
+  const vendorPayments = await Voucher.aggregate([
+    { $match: dateMatch },
+    {
+      $group: {
+        _id: "$vendorId",
+        totalPayable: { $sum: "$finalAmount" },
+        totalTax: { $sum: "$taxAmount" },
+        voucherCount: { $sum: 1 }
+      }
+    },
+    {
+      $lookup: {
+        from: "vendors",
+        localField: "_id",
+        foreignField: "_id",
+        as: "vendor"
+      }
+    },
+    { $unwind: { path: "$vendor", preserveNullAndEmptyArrays: true } },
+    { $sort: { totalPayable: -1 } }
+  ]);
+  const voucherPayments = await Voucher.aggregate([
+    { $match: dateMatch },
+    { $sort: { dateOfPurchase: -1 } },
+    { $limit: 30 },
+    {
+      $lookup: {
+        from: "vendors",
+        localField: "vendorId",
+        foreignField: "_id",
+        as: "vendor"
+      }
+    },
+    { $unwind: { path: "$vendor", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 1,
+        dateOfPurchase: 1,
+        finalAmount: 1,
+        taxAmount: 1,
+        paymentStatus: 1,
+        paymentMethod: 1,
+        vendorName: "$vendor.name"
+      }
+    }
+  ]);
   return res.json({
     tax: taxSummary[0] || { totalTax: 0, totalPayable: 0 },
     paymentStatus,
-    paymentMethod
+    paymentMethod,
+    vendorPayments,
+    voucherPayments
   });
 });
 

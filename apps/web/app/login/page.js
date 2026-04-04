@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken, setToken } from "../../lib/api.js";
-import PageHeader from "../../components/PageHeader.js";
+
+const DEFAULT_ADMIN_EMAIL = "admin@shroomagritechllp.com";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ email: "", password: "" });
-  const [seed, setSeed] = useState({ name: "", email: "", password: "" });
+  const [form, setForm] = useState({ email: DEFAULT_ADMIN_EMAIL, password: "" });
+  const [seed, setSeed] = useState({ name: "", email: DEFAULT_ADMIN_EMAIL, password: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [seedAvailable, setSeedAvailable] = useState(false);
@@ -57,7 +58,7 @@ export default function LoginPage() {
         body: JSON.stringify({ ...seed, role: "admin" })
       });
       setMessage("Admin user created. Please sign in.");
-      setSeed({ name: "", email: "", password: "" });
+      setSeed({ name: "", email: DEFAULT_ADMIN_EMAIL, password: "" });
       setSeedAvailable(false);
     } catch (err) {
       setError(err.message);
@@ -66,30 +67,42 @@ export default function LoginPage() {
 
   return (
     <div className="login-page">
-      <aside className="login-aside" aria-hidden="true">
-        <span className="login-accent-line" />
-        <h2>Operations, expenses, and clarity in one place.</h2>
-        <p>Track vendors, materials, vouchers, and reports with role-based access built for your team.</p>
-      </aside>
-      <div className="login-main">
-        <div className="login-main-inner">
-          <PageHeader
-            title="Sign in"
-            description="Use your credentials to access the workspace. New environment? Create the first admin once."
-          />
+      <section className="login-hero" aria-labelledby="login-hero-title">
+        <div className="login-hero-bg" aria-hidden="true" />
+        <div className="login-hero-content">
+          <p className="login-hero-eyebrow">Shroom Agritech LLP</p>
+          <h2 id="login-hero-title">Fresh button mushrooms &amp; trusted compost</h2>
+          <p className="login-hero-lead">
+            We produce quality button mushrooms for the market and supply compost that supports healthy, high-yield
+            crops—operations, procurement, and expenses stay organised in one workspace.
+          </p>
+          <ul className="login-hero-list">
+            <li>Controlled growing cycles, room stages, and production visibility</li>
+            <li>Vendor and material tracking aligned with mushroom and compost supply chains</li>
+            <li>Vouchers, tax, and payment status for clear financial oversight</li>
+          </ul>
+        </div>
+      </section>
+
+      <div className="login-panel">
+        <div className="login-panel-inner">
+          <div>
+            <h1 className="login-heading">Sign in</h1>
+            <p className="login-sub">Use your Shroom Agritech credentials. New database? Create the first admin once.</p>
+          </div>
 
           {error ? <div className="alert alert-error">{error}</div> : null}
           {message ? <div className="alert alert-success">{message}</div> : null}
 
           <div className="card">
             <h3 className="panel-title">Account</h3>
-            <form className="grid" style={{ gap: 14 }} onSubmit={onLogin}>
+            <form className="grid" style={{ gap: 10 }} onSubmit={onLogin}>
               <div>
                 <label htmlFor="login-email">Email</label>
                 <input
                   id="login-email"
                   className="input"
-                  placeholder="you@company.com"
+                  placeholder={DEFAULT_ADMIN_EMAIL}
                   type="email"
                   autoComplete="username"
                   value={form.email}
@@ -119,10 +132,10 @@ export default function LoginPage() {
           {seedAvailable ? (
             <div className="card">
               <h3 className="panel-title">First-time setup</h3>
-              <p className="page-lead" style={{ marginBottom: 14 }}>
+              <p className="page-lead" style={{ marginBottom: 10 }}>
                 Runs once on an empty database to create the initial administrator.
               </p>
-              <form className="grid" style={{ gap: 14 }} onSubmit={onSeed}>
+              <form className="grid" style={{ gap: 10 }} onSubmit={onSeed}>
                 <div>
                   <label htmlFor="seed-name">Name</label>
                   <input
@@ -139,7 +152,7 @@ export default function LoginPage() {
                   <input
                     id="seed-email"
                     className="input"
-                    placeholder="admin@company.com"
+                    placeholder={DEFAULT_ADMIN_EMAIL}
                     type="email"
                     value={seed.email}
                     onChange={(e) => setSeed({ ...seed, email: e.target.value })}

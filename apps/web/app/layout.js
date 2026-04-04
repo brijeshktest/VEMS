@@ -12,8 +12,8 @@ const dmSans = DM_Sans({
 });
 
 export const metadata = {
-  title: "Vendor and Expense Management System",
-  description: "Vendor, materials, and expense tracking",
+  title: "Shroom Agritech LLP — Vendor & Expense Management",
+  description: "Shroom Agritech LLP — vendor, materials, and expense tracking",
   manifest: "/manifest.webmanifest"
 };
 

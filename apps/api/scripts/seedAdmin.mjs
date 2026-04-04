@@ -3,7 +3,7 @@ import bcrypt from "bcryptjs";
 import User from "../src/models/User.js";
 
 const mongoUrl = process.env.MONGO_URL || "mongodb://localhost:27017/vendor_expense";
-const adminEmail = process.env.ADMIN_EMAIL || "admin@carlsonfarms.com";
+const adminEmail = process.env.ADMIN_EMAIL || "admin@shroomagritechllp.com";
 const adminPassword = process.env.ADMIN_PASSWORD || "Bloxham1!";
 
 await mongoose.connect(mongoUrl);

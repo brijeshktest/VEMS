@@ -73,7 +73,7 @@ export default function Nav() {
     <nav className="nav">
       <div className="container nav-inner">
         <div className="brand">
-          <span className="brand-title">Carlson Farms</span>
+          <span className="brand-title">Shroom Agritech LLP</span>
           <span className="brand-tagline">Vendor &amp; expense management</span>
         </div>
         <div className="nav-links">

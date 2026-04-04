@@ -1,8 +1,8 @@
 export default function manifest() {
   return {
-    name: "Vendor and Expense Management System",
-    short_name: "VendorExpense",
-    description: "Vendor and expense tracking system",
+    name: "Shroom Agritech LLP — Vendor & Expense",
+    short_name: "Shroom Agritech",
+    description: "Shroom Agritech LLP — vendor and expense tracking",
     start_url: "/",
     display: "standalone",
     background_color: "#f8fafc",
