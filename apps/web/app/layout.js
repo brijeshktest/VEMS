@@ -3,6 +3,7 @@ import "./globals.css";
 import Nav from "../components/Nav.js";
 import AuthGate from "../components/AuthGate.js";
 import PwaRegister from "../components/PwaRegister.js";
+import PwaInstallPrompt from "../components/PwaInstallPrompt.js";
 
 const dmSans = DM_Sans({
   subsets: ["latin"],
@@ -14,7 +15,26 @@ const dmSans = DM_Sans({
 export const metadata = {
   title: "Shroom Agritech LLP — Vendor & Expense Management",
   description: "Shroom Agritech LLP — vendor, materials, and expense tracking",
-  manifest: "/manifest.webmanifest"
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    title: "Shroom Agritech",
+    statusBarStyle: "default"
+  },
+  icons: {
+    icon: [
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" }
+    ],
+    apple: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }]
+  }
+};
+
+export const viewport = {
+  themeColor: "#0d5c4d",
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover"
 };
 
 export default function RootLayout({ children }) {
@@ -29,6 +49,7 @@ export default function RootLayout({ children }) {
             </main>
           </AuthGate>
           <PwaRegister />
+          <PwaInstallPrompt />
         </div>
       </body>
     </html>

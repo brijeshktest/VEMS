@@ -42,14 +42,31 @@ router.get("/vendor-expenses", requireAuth, requirePermission("reports", "view")
 
 router.get("/material-summary", requireAuth, requirePermission("reports", "view"), async (req, res) => {
   const dateMatch = buildDateMatch(req.query.start, req.query.end);
+  // Allocate each voucher's finalAmount (tax- and discount-adjusted) across lines by
+  // share of subTotal so material totals align with vendor / expense rollups.
   const results = await Voucher.aggregate([
     { $match: dateMatch },
     { $unwind: "$items" },
     {
+      $addFields: {
+        linePreTax: { $multiply: ["$items.quantity", "$items.pricePerUnit"] }
+      }
+    },
+    {
       $group: {
         _id: "$items.materialId",
         totalQuantity: { $sum: "$items.quantity" },
-        totalSpend: { $sum: { $multiply: ["$items.quantity", "$items.pricePerUnit"] } }
+        totalSpend: {
+          $sum: {
+            $cond: [
+              { $gt: ["$subTotal", 0] },
+              {
+                $multiply: [{ $divide: ["$linePreTax", "$subTotal"] }, "$finalAmount"]
+              },
+              0
+            ]
+          }
+        }
       }
     },
     {

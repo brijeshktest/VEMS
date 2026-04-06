@@ -194,7 +194,7 @@ export default function DashboardPage() {
               <tr>
                 <th>Material</th>
                 <th>Quantity</th>
-                <th>Spend</th>
+                <th>Spend (incl. tax)</th>
               </tr>
             </thead>
             <tbody>
@@ -217,8 +217,8 @@ export default function DashboardPage() {
           <div className="panel-inset" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div className="grid grid-2">
               <div>
-                <p className="tag">Total Payable: {tax.tax.totalPayable.toFixed(2)}</p>
-                <p className="tag">Total Tax: {tax.tax.totalTax.toFixed(2)}</p>
+                <p className="tag">Total (incl. tax): {tax.tax.totalPayable.toFixed(2)}</p>
+                <p className="tag">Tax: {tax.tax.totalTax.toFixed(2)}</p>
               </div>
               <div>
                 <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Payment status</h4>
@@ -233,7 +233,7 @@ export default function DashboardPage() {
             </div>
 
             <div>
-              <h4 style={{ margin: "0 0 10px", fontSize: 14 }}>Vendor-wise (payable &amp; tax)</h4>
+              <h4 style={{ margin: "0 0 10px", fontSize: 14 }}>Vendor-wise spend and tax</h4>
               <div className="table-wrap">
                 <table className="table">
                   <thead>
@@ -241,7 +241,7 @@ export default function DashboardPage() {
                       <th>Vendor</th>
                       <th>Vouchers</th>
                       <th>Tax</th>
-                      <th>Payable</th>
+                      <th>Total (incl. tax)</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -276,7 +276,7 @@ export default function DashboardPage() {
                     <tr>
                       <th>Date</th>
                       <th>Vendor</th>
-                      <th>Payable</th>
+                      <th>Total (incl. tax)</th>
                       <th>Tax</th>
                       <th>Status</th>
                       <th>Method</th>

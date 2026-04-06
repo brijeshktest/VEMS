@@ -813,3 +813,70 @@ select.input {
     padding: 16px;
   }
 }
+
+/* PWA install prompt */
+.pwa-install {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  padding: 12px clamp(16px, 4vw, 28px);
+  padding-bottom: max(12px, env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+
+.pwa-install-inner {
+  pointer-events: auto;
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--surface-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+}
+
+.pwa-install-text {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+
+.pwa-install-title {
+  display: block;
+  font-size: 15px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.pwa-install-desc {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.pwa-install-kbd {
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.pwa-install-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.pwa-install-primary {
+  min-width: 120px;
+}
+
+.pwa-install-dismiss {
+  border-color: var(--border-strong);
+}

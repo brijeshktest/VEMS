@@ -14,10 +14,11 @@ const links = [
 ];
 
 function linkClass(pathname, href) {
+  const path = pathname ?? "";
   if (href === "/admin") {
-    return pathname === "/admin" || pathname.startsWith("/admin/") ? "nav-link nav-link--active" : "nav-link";
+    return path === "/admin" || path.startsWith("/admin/") ? "nav-link nav-link--active" : "nav-link";
   }
-  return pathname === href ? "nav-link nav-link--active" : "nav-link";
+  return path === href ? "nav-link nav-link--active" : "nav-link";
 }
 
 export default function Nav() {

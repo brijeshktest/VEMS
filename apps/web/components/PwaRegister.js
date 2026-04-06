@@ -4,9 +4,11 @@ import { useEffect } from "react";
 
 export default function PwaRegister() {
   useEffect(() => {
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) return;
+    const { protocol, hostname } = window.location;
+    const secure = protocol === "https:" || hostname === "localhost" || hostname === "127.0.0.1";
+    if (!secure) return;
+    navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {});
   }, []);
 
   return null;

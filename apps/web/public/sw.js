@@ -1,22 +1,17 @@
+/* Minimal service worker — satisfies installability; all requests go to network. */
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
 });
 
 self.addEventListener("activate", (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") return;
-  event.respondWith(
-    caches.open("vem-cache-v1").then(async (cache) => {
-      const cached = await cache.match(event.request);
-      if (cached) return cached;
-      const response = await fetch(event.request);
-      if (response.ok && response.type === "basic") {
-        cache.put(event.request, response.clone());
-      }
-      return response;
-    })
-  );
+  event.respondWith(fetch(event.request));
 });

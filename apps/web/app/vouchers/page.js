@@ -172,6 +172,62 @@ export default function VouchersPage() {
   const visibleVoucherAttachments =
     (editingVoucher?.attachments || []).filter((a) => !removedAttachmentIds.includes(a._id)) || [];
 
+  async function downloadVouchersExcel() {
+    setError("");
+    try {
+      const XLSX = await import("xlsx");
+      const rows = [];
+      for (const voucher of vouchers) {
+        const vid = voucher.vendorId?._id ?? voucher.vendorId;
+        const vendor = vendors.find((v) => String(v._id) === String(vid));
+        const base = {
+          Date: new Date(voucher.dateOfPurchase).toLocaleDateString(),
+          Vendor: vendor?.name || "Unknown",
+          "Payment method": voucher.paymentMethod || "",
+          Total: Number(voucher.finalAmount),
+          Status: voucher.paymentStatus,
+          "Created By": voucher.createdByName || "-",
+          "Status Updated By": voucher.statusUpdatedByName || "-"
+        };
+        const items = voucher.items || [];
+        if (!items.length) {
+          rows.push({
+            ...base,
+            Material: "",
+            Quantity: "",
+            Unit: "",
+            "Price per unit": "",
+            "Line total": "",
+            "Line comment": ""
+          });
+          continue;
+        }
+        for (const item of items) {
+          const mid = item.materialId?._id ?? item.materialId;
+          const material = materials.find((m) => String(m._id) === String(mid));
+          const qty = Number(item.quantity || 0);
+          const ppu = Number(item.pricePerUnit || 0);
+          rows.push({
+            ...base,
+            Material: material?.name || "Unknown",
+            Quantity: qty,
+            Unit: material?.unit || "",
+            "Price per unit": ppu,
+            "Line total": qty * ppu,
+            "Line comment": item.comment || ""
+          });
+        }
+      }
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Vouchers");
+      const filename = `vouchers-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      setError(err.message || "Could not generate Excel file");
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -460,7 +516,21 @@ export default function VouchersPage() {
       </div>
 
       <div className="card">
-        <h3 className="panel-title">All vouchers</h3>
+        <div
+          style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}
+        >
+          <h3 className="panel-title" style={{ margin: 0 }}>
+            All vouchers
+          </h3>
+          <button
+            className="btn btn-secondary"
+            type="button"
+            disabled={!vouchers.length}
+            onClick={() => void downloadVouchersExcel()}
+          >
+            Download Excel
+          </button>
+        </div>
         <div className="table-wrap">
           <table className="table">
           <thead>

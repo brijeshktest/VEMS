@@ -15,8 +15,13 @@ export default function AuthGate({ children }) {
       router.replace("/login");
       return;
     }
-    if (token && pathname.startsWith("/admin")) {
-      apiFetch("/auth/me")
+    // pathname can be null until the client router is ready (static routes); avoid throwing.
+    if (token && pathname?.startsWith("/admin")) {
+      const signal =
+        typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+          ? AbortSignal.timeout(12_000)
+          : undefined;
+      apiFetch("/auth/me", signal ? { signal } : {})
         .then((data) => {
           if (data.user?.role !== "admin") {
             router.replace("/dashboard");

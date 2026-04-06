@@ -110,7 +110,7 @@ export default function ReportsPage() {
                 <tr>
                   <th>Material</th>
                   <th>Quantity</th>
-                  <th>Spend</th>
+                  <th>Spend (incl. tax)</th>
                 </tr>
               </thead>
               <tbody>
@@ -162,7 +162,7 @@ export default function ReportsPage() {
                 <strong>Total tax:</strong> {taxData.tax.totalTax.toFixed(2)}
               </p>
               <p style={{ margin: 0, fontSize: 14 }}>
-                <strong>Total payable:</strong> {taxData.tax.totalPayable.toFixed(2)}
+                <strong>Total (incl. tax):</strong> {taxData.tax.totalPayable.toFixed(2)}
               </p>
             </div>
           ) : (

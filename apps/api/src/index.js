@@ -45,9 +45,14 @@ connectDb()
     return ensureRoomsSeeded();
   })
   .then(() => {
-    app.listen(port, () => {
+    const server = app.listen(port, () => {
       // eslint-disable-next-line no-console
       console.log(`API running on http://localhost:${port}`);
+    });
+    server.on("error", (err) => {
+      // eslint-disable-next-line no-console
+      console.error(err);
+      process.exit(1);
     });
   })
   .catch((error) => {
