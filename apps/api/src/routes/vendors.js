@@ -50,6 +50,8 @@ function normalizeVendorBody(req) {
     contactPerson: b.contactPerson ?? "",
     contactNumber: b.contactNumber ?? "",
     email: b.email ?? "",
+    gstin: b.gstin ?? "",
+    vendorType: b.vendorType ?? "",
     status: b.status || "Active",
     pan: b.pan ?? "",
     aadhaar: b.aadhaar ?? "",
@@ -57,14 +59,14 @@ function normalizeVendorBody(req) {
   };
 }
 
-const CONTACT_KEYS = ["email", "pan", "aadhaar", "contactNumber"];
+const CONTACT_KEYS = ["email", "gstin", "pan", "aadhaar", "contactNumber"];
 
 function bodyTouchesVendorContact(body) {
   return CONTACT_KEYS.some((k) => Object.prototype.hasOwnProperty.call(body, k));
 }
 
 function contactPayloadForCreate(body) {
-  const o = { email: "", pan: "", aadhaar: "", contactNumber: "" };
+  const o = { email: "", gstin: "", pan: "", aadhaar: "", contactNumber: "" };
   for (const k of CONTACT_KEYS) {
     o[k] = Object.prototype.hasOwnProperty.call(body, k) ? body[k] ?? "" : "";
   }
@@ -74,6 +76,7 @@ function contactPayloadForCreate(body) {
 function contactPayloadForPut(body, vendor) {
   const o = {
     email: vendor.email || "",
+    gstin: vendor.gstin || "",
     pan: vendor.pan || "",
     aadhaar: vendor.aadhaar || "",
     contactNumber: vendor.contactNumber || ""
@@ -179,6 +182,8 @@ router.post("/", requireAuth, requirePermission("vendors", "create"), conditiona
       contactPerson: body.contactPerson,
       contactNumber: contactCheck.normalized.contactNumber,
       email: contactCheck.normalized.email,
+      gstin: contactCheck.normalized.gstin,
+      vendorType: body.vendorType,
       pan: contactCheck.normalized.pan,
       aadhaar: contactCheck.normalized.aadhaar,
       materialsSupplied: body.materialsSupplied !== undefined ? body.materialsSupplied || [] : [],
@@ -218,6 +223,8 @@ router.put("/:id", requireAuth, requirePermission("vendors", "edit"), conditiona
   vendor.name = body.name ?? vendor.name;
   vendor.address = body.address ?? vendor.address;
   vendor.contactPerson = body.contactPerson ?? vendor.contactPerson;
+  vendor.gstin = body.gstin ?? vendor.gstin;
+  vendor.vendorType = body.vendorType ?? vendor.vendorType;
   if (bodyTouchesVendorContact(body)) {
     const contactCheck = validateVendorContactPayload(contactPayloadForPut(body, vendor));
     if (!contactCheck.ok) {
@@ -225,6 +232,7 @@ router.put("/:id", requireAuth, requirePermission("vendors", "edit"), conditiona
       return res.status(400).json({ error: contactCheck.message });
     }
     vendor.email = contactCheck.normalized.email;
+    vendor.gstin = contactCheck.normalized.gstin;
     vendor.pan = contactCheck.normalized.pan;
     vendor.aadhaar = contactCheck.normalized.aadhaar;
     vendor.contactNumber = contactCheck.normalized.contactNumber;

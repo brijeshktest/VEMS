@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { apiFetch } from "../../lib/api.js";
+import { apiFetch, apiFetchForm, API_URL } from "../../lib/api.js";
 import PageHeader from "../../components/PageHeader.js";
 
 const modules = [
@@ -48,6 +48,8 @@ export default function AdminPage() {
 
   const [userForm, setUserForm] = useState({ name: "", email: "", password: "", roleIds: [] });
   const [editingUserId, setEditingUserId] = useState(null);
+  const logoInputRef = useRef(null);
+  const [brandingTs, setBrandingTs] = useState(null);
 
   const roleLookup = useMemo(() => {
     const lookup = {};
@@ -70,6 +72,59 @@ export default function AdminPage() {
   useEffect(() => {
     load();
   }, []);
+
+  async function refreshBranding() {
+    try {
+      const res = await fetch(`${API_URL}/settings/branding`);
+      const data = await res.json().catch(() => ({}));
+      if (data?.hasLogo && typeof data.updatedAt === "number") {
+        setBrandingTs(data.updatedAt);
+      } else {
+        setBrandingTs(null);
+      }
+    } catch {
+      setBrandingTs(null);
+    }
+  }
+
+  useEffect(() => {
+    refreshBranding();
+  }, []);
+
+  async function uploadLogo(event) {
+    event.preventDefault();
+    const file = logoInputRef.current?.files?.[0];
+    if (!file) {
+      setError("Choose an image file first.");
+      return;
+    }
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("logo", file);
+      await apiFetchForm("/settings/logo", fd);
+      if (logoInputRef.current) logoInputRef.current.value = "";
+      await refreshBranding();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vems-branding-updated"));
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function removeLogo() {
+    setError("");
+    try {
+      await apiFetch("/settings/logo", { method: "DELETE" });
+      setBrandingTs(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vems-branding-updated"));
+      }
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   function updatePermission(moduleKey, action, value) {
     setRoleForm((prev) => ({
@@ -211,6 +266,45 @@ export default function AdminPage() {
             Room stages
           </Link>
         </div>
+      </div>
+
+      <div className="card">
+        <h3 className="panel-title">Organization logo</h3>
+        <p className="page-lead" style={{ marginBottom: 16 }}>
+          Upload a square or wide logo (PNG, JPEG, SVG, or WebP, max 2&nbsp;MB). It appears in the application header for all users.
+        </p>
+        {brandingTs ? (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Current logo</p>
+            <img
+              src={`${API_URL}/settings/logo?t=${brandingTs}`}
+              alt="Organization logo"
+              style={{ maxHeight: 64, maxWidth: 200, objectFit: "contain", border: "1px solid var(--border)", borderRadius: 8 }}
+            />
+          </div>
+        ) : null}
+        <form className="grid grid-2" onSubmit={uploadLogo} style={{ alignItems: "end" }}>
+          <div>
+            <label htmlFor="admin-logo-file">Logo file</label>
+            <input
+              id="admin-logo-file"
+              ref={logoInputRef}
+              className="input"
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/svg+xml,image/webp"
+            />
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+            <button className="btn" type="submit">
+              Upload logo
+            </button>
+            {brandingTs ? (
+              <button className="btn btn-secondary" type="button" onClick={() => void removeLogo()}>
+                Remove logo
+              </button>
+            ) : null}
+          </div>
+        </form>
       </div>
 
       {error ? <div className="alert alert-error">{error}</div> : null}

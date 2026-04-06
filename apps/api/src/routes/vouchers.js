@@ -176,10 +176,16 @@ router.post("/", requireAuth, requirePermission("vouchers", "create"), condition
   const discountType = payload.discountType || "none";
   const discountValue = Number(payload.discountValue || 0);
   const totals = calculateTotals(items, taxPercent, discountType, discountValue);
+  const paidAmount = Number(payload.paidAmount ?? totals.finalAmount);
+  if (!Number.isFinite(paidAmount) || paidAmount < 0) {
+    await unlinkTmpFiles(req.files);
+    return res.status(400).json({ error: "paidAmount must be a non-negative number" });
+  }
   let voucher;
   try {
     voucher = await Voucher.create({
       vendorId: payload.vendorId,
+      voucherNumber: payload.voucherNumber || "",
       items,
       dateOfPurchase: new Date(payload.dateOfPurchase),
       subTotal: totals.subTotal,
@@ -188,6 +194,7 @@ router.post("/", requireAuth, requirePermission("vouchers", "create"), condition
       discountType,
       discountValue,
       finalAmount: totals.finalAmount,
+      paidAmount,
       paymentMethod: payload.paymentMethod,
       paymentStatus: payload.paymentStatus,
       paymentDate: payload.paymentDate ? new Date(payload.paymentDate) : undefined,
@@ -260,7 +267,13 @@ router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), condition
   const discountType = payload.discountType ?? voucher.discountType ?? "none";
   const discountValue = Number(payload.discountValue ?? voucher.discountValue ?? 0);
   const totals = calculateTotals(items, taxPercent, discountType, discountValue);
+  const paidAmount = Number(payload.paidAmount ?? voucher.paidAmount ?? totals.finalAmount);
+  if (!Number.isFinite(paidAmount) || paidAmount < 0) {
+    await unlinkTmpFiles(req.files);
+    return res.status(400).json({ error: "paidAmount must be a non-negative number" });
+  }
   voucher.vendorId = vendorId;
+  voucher.voucherNumber = payload.voucherNumber ?? voucher.voucherNumber;
   voucher.items = items;
   voucher.dateOfPurchase = payload.dateOfPurchase ? new Date(payload.dateOfPurchase) : voucher.dateOfPurchase;
   voucher.subTotal = totals.subTotal;
@@ -269,6 +282,7 @@ router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), condition
   voucher.discountType = discountType;
   voucher.discountValue = discountValue;
   voucher.finalAmount = totals.finalAmount;
+  voucher.paidAmount = paidAmount;
   voucher.paymentMethod = payload.paymentMethod ?? voucher.paymentMethod;
   if (payload.paymentStatus && payload.paymentStatus !== voucher.paymentStatus) {
     voucher.paymentStatus = payload.paymentStatus;

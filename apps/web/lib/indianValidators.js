@@ -63,6 +63,11 @@ export function normalizeAadhaarDigits(value) {
   return String(value).replace(/\D/g, "");
 }
 
+export function normalizeGstin(value) {
+  if (value === undefined || value === null) return "";
+  return String(value).replace(/\s/g, "").toUpperCase();
+}
+
 export function normalizeIndianMobile(value) {
   if (value === undefined || value === null) return "";
   let s = String(value).trim().replace(/[\s().-]/g, "");
@@ -113,6 +118,22 @@ export function validateOptionalAadhaar(raw) {
   return { ok: true, value: digits };
 }
 
+export function validateOptionalGstin(raw) {
+  const gstin = normalizeGstin(raw);
+  if (!gstin) return { ok: true, value: "" };
+  if (gstin.length !== 15) {
+    return { ok: false, message: "GSTIN must be exactly 15 characters." };
+  }
+  if (!/^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/.test(gstin)) {
+    return {
+      ok: false,
+      message:
+        "Invalid GSTIN format. Use 2 digits + PAN(10) + entity code + Z + checksum (e.g. 27ABCDE1234F1Z5)."
+    };
+  }
+  return { ok: true, value: gstin };
+}
+
 export function validateOptionalIndianMobile(raw) {
   const mobile = normalizeIndianMobile(raw);
   if (!mobile) return { ok: true, value: "" };
@@ -138,6 +159,9 @@ export function validateVendorContactPayload(body) {
   const email = validateOptionalEmail(body.email);
   if (!email.ok) return email;
 
+  const gstin = validateOptionalGstin(body.gstin);
+  if (!gstin.ok) return gstin;
+
   const pan = validateOptionalPan(body.pan);
   if (!pan.ok) return pan;
 
@@ -151,6 +175,7 @@ export function validateVendorContactPayload(body) {
     ok: true,
     normalized: {
       email: email.value,
+      gstin: gstin.value,
       pan: pan.value,
       aadhaar: aadhaar.value,
       contactNumber: mobile.value

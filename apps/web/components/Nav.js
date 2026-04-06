@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, getToken, setToken } from "../lib/api.js";
+import { apiFetch, API_URL, getToken, setToken } from "../lib/api.js";
 
 const links = [
   { href: "/dashboard", label: "Dashboard" },
@@ -27,6 +27,35 @@ export default function Nav() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [allowRoomOps, setAllowRoomOps] = useState(false);
+  const [logoUpdatedAt, setLogoUpdatedAt] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBranding() {
+      try {
+        const res = await fetch(`${API_URL}/settings/branding`);
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled && data?.hasLogo) {
+          setLogoUpdatedAt(typeof data.updatedAt === "number" ? data.updatedAt : Date.now());
+        } else if (!cancelled) {
+          setLogoUpdatedAt(null);
+        }
+      } catch {
+        if (!cancelled) setLogoUpdatedAt(null);
+      }
+    }
+    loadBranding();
+    const onBranding = () => void loadBranding();
+    if (typeof window !== "undefined") {
+      window.addEventListener("vems-branding-updated", onBranding);
+    }
+    return () => {
+      cancelled = true;
+      if (typeof window !== "undefined") {
+        window.removeEventListener("vems-branding-updated", onBranding);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const token = getToken();
@@ -73,10 +102,25 @@ export default function Nav() {
   return (
     <nav className="nav">
       <div className="container nav-inner">
-        <div className="brand">
-          <span className="brand-title">Shroom Agritech LLP</span>
-          <span className="brand-tagline">Vendor &amp; expense management</span>
-        </div>
+        <Link href={isAuthenticated ? "/dashboard" : "/"} className="brand brand--with-logo">
+          <span className="brand-logo-slot" aria-hidden={!logoUpdatedAt}>
+            {logoUpdatedAt ? (
+              <img
+                className="brand-logo-img"
+                src={`${API_URL}/settings/logo?t=${logoUpdatedAt}`}
+                alt="Organization logo"
+                width={44}
+                height={44}
+              />
+            ) : (
+              <span className="brand-logo-placeholder" title="Logo can be set in Admin" />
+            )}
+          </span>
+          <span className="brand-text">
+            <span className="brand-title">Shroom Agritech LLP</span>
+            <span className="brand-tagline">Vendor &amp; expense management</span>
+          </span>
+        </Link>
         <div className="nav-links">
           {isAuthenticated ? (
             <>

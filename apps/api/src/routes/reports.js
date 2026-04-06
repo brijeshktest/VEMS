@@ -22,7 +22,8 @@ router.get("/vendor-expenses", requireAuth, requirePermission("reports", "view")
     {
       $group: {
         _id: "$vendorId",
-        totalSpend: { $sum: "$finalAmount" },
+        totalVoucherAmount: { $sum: "$finalAmount" },
+        totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
         voucherCount: { $sum: 1 }
       }
     },
@@ -35,14 +36,14 @@ router.get("/vendor-expenses", requireAuth, requirePermission("reports", "view")
       }
     },
     { $unwind: "$vendor" },
-    { $sort: { totalSpend: -1 } }
+    { $sort: { totalPaidAmount: -1 } }
   ]);
   return res.json(results);
 });
 
 router.get("/material-summary", requireAuth, requirePermission("reports", "view"), async (req, res) => {
   const dateMatch = buildDateMatch(req.query.start, req.query.end);
-  // Allocate each voucher's finalAmount (tax- and discount-adjusted) across lines by
+  // Allocate each voucher's paidAmount across lines by
   // share of subTotal so material totals align with vendor / expense rollups.
   const results = await Voucher.aggregate([
     { $match: dateMatch },
@@ -61,7 +62,7 @@ router.get("/material-summary", requireAuth, requirePermission("reports", "view"
             $cond: [
               { $gt: ["$subTotal", 0] },
               {
-                $multiply: [{ $divide: ["$linePreTax", "$subTotal"] }, "$finalAmount"]
+                $multiply: [{ $divide: ["$linePreTax", "$subTotal"] }, { $ifNull: ["$paidAmount", "$finalAmount"] }]
               },
               0
             ]
@@ -90,13 +91,14 @@ router.get("/expenses", requireAuth, requirePermission("reports", "view"), async
     {
       $group: {
         _id: null,
-        totalSpend: { $sum: "$finalAmount" },
+        totalVoucherAmount: { $sum: "$finalAmount" },
+        totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
         totalTax: { $sum: "$taxAmount" },
         voucherCount: { $sum: 1 }
       }
     }
   ]);
-  return res.json(summary || { totalSpend: 0, totalTax: 0, voucherCount: 0 });
+  return res.json(summary || { totalVoucherAmount: 0, totalPaidAmount: 0, totalTax: 0, voucherCount: 0 });
 });
 
 router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), async (req, res) => {
@@ -107,7 +109,8 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
       $group: {
         _id: null,
         totalTax: { $sum: "$taxAmount" },
-        totalPayable: { $sum: "$finalAmount" }
+        totalVoucherAmount: { $sum: "$finalAmount" },
+        totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } }
       }
     }
   ]);
@@ -116,7 +119,8 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
     {
       $group: {
         _id: "$paymentStatus",
-        total: { $sum: "$finalAmount" },
+        totalVoucherAmount: { $sum: "$finalAmount" },
+        totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
         count: { $sum: 1 }
       }
     }
@@ -126,7 +130,8 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
     {
       $group: {
         _id: "$paymentMethod",
-        total: { $sum: "$finalAmount" },
+        totalVoucherAmount: { $sum: "$finalAmount" },
+        totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
         count: { $sum: 1 }
       }
     }
@@ -136,7 +141,8 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
     {
       $group: {
         _id: "$vendorId",
-        totalPayable: { $sum: "$finalAmount" },
+        totalVoucherAmount: { $sum: "$finalAmount" },
+        totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
         totalTax: { $sum: "$taxAmount" },
         voucherCount: { $sum: 1 }
       }
@@ -150,7 +156,7 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
       }
     },
     { $unwind: { path: "$vendor", preserveNullAndEmptyArrays: true } },
-    { $sort: { totalPayable: -1 } }
+    { $sort: { totalPaidAmount: -1 } }
   ]);
   const voucherPayments = await Voucher.aggregate([
     { $match: dateMatch },
@@ -169,7 +175,9 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
       $project: {
         _id: 1,
         dateOfPurchase: 1,
+        voucherNumber: 1,
         finalAmount: 1,
+        paidAmount: { $ifNull: ["$paidAmount", "$finalAmount"] },
         taxAmount: 1,
         paymentStatus: 1,
         paymentMethod: 1,
@@ -178,7 +186,7 @@ router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), a
     }
   ]);
   return res.json({
-    tax: taxSummary[0] || { totalTax: 0, totalPayable: 0 },
+    tax: taxSummary[0] || { totalTax: 0, totalVoucherAmount: 0, totalPaidAmount: 0 },
     paymentStatus,
     paymentMethod,
     vendorPayments,

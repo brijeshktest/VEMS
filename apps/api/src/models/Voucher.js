@@ -14,6 +14,7 @@ const VoucherItemSchema = new mongoose.Schema(
 const VoucherSchema = new mongoose.Schema(
   {
     vendorId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true },
+    voucherNumber: { type: String, trim: true, default: "" },
     items: { type: [VoucherItemSchema], required: true },
     dateOfPurchase: { type: Date, required: true },
     subTotal: { type: Number, required: true },
@@ -22,6 +23,7 @@ const VoucherSchema = new mongoose.Schema(
     discountType: { type: String, enum: ["none", "percent", "flat"], default: "none" },
     discountValue: { type: Number, default: 0 },
     finalAmount: { type: Number, required: true },
+    paidAmount: { type: Number, required: true },
     paymentMethod: { type: String, required: true },
     paymentStatus: { type: String, enum: ["Paid", "Pending", "Partially Paid"], required: true },
     paymentDate: { type: Date },

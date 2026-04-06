@@ -78,7 +78,8 @@ export default function ReportsPage() {
               <thead>
                 <tr>
                   <th>Vendor</th>
-                  <th>Total</th>
+                  <th>Voucher amount</th>
+                  <th>Paid amount</th>
                   <th>Vouchers</th>
                 </tr>
               </thead>
@@ -87,13 +88,14 @@ export default function ReportsPage() {
                   vendorData.map((row) => (
                     <tr key={row._id}>
                       <td>{row.vendor?.name}</td>
-                      <td>{row.totalSpend.toFixed(2)}</td>
+                      <td>{row.totalVoucherAmount.toFixed(2)}</td>
+                      <td>{row.totalPaidAmount.toFixed(2)}</td>
                       <td>{row.voucherCount}</td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={3} style={{ color: "var(--muted)" }}>
+                    <td colSpan={4} style={{ color: "var(--muted)" }}>
                       Run reports to load data.
                     </td>
                   </tr>
@@ -110,7 +112,7 @@ export default function ReportsPage() {
                 <tr>
                   <th>Material</th>
                   <th>Quantity</th>
-                  <th>Spend (incl. tax)</th>
+                  <th>Paid amount</th>
                 </tr>
               </thead>
               <tbody>
@@ -141,7 +143,10 @@ export default function ReportsPage() {
           {summary ? (
             <div className="panel-inset">
               <p style={{ margin: "0 0 8px", fontSize: 14 }}>
-                <strong>Total spend:</strong> {summary.totalSpend.toFixed(2)}
+                <strong>Total voucher amount:</strong> {summary.totalVoucherAmount.toFixed(2)}
+              </p>
+              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+                <strong>Total paid amount:</strong> {summary.totalPaidAmount.toFixed(2)}
               </p>
               <p style={{ margin: "0 0 8px", fontSize: 14 }}>
                 <strong>Total tax:</strong> {summary.totalTax.toFixed(2)}
@@ -162,7 +167,10 @@ export default function ReportsPage() {
                 <strong>Total tax:</strong> {taxData.tax.totalTax.toFixed(2)}
               </p>
               <p style={{ margin: 0, fontSize: 14 }}>
-                <strong>Total (incl. tax):</strong> {taxData.tax.totalPayable.toFixed(2)}
+                <strong>Total voucher amount:</strong> {taxData.tax.totalVoucherAmount.toFixed(2)}
+              </p>
+              <p style={{ margin: "8px 0 0", fontSize: 14 }}>
+                <strong>Total paid amount:</strong> {taxData.tax.totalPaidAmount.toFixed(2)}
               </p>
             </div>
           ) : (
