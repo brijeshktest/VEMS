@@ -187,7 +187,6 @@ export default function DashboardPage() {
             <thead>
               <tr>
                 <th>Vendor</th>
-                <th>Voucher amount</th>
                 <th>Paid amount</th>
               </tr>
             </thead>
@@ -195,7 +194,6 @@ export default function DashboardPage() {
               {vendors.map((row) => (
                 <tr key={row._id}>
                   <td>{row.vendor?.name}</td>
-                  <td>{row.totalVoucherAmount.toFixed(2)}</td>
                   <td>{row.totalPaidAmount.toFixed(2)}</td>
                 </tr>
               ))}
@@ -237,7 +235,6 @@ export default function DashboardPage() {
           <div className="panel-inset" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
             <div className="grid grid-2">
               <div>
-                <p className="tag">Voucher amount: {tax.tax.totalVoucherAmount.toFixed(2)}</p>
                 <p className="tag">Paid amount: {tax.tax.totalPaidAmount.toFixed(2)}</p>
                 <p className="tag">Tax: {tax.tax.totalTax.toFixed(2)}</p>
               </div>
@@ -246,7 +243,7 @@ export default function DashboardPage() {
                 <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
                   {(tax.paymentStatus || []).map((row) => (
                     <li key={row._id ?? "unknown"}>
-                      {row._id}: {row.totalPaidAmount.toFixed(2)} paid / {row.totalVoucherAmount.toFixed(2)} voucher ({row.count} vouchers)
+                      {row._id}: {row.totalPaidAmount.toFixed(2)} paid ({row.count} vouchers)
                     </li>
                   ))}
                 </ul>
@@ -262,7 +259,6 @@ export default function DashboardPage() {
                       <th>Vendor</th>
                       <th>Vouchers</th>
                       <th>Tax</th>
-                      <th>Voucher amount</th>
                       <th>Paid amount</th>
                     </tr>
                   </thead>
@@ -273,13 +269,12 @@ export default function DashboardPage() {
                           <td>{row.vendor?.name || "—"}</td>
                           <td>{row.voucherCount}</td>
                           <td>{row.totalTax.toFixed(2)}</td>
-                          <td>{row.totalVoucherAmount.toFixed(2)}</td>
                           <td>{row.totalPaidAmount.toFixed(2)}</td>
                         </tr>
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={5}>
+                        <td colSpan={4}>
                           <span className="page-lead" style={{ margin: 0 }}>
                             No vouchers in range.
                           </span>
@@ -300,7 +295,6 @@ export default function DashboardPage() {
                       <th>Date</th>
                       <th>Voucher no.</th>
                       <th>Vendor</th>
-                      <th>Voucher amount</th>
                       <th>Paid amount</th>
                       <th>Tax</th>
                       <th>Status</th>
@@ -314,7 +308,6 @@ export default function DashboardPage() {
                           <td>{new Date(row.dateOfPurchase).toLocaleDateString()}</td>
                           <td>{row.voucherNumber || "-"}</td>
                           <td>{row.vendorName || "—"}</td>
-                          <td>{row.finalAmount.toFixed(2)}</td>
                           <td>{row.paidAmount.toFixed(2)}</td>
                           <td>{row.taxAmount.toFixed(2)}</td>
                           <td>{row.paymentStatus}</td>
@@ -323,7 +316,7 @@ export default function DashboardPage() {
                       ))
                     ) : (
                       <tr>
-                        <td colSpan={8}>
+                        <td colSpan={7}>
                           <span className="page-lead" style={{ margin: 0 }}>
                             No vouchers in range.
                           </span>
