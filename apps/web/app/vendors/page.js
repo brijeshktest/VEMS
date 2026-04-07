@@ -6,6 +6,7 @@ import PageHeader from "../../components/PageHeader.js";
 import AttachmentListCell from "../../components/AttachmentListCell.js";
 import {
   validateOptionalEmail,
+  validateOptionalGstin,
   validateOptionalPan,
   validateOptionalAadhaar,
   validateOptionalIndianMobile
@@ -15,6 +16,8 @@ function collectVendorFieldErrors(f) {
   const errors = {};
   const em = validateOptionalEmail(f.email);
   if (!em.ok) errors.email = em.message;
+  const gstin = validateOptionalGstin(f.gstin);
+  if (!gstin.ok) errors.gstin = gstin.message;
   const pan = validateOptionalPan(f.pan);
   if (!pan.ok) errors.pan = pan.message;
   const uid = validateOptionalAadhaar(f.aadhaar);
@@ -26,6 +29,8 @@ function collectVendorFieldErrors(f) {
 
 const initialForm = {
   name: "",
+  vendorType: "",
+  gstin: "",
   address: "",
   contactPerson: "",
   contactNumber: "",
@@ -74,6 +79,8 @@ export default function VendorsPage() {
       fd.append("contactPerson", form.contactPerson || "");
       fd.append("contactNumber", form.contactNumber || "");
       fd.append("email", form.email || "");
+      fd.append("vendorType", form.vendorType || "");
+      fd.append("gstin", form.gstin || "");
       fd.append("pan", form.pan || "");
       fd.append("aadhaar", form.aadhaar || "");
       fd.append("status", form.status || "Active");
@@ -104,6 +111,8 @@ export default function VendorsPage() {
     setEditingId(vendor._id);
     setForm({
       name: vendor.name || "",
+      vendorType: vendor.vendorType || "",
+      gstin: vendor.gstin || "",
       address: vendor.address || "",
       contactPerson: vendor.contactPerson || "",
       contactNumber: vendor.contactNumber || "",
@@ -145,6 +154,9 @@ export default function VendorsPage() {
   const editingVendor = editingId ? vendors.find((v) => v._id === editingId) : null;
   const visibleAttachments =
     (editingVendor?.attachments || []).filter((a) => !removedAttachmentIds.includes(a._id)) || [];
+  const vendorTypeOptions = Array.from(
+    new Set(vendors.map((vendor) => (vendor.vendorType || "").trim()).filter(Boolean))
+  ).sort();
 
   return (
     <div className="page-stack">
@@ -179,6 +191,42 @@ export default function VendorsPage() {
               value={form.contactPerson}
               onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
             />
+          </div>
+          <div>
+            <label htmlFor="vendor-type">Vendor type (optional)</label>
+            <input
+              id="vendor-type"
+              className="input"
+              list="vendor-type-options"
+              placeholder="Type and select/add"
+              value={form.vendorType}
+              onChange={(e) => setForm({ ...form, vendorType: e.target.value })}
+            />
+            <datalist id="vendor-type-options">
+              {vendorTypeOptions.map((type) => (
+                <option key={type} value={type} />
+              ))}
+            </datalist>
+          </div>
+          <div>
+            <label htmlFor="vendor-gstin">GSTIN (optional)</label>
+            <input
+              id="vendor-gstin"
+              className={`input${fieldErrors.gstin ? " input--error" : ""}`}
+              placeholder="15 character GSTIN"
+              maxLength={15}
+              value={form.gstin}
+              onChange={(e) => {
+                setFieldErrors((prev) => {
+                  const next = { ...prev };
+                  delete next.gstin;
+                  return next;
+                });
+                setForm({ ...form, gstin: e.target.value.toUpperCase() });
+              }}
+            />
+            <span className="field-hint">Format: 27ABCDE1234F1Z5 (15 characters).</span>
+            {fieldErrors.gstin ? <span className="field-error">{fieldErrors.gstin}</span> : null}
           </div>
           <div>
             <label htmlFor="vendor-mobile">Mobile (optional)</label>

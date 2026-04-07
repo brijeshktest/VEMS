@@ -6,6 +6,7 @@ import {
   validateOptionalAadhaar,
   validateOptionalIndianMobile,
   validateOptionalEmail,
+  validateOptionalGstin,
   validateVendorContactPayload
 } from "./indianValidators.js";
 
@@ -51,9 +52,21 @@ test("Email normalizes case", () => {
   assert.equal(r.value, "test@example.com");
 });
 
+test("GSTIN accepts valid format", () => {
+  const r = validateOptionalGstin("27abcde1234f1z5");
+  assert.equal(r.ok, true);
+  assert.equal(r.value, "27ABCDE1234F1Z5");
+});
+
+test("GSTIN rejects invalid format", () => {
+  const r = validateOptionalGstin("2AABCDE1234F1Z5");
+  assert.equal(r.ok, false);
+});
+
 test("validateVendorContactPayload aggregates optional fields", () => {
   const r = validateVendorContactPayload({
     email: "a@b.co",
+    gstin: "",
     pan: "",
     aadhaar: "",
     contactNumber: ""

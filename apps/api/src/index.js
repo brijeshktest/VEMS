@@ -11,6 +11,7 @@ import roleRoutes from "./routes/roles.js";
 import userRoutes from "./routes/users.js";
 import roomRoutes, { ensureRoomsSeeded } from "./routes/rooms.js";
 import stageRoutes from "./routes/stages.js";
+import settingsRoutes from "./routes/settings.js";
 
 dotenv.config();
 
@@ -31,6 +32,7 @@ app.use("/roles", roleRoutes);
 app.use("/users", userRoutes);
 app.use("/rooms", roomRoutes);
 app.use("/stages", stageRoutes);
+app.use("/settings", settingsRoutes);
 
 app.use((err, req, res, next) => {
   // eslint-disable-next-line no-console

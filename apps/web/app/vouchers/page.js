@@ -7,10 +7,12 @@ import AttachmentListCell from "../../components/AttachmentListCell.js";
 
 const initialForm = {
   vendorId: "",
+  voucherNumber: "",
   dateOfPurchase: new Date().toISOString().slice(0, 10),
   taxPercent: 0,
   discountType: "none",
   discountValue: 0,
+  paidAmount: 0,
   paymentMethod: "Cash",
   paymentStatus: "Pending",
   paymentDate: "",
@@ -30,6 +32,23 @@ function computeTotals(items, taxPercent, discountType, discountValue) {
   return { subTotal, taxAmount, finalAmount: Math.max(0, total) };
 }
 
+/** Select-all on focus so default numeric values (0, 1) are replaced on first keystroke; mousedown guard avoids clearing selection on click. */
+function numericFieldMouseDown(e) {
+  if (document.activeElement === e.currentTarget) {
+    e.preventDefault();
+  }
+}
+
+function numericFieldFocus(e) {
+  const el = e.currentTarget;
+  requestAnimationFrame(() => el.select());
+}
+
+function dateFieldFocus(e) {
+  const el = e.currentTarget;
+  requestAnimationFrame(() => el.select());
+}
+
 export default function VouchersPage() {
   const [vouchers, setVouchers] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -41,6 +60,7 @@ export default function VouchersPage() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
   const fileInputRef = useRef(null);
+  const [paidAmountManuallySet, setPaidAmountManuallySet] = useState(false);
 
   async function load() {
     try {
@@ -67,6 +87,12 @@ export default function VouchersPage() {
   }, [materials, form.vendorId]);
 
   const totals = computeTotals(items, Number(form.taxPercent), form.discountType, Number(form.discountValue));
+
+  useEffect(() => {
+    if (!paidAmountManuallySet) {
+      setForm((prev) => ({ ...prev, paidAmount: Number(totals.finalAmount.toFixed(2)) }));
+    }
+  }, [totals.finalAmount, paidAmountManuallySet]);
 
   function updateItem(index, field, value) {
     setItems((prev) => prev.map((item, idx) => (idx === index ? { ...item, [field]: value } : item)));
@@ -105,6 +131,7 @@ export default function VouchersPage() {
         await apiFetchForm("/vouchers", fd, { method: "POST" });
       }
       setForm(initialForm);
+      setPaidAmountManuallySet(false);
       setItems([{ materialId: "", quantity: 1, pricePerUnit: 0, comment: "" }]);
       setEditingId(null);
       setPendingFiles([]);
@@ -120,10 +147,12 @@ export default function VouchersPage() {
     setEditingId(voucher._id);
     setForm({
       vendorId: voucher.vendorId?.toString?.() || voucher.vendorId,
+      voucherNumber: voucher.voucherNumber || "",
       dateOfPurchase: new Date(voucher.dateOfPurchase).toISOString().slice(0, 10),
       taxPercent: voucher.taxPercent ?? 0,
       discountType: voucher.discountType ?? "none",
       discountValue: voucher.discountValue ?? 0,
+      paidAmount: voucher.paidAmount ?? voucher.finalAmount ?? 0,
       paymentMethod: voucher.paymentMethod || "Cash",
       paymentStatus: voucher.paymentStatus || "Pending",
       paymentDate: voucher.paymentDate ? new Date(voucher.paymentDate).toISOString().slice(0, 10) : "",
@@ -138,6 +167,7 @@ export default function VouchersPage() {
         comment: item.comment || ""
       }))
     );
+    setPaidAmountManuallySet(true);
     setPendingFiles([]);
     setRemovedAttachmentIds([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -146,6 +176,7 @@ export default function VouchersPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(initialForm);
+    setPaidAmountManuallySet(false);
     setItems([{ materialId: "", quantity: 1, pricePerUnit: 0, comment: "" }]);
     setPendingFiles([]);
     setRemovedAttachmentIds([]);
@@ -182,9 +213,11 @@ export default function VouchersPage() {
         const vendor = vendors.find((v) => String(v._id) === String(vid));
         const base = {
           Date: new Date(voucher.dateOfPurchase).toLocaleDateString(),
+          "Voucher no.": voucher.voucherNumber || "",
           Vendor: vendor?.name || "Unknown",
           "Payment method": voucher.paymentMethod || "",
-          Total: Number(voucher.finalAmount),
+          "Voucher amount": Number(voucher.finalAmount),
+          "Paid amount": Number(voucher.paidAmount ?? voucher.finalAmount ?? 0),
           Status: voucher.paymentStatus,
           "Created By": voucher.createdByName || "-",
           "Status Updated By": voucher.statusUpdatedByName || "-"
@@ -265,7 +298,18 @@ export default function VouchersPage() {
                 type="date"
                 value={form.dateOfPurchase}
                 onChange={(e) => setForm({ ...form, dateOfPurchase: e.target.value })}
+                onMouseDown={numericFieldMouseDown}
+                onFocus={dateFieldFocus}
                 required
+              />
+            </div>
+            <div>
+              <label>Voucher number</label>
+              <input
+                className="input"
+                type="text"
+                value={form.voucherNumber}
+                onChange={(e) => setForm({ ...form, voucherNumber: e.target.value })}
               />
             </div>
             <div>
@@ -314,6 +358,8 @@ export default function VouchersPage() {
                       step="0.01"
                       value={item.quantity}
                       onChange={(e) => updateItem(index, "quantity", Number(e.target.value))}
+                      onMouseDown={numericFieldMouseDown}
+                      onFocus={numericFieldFocus}
                       required
                     />
                     <span style={{ minWidth: 60 }}>
@@ -330,6 +376,8 @@ export default function VouchersPage() {
                     step="0.01"
                     value={item.pricePerUnit}
                     onChange={(e) => updateItem(index, "pricePerUnit", Number(e.target.value))}
+                    onMouseDown={numericFieldMouseDown}
+                    onFocus={numericFieldFocus}
                     required
                   />
                 </div>
@@ -365,6 +413,8 @@ export default function VouchersPage() {
                 step="0.01"
                 value={form.taxPercent}
                 onChange={(e) => setForm({ ...form, taxPercent: Number(e.target.value) })}
+                onMouseDown={numericFieldMouseDown}
+                onFocus={numericFieldFocus}
               />
             </div>
             <div>
@@ -388,6 +438,24 @@ export default function VouchersPage() {
                 step="0.01"
                 value={form.discountValue}
                 onChange={(e) => setForm({ ...form, discountValue: Number(e.target.value) })}
+                onMouseDown={numericFieldMouseDown}
+                onFocus={numericFieldFocus}
+              />
+            </div>
+            <div>
+              <label>Paid amount</label>
+              <input
+                className="input"
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.paidAmount}
+                onChange={(e) => {
+                  setPaidAmountManuallySet(true);
+                  setForm({ ...form, paidAmount: Number(e.target.value) });
+                }}
+                onMouseDown={numericFieldMouseDown}
+                onFocus={numericFieldFocus}
               />
             </div>
             <div>
@@ -422,6 +490,8 @@ export default function VouchersPage() {
                   type="date"
                   value={form.paymentDate}
                   onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
+                  onMouseDown={numericFieldMouseDown}
+                  onFocus={dateFieldFocus}
                 />
               </div>
               <div>
@@ -461,6 +531,9 @@ export default function VouchersPage() {
             </p>
             <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
               <strong>Final amount:</strong> {totals.finalAmount.toFixed(2)}
+            </p>
+            <p style={{ margin: "6px 0 0", fontSize: 14 }}>
+              <strong>Paid amount:</strong> {Number(form.paidAmount || 0).toFixed(2)}
             </p>
           </div>
 
@@ -536,8 +609,10 @@ export default function VouchersPage() {
           <thead>
             <tr>
               <th>Date</th>
+              <th>Voucher no.</th>
               <th>Vendor</th>
-              <th>Total</th>
+              <th>Voucher amount</th>
+              <th>Paid amount</th>
               <th>Documents</th>
               <th>Status</th>
               <th>Created By</th>
@@ -551,8 +626,10 @@ export default function VouchersPage() {
               return (
                 <tr key={voucher._id}>
                   <td>{new Date(voucher.dateOfPurchase).toLocaleDateString()}</td>
+                  <td>{voucher.voucherNumber || "-"}</td>
                   <td>{vendor?.name || "Unknown"}</td>
                   <td>{voucher.finalAmount.toFixed(2)}</td>
+                  <td>{Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2)}</td>
                   <td>
                     <AttachmentListCell entity={voucher} kind="voucher" />
                   </td>

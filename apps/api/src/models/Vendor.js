@@ -10,6 +10,8 @@ const VendorSchema = new mongoose.Schema(
     email: { type: String, trim: true },
     pan: { type: String, trim: true, default: "" },
     aadhaar: { type: String, trim: true, default: "" },
+    gstin: { type: String, trim: true, default: "" },
+    vendorType: { type: String, trim: true, default: "" },
     materialsSupplied: [{ type: mongoose.Schema.Types.ObjectId, ref: "Material" }],
     status: { type: String, enum: ["Active", "Inactive"], default: "Active" },
     attachments: { type: [AttachmentSchema], default: [] }
