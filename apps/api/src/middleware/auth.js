@@ -56,6 +56,9 @@ export function requirePermission(moduleKey, action) {
     if (req.user.role === "admin") {
       return next();
     }
+    if (action === "delete") {
+      return res.status(403).json({ error: "Only admins can delete records" });
+    }
     const permissions = await resolvePermissions(req.user.roleIds || []);
     const modulePerms = permissions[moduleKey];
     if (!modulePerms || !modulePerms[action]) {

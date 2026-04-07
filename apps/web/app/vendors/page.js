@@ -48,16 +48,32 @@ export default function VendorsPage() {
   const [fieldErrors, setFieldErrors] = useState({});
   const [pendingFiles, setPendingFiles] = useState([]);
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
+  const [isAdmin, setIsAdmin] = useState(false);
   const fileInputRef = useRef(null);
 
   async function load() {
     try {
-      const data = await apiFetch("/vendors");
+      const [data, me] = await Promise.all([apiFetch("/vendors"), apiFetch("/auth/me")]);
       setVendors(data);
+      setIsAdmin(me?.user?.role === "admin");
     } catch (err) {
       setError(err.message);
     }
   }
+  async function deleteVendor(vendorId) {
+    if (!isAdmin) return;
+    setError("");
+    try {
+      await apiFetch(`/vendors/${vendorId}`, { method: "DELETE" });
+      if (editingId === vendorId) {
+        cancelEdit();
+      }
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
 
   useEffect(() => {
     load();
@@ -411,6 +427,11 @@ export default function VendorsPage() {
                   <button className="btn btn-secondary" type="button" onClick={() => startEdit(vendor)}>
                     Edit
                   </button>
+                  {isAdmin ? (
+                    <button className="btn btn-secondary" type="button" onClick={() => deleteVendor(vendor._id)}>
+                      Delete
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}

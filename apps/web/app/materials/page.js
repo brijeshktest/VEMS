@@ -18,18 +18,21 @@ export default function MaterialsPage() {
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const [isAdmin, setIsAdmin] = useState(false);
   const categoryOptions = Array.from(
     new Set(materials.map((material) => (material.category || "").trim()).filter(Boolean))
   );
 
   async function load() {
     try {
-      const [materialData, vendorData] = await Promise.all([
+      const [materialData, vendorData, meData] = await Promise.all([
         apiFetch("/materials"),
-        apiFetch("/vendors")
+        apiFetch("/vendors"),
+        apiFetch("/auth/me")
       ]);
       setMaterials(materialData);
       setVendors(vendorData);
+      setIsAdmin(meData?.user?.role === "admin");
     } catch (err) {
       setError(err.message);
     }
@@ -86,6 +89,20 @@ export default function MaterialsPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(initialForm);
+  }
+
+  async function deleteMaterial(materialId) {
+    if (!isAdmin) return;
+    setError("");
+    try {
+      await apiFetch(`/materials/${materialId}`, { method: "DELETE" });
+      if (editingId === materialId) {
+        cancelEdit();
+      }
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   return (
@@ -184,6 +201,11 @@ export default function MaterialsPage() {
                   <button className="btn btn-secondary" type="button" onClick={() => startEdit(material)}>
                     Edit
                   </button>
+                  {isAdmin ? (
+                    <button className="btn btn-secondary" type="button" onClick={() => deleteMaterial(material._id)}>
+                      Delete
+                    </button>
+                  ) : null}
                 </td>
               </tr>
             ))}

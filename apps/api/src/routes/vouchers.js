@@ -15,6 +15,7 @@ import {
   unlinkTmpFiles
 } from "../utils/fileUpload.js";
 import fs from "node:fs/promises";
+import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
 const upload = multerTmpUpload();
@@ -211,6 +212,14 @@ router.post("/", requireAuth, requirePermission("vouchers", "create"), condition
       voucher.attachments.push(...meta);
       await voucher.save();
     }
+    await logChange({
+      entityType: "voucher",
+      entityId: voucher._id,
+      action: "create",
+      user: req.user,
+      before: null,
+      after: voucher.toObject()
+    });
     return res.status(201).json(voucher);
   } catch (e) {
     await unlinkTmpFiles(req.files);
@@ -228,6 +237,7 @@ router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), condition
     await unlinkTmpFiles(req.files);
     return res.status(404).json({ error: "Voucher not found" });
   }
+  const before = voucher.toObject();
   const payload = extractVoucherPayload(req);
   if (payload === null) {
     await unlinkTmpFiles(req.files);
@@ -309,6 +319,14 @@ router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), condition
     }
   }
   await voucher.save();
+  await logChange({
+    entityType: "voucher",
+    entityId: voucher._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: voucher.toObject()
+  });
   return res.json(voucher);
 });
 
@@ -318,8 +336,17 @@ router.delete("/:id", requireAuth, requirePermission("vouchers", "delete"), asyn
     return res.status(404).json({ error: "Voucher not found" });
   }
   const idStr = voucher._id.toString();
+  const before = voucher.toObject();
   await voucher.deleteOne();
   await deleteEntityUploadFolder("vouchers", idStr);
+  await logChange({
+    entityType: "voucher",
+    entityId: idStr,
+    action: "delete",
+    user: req.user,
+    before,
+    after: null
+  });
   return res.json({ ok: true });
 });
 

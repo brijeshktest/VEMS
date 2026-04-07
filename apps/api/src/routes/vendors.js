@@ -13,6 +13,7 @@ import {
   attachmentFilePath,
   unlinkTmpFiles
 } from "../utils/fileUpload.js";
+import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
 const upload = multerTmpUpload();
@@ -196,6 +197,14 @@ router.post("/", requireAuth, requirePermission("vendors", "create"), conditiona
       vendor.attachments.push(...meta);
       await vendor.save();
     }
+    await logChange({
+      entityType: "vendor",
+      entityId: vendor._id,
+      action: "create",
+      user: req.user,
+      before: null,
+      after: vendor.toObject()
+    });
     return res.status(201).json(vendor);
   } catch (e) {
     await unlinkTmpFiles(req.files);
@@ -214,6 +223,7 @@ router.put("/:id", requireAuth, requirePermission("vendors", "edit"), conditiona
     return res.status(404).json({ error: "Vendor not found" });
   }
   const body = isMultipartRequest(req) ? normalizeVendorBody(req) : req.body;
+  const before = vendor.toObject();
   const removedIds = parseRemovedAttachmentIds(req);
   const toRemove = vendor.attachments.filter((a) => removedIds.includes(a._id.toString()));
   if (toRemove.length) {
@@ -252,6 +262,14 @@ router.put("/:id", requireAuth, requirePermission("vendors", "edit"), conditiona
     }
   }
   await vendor.save();
+  await logChange({
+    entityType: "vendor",
+    entityId: vendor._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: vendor.toObject()
+  });
   return res.json(vendor);
 });
 
@@ -261,8 +279,17 @@ router.delete("/:id", requireAuth, requirePermission("vendors", "delete"), async
     return res.status(404).json({ error: "Vendor not found" });
   }
   const idStr = vendor._id.toString();
+  const before = vendor.toObject();
   await vendor.deleteOne();
   await deleteEntityUploadFolder("vendors", idStr);
+  await logChange({
+    entityType: "vendor",
+    entityId: idStr,
+    action: "delete",
+    user: req.user,
+    before,
+    after: null
+  });
   return res.json({ ok: true });
 });
 

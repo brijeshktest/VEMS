@@ -3,6 +3,7 @@ import GrowingRoom from "../models/GrowingRoom.js";
 import Stage from "../models/Stage.js";
 import { requireAuth, requireAdmin, requirePermission, resolvePermissions } from "../middleware/auth.js";
 import { requireFields, ensurePositive } from "../utils/validators.js";
+import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
 
@@ -99,6 +100,14 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
     maxBagCapacity: maxBagCapacity.value,
     powerBackupSource: req.body.powerBackupSource || ""
   });
+  await logChange({
+    entityType: "room",
+    entityId: room._id,
+    action: "create",
+    user: req.user,
+    before: null,
+    after: room.toObject()
+  });
   return res.status(201).json(room);
 });
 
@@ -107,6 +116,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
+  const before = room.toObject();
   if (req.body.maxBagCapacity !== undefined) {
     const maxBagCapacity = ensurePositive(req.body.maxBagCapacity, "maxBagCapacity");
     if (!maxBagCapacity.ok) {
@@ -117,6 +127,14 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   room.name = req.body.name ?? room.name;
   room.powerBackupSource = req.body.powerBackupSource ?? room.powerBackupSource;
   await room.save();
+  await logChange({
+    entityType: "room",
+    entityId: room._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: room.toObject()
+  });
   return res.json(room);
 });
 
@@ -125,6 +143,7 @@ router.post("/:id/move-stage", requireAuth, requirePermission("roomStages", "edi
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
+  const before = room.toObject();
   const stages = await Stage.find().sort({ sequenceOrder: 1 });
   if (!stages.length) {
     return res.status(400).json({ error: "No stages configured" });
@@ -151,6 +170,14 @@ router.post("/:id/move-stage", requireAuth, requirePermission("roomStages", "edi
     thumping: false
   };
   await room.save();
+  await logChange({
+    entityType: "room",
+    entityId: room._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: room.toObject()
+  });
   const populated = await room.populate("currentStageId");
   return res.json(populated);
 });
@@ -160,6 +187,7 @@ router.post("/:id/init-stage", requireAuth, requirePermission("roomStages", "edi
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
+  const before = room.toObject();
   const stages = await Stage.find().sort({ sequenceOrder: 1 });
   if (!stages.length) {
     return res.status(400).json({ error: "No stages configured" });
@@ -174,6 +202,14 @@ router.post("/:id/init-stage", requireAuth, requirePermission("roomStages", "edi
     thumping: false
   };
   await room.save();
+  await logChange({
+    entityType: "room",
+    entityId: room._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: room.toObject()
+  });
   const populated = await room.populate("currentStageId");
   return res.json(populated);
 });
@@ -183,6 +219,7 @@ router.post("/:id/activities", requireAuth, requirePermission("roomActivities", 
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
+  const before = room.toObject();
   const { activity, done } = req.body;
   if (!activity || !["watering", "ruffling", "thumping"].includes(activity)) {
     return res.status(400).json({ error: "Invalid activity" });
@@ -198,6 +235,14 @@ router.post("/:id/activities", requireAuth, requirePermission("roomActivities", 
     [activity]: Boolean(done)
   };
   await room.save();
+  await logChange({
+    entityType: "room",
+    entityId: room._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: room.toObject()
+  });
   return res.json({ ok: true, activityStatus: room.activityStatus });
 });
 
@@ -206,7 +251,16 @@ router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
+  const before = room.toObject();
   await room.deleteOne();
+  await logChange({
+    entityType: "room",
+    entityId: room._id,
+    action: "delete",
+    user: req.user,
+    before,
+    after: null
+  });
   return res.json({ ok: true });
 });
 

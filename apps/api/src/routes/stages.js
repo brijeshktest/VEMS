@@ -2,6 +2,7 @@ import express from "express";
 import Stage from "../models/Stage.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 import { requireFields, ensurePositive } from "../utils/validators.js";
+import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
 
@@ -55,6 +56,14 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
     notes: req.body.notes || "",
     activities: normalizeActivities(req.body.activities || {})
   });
+  await logChange({
+    entityType: "stage",
+    entityId: stage._id,
+    action: "create",
+    user: req.user,
+    before: null,
+    after: stage.toObject()
+  });
   return res.status(201).json(stage);
 });
 
@@ -63,6 +72,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   if (!stage) {
     return res.status(404).json({ error: "Stage not found" });
   }
+  const before = stage.toObject();
   if (req.body.sequenceOrder !== undefined) {
     const sequenceOrder = ensurePositive(req.body.sequenceOrder, "sequenceOrder");
     if (!sequenceOrder.ok) {
@@ -108,6 +118,14 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
     stage.activities = normalizeActivities(req.body.activities);
   }
   await stage.save();
+  await logChange({
+    entityType: "stage",
+    entityId: stage._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: stage.toObject()
+  });
   return res.json(stage);
 });
 
@@ -116,7 +134,16 @@ router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
   if (!stage) {
     return res.status(404).json({ error: "Stage not found" });
   }
+  const before = stage.toObject();
   await stage.deleteOne();
+  await logChange({
+    entityType: "stage",
+    entityId: stage._id,
+    action: "delete",
+    user: req.user,
+    before,
+    after: null
+  });
   return res.json({ ok: true });
 });
 

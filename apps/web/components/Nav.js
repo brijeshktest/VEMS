@@ -3,15 +3,8 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { apiFetch, API_URL, getToken, setToken } from "../lib/api.js";
-
-const links = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/vendors", label: "Vendors" },
-  { href: "/materials", label: "Materials" },
-  { href: "/vouchers", label: "Vouchers" },
-  { href: "/reports", label: "Reports" }
-];
+import { API_URL, getToken, setToken } from "../lib/api.js";
+import { getWorkMode, setWorkMode } from "../lib/workMode.js";
 
 function linkClass(pathname, href) {
   const path = pathname ?? "";
@@ -25,8 +18,7 @@ export default function Nav() {
   const pathname = usePathname();
   const router = useRouter();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [allowRoomOps, setAllowRoomOps] = useState(false);
+  const [workMode, setWorkModeState] = useState("");
   const [logoUpdatedAt, setLogoUpdatedAt] = useState(null);
 
   useEffect(() => {
@@ -60,44 +52,46 @@ export default function Nav() {
   useEffect(() => {
     const token = getToken();
     setIsAuthenticated(Boolean(token));
-    if (!token) {
-      setIsAdmin(false);
-      setAllowRoomOps(false);
+    setWorkModeState(getWorkMode());
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (pathname === "/work-mode") return;
+    const mode = getWorkMode();
+    if (!mode) {
+      router.replace("/work-mode");
       return;
     }
-    async function loadAccess() {
-      try {
-        const meData = await apiFetch("/auth/me");
-        const admin = meData.user?.role === "admin";
-        setIsAdmin(admin);
-        if (admin) {
-          setAllowRoomOps(true);
-          return;
-        }
-        const permData = await apiFetch("/auth/permissions");
-        if (permData.permissions === "all") {
-          setAllowRoomOps(true);
-          return;
-        }
-        const canRoomStages = Boolean(permData.permissions?.roomStages?.view || permData.permissions?.roomStages?.edit);
-        const canRoomActivities = Boolean(
-          permData.permissions?.roomActivities?.view || permData.permissions?.roomActivities?.edit
-        );
-        setAllowRoomOps(canRoomStages || canRoomActivities);
-      } catch {
-        setIsAdmin(false);
-        setAllowRoomOps(false);
-      }
-    }
-
-    loadAccess();
-  }, [pathname]);
+    setWorkModeState(mode);
+  }, [isAuthenticated, pathname, router]);
 
   function handleLogout() {
     setToken(null);
+    setWorkMode("");
     setIsAuthenticated(false);
     router.push("/login");
   }
+
+  const links = pathname === "/work-mode"
+    ? []
+    :
+    workMode === "room"
+      ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/room-ops", label: "Room ops" }]
+      : workMode === "admin"
+        ? [
+            { href: "/dashboard", label: "Dashboard" },
+            { href: "/admin", label: "Admin" },
+            { href: "/admin/rooms", label: "Rooms" },
+            { href: "/admin/stages", label: "Stages" }
+          ]
+        : [
+            { href: "/dashboard", label: "Dashboard" },
+            { href: "/vendors", label: "Vendors" },
+            { href: "/materials", label: "Materials" },
+            { href: "/vouchers", label: "Vouchers" },
+            { href: "/reports", label: "Reports" }
+          ];
 
   return (
     <nav className="nav">
@@ -129,17 +123,20 @@ export default function Nav() {
                   {item.label}
                 </Link>
               ))}
-              {isAdmin ? (
-                <Link href="/admin" className={linkClass(pathname, "/admin")}>
-                  Admin
-                </Link>
-              ) : null}
-              {allowRoomOps ? (
-                <Link href="/room-ops" className={linkClass(pathname, "/room-ops")}>
-                  Room ops
-                </Link>
-              ) : null}
               <span className="nav-actions">
+                {pathname !== "/work-mode" ? (
+                  <button
+                    className="btn btn-secondary btn-nav-logout"
+                    type="button"
+                    onClick={() => {
+                      setWorkMode("");
+                      setWorkModeState("");
+                      router.push("/work-mode");
+                    }}
+                  >
+                    Switch area
+                  </button>
+                ) : null}
                 <button className="btn btn-secondary btn-nav-logout" type="button" onClick={handleLogout}>
                   Log out
                 </button>

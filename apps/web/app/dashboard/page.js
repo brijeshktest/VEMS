@@ -3,50 +3,72 @@
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api.js";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import PageHeader from "../../components/PageHeader.js";
+import { getWorkMode } from "../../lib/workMode.js";
 
 export default function DashboardPage() {
+  const router = useRouter();
   const [summary, setSummary] = useState(null);
   const [vendors, setVendors] = useState([]);
   const [materials, setMaterials] = useState([]);
   const [tax, setTax] = useState(null);
   const [roomPrompts, setRoomPrompts] = useState([]);
   const [roomSummary, setRoomSummary] = useState([]);
-  const [roomSummaryOpen, setRoomSummaryOpen] = useState(false);
+  const [vendorTaxOpen, setVendorTaxOpen] = useState(false);
+  const [voucherLatestOpen, setVoucherLatestOpen] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [workMode, setWorkMode] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
       try {
+        const selectedMode = getWorkMode();
+        if (!selectedMode) {
+          router.replace("/work-mode");
+          return;
+        }
+        setWorkMode(selectedMode);
         const permissionsData = await apiFetch("/auth/permissions");
-        const [summaryData, vendorData, materialData, taxData] = await Promise.all([
-          apiFetch("/reports/expenses"),
-          apiFetch("/reports/vendor-expenses"),
-          apiFetch("/reports/material-summary"),
-          apiFetch("/reports/tax-payments")
-        ]);
-        setSummary(summaryData);
-        setVendors(vendorData.slice(0, 5));
-        setMaterials(materialData.slice(0, 5));
-        setTax(taxData);
         const allowRoomStages =
           permissionsData.permissions === "all" ||
           permissionsData.permissions?.roomStages?.edit ||
           permissionsData.permissions?.roomStages?.view;
-        if (allowRoomStages) {
+        const admin = permissionsData.permissions === "all";
+        setIsAdmin(admin);
+        if (selectedMode === "admin" && !admin) {
+          router.replace("/work-mode");
+          return;
+        }
+
+        if (selectedMode === "expense" || selectedMode === "admin") {
+          const [summaryData, vendorData, materialData, taxData] = await Promise.all([
+            apiFetch("/reports/expenses"),
+            apiFetch("/reports/vendor-expenses"),
+            apiFetch("/reports/material-summary"),
+            apiFetch("/reports/tax-payments")
+          ]);
+          setSummary(summaryData);
+          setVendors(vendorData.slice(0, 5));
+          setMaterials(materialData.slice(0, 5));
+          setTax(taxData);
+        }
+        if (selectedMode === "room" || selectedMode === "admin") {
+          if (!allowRoomStages) {
+            router.replace("/work-mode");
+            return;
+          }
           const roomData = await apiFetch("/rooms/status");
           setRoomPrompts(roomData.filter((room) => room.dueNextStage));
           setRoomSummary(roomData);
-        } else {
-          setRoomPrompts([]);
-          setRoomSummary([]);
         }
       } catch (err) {
         setError(err.message);
       }
     }
     load();
-  }, []);
+  }, [router]);
 
   async function moveRoom(roomId) {
     try {
@@ -66,12 +88,18 @@ export default function DashboardPage() {
       <PageHeader
         eyebrow="Overview"
         title="Dashboard"
-        description="Spend, tax, and voucher activity at a glance. Jump to reports or vouchers for detail."
+        description={
+          workMode === "room"
+            ? "Room operations summary and stage movement status."
+            : workMode === "admin"
+              ? "Administrative overview with operations and financial visibility."
+              : "Spend, tax, and voucher activity at a glance."
+        }
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
 
-      <div className="grid grid-3">
+      {(workMode === "expense" || workMode === "admin") && summary ? <div className="grid grid-3">
         <Link className="stat-link" href="/reports">
           <div className="card stat-card">
             <span className="stat-label">Total paid amount</span>
@@ -93,9 +121,9 @@ export default function DashboardPage() {
             <span className="stat-hint">View vouchers →</span>
           </div>
         </Link>
-      </div>
+      </div> : null}
 
-      {roomPrompts.length ? (
+      {(workMode === "room" || workMode === "admin") && roomPrompts.length ? (
         <div className="card">
           <h3 className="panel-title">Room stage prompts</h3>
           <p className="page-lead" style={{ marginBottom: 16 }}>
@@ -134,52 +162,38 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {roomSummary.length ? (
-        <div className="card collapsible-card">
-          <button
-            type="button"
-            className="collapsible-card__toggle"
-            onClick={() => setRoomSummaryOpen((o) => !o)}
-            aria-expanded={roomSummaryOpen}
-          >
-            <span className="collapsible-card__title">Room operations summary</span>
-            <span className="collapsible-card__chevron" aria-hidden>
-              {roomSummaryOpen ? "▼" : "▶"}
-            </span>
-          </button>
-          {roomSummaryOpen ? (
-            <>
-              <p className="page-lead" style={{ margin: "0 0 16px" }}>
-                Current stage and timing across all growing rooms.
-              </p>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Room</th>
-                      <th>Current Stage</th>
-                      <th>Day</th>
-                      <th>Due</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {roomSummary.map((room) => (
-                      <tr key={room.id} className={room.dueNextStage ? "highlight-row" : ""}>
-                        <td>{room.name}</td>
-                        <td>{room.currentStage?.name || "-"}</td>
-                        <td>{room.currentStage ? `Day ${room.daysElapsed}` : "-"}</td>
-                        <td>{room.dueNextStage ? "Overdue" : "No"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          ) : null}
+      {(workMode === "room" || workMode === "admin") && roomSummary.length ? (
+        <div className="card">
+          <h3 className="panel-title">Room operations summary</h3>
+          <p className="page-lead" style={{ margin: "0 0 16px" }}>
+            Current stage and timing across all growing rooms.
+          </p>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Room</th>
+                  <th>Current Stage</th>
+                  <th>Day</th>
+                  <th>Due</th>
+                </tr>
+              </thead>
+              <tbody>
+                {roomSummary.map((room) => (
+                  <tr key={room.id} className={room.dueNextStage ? "highlight-row" : ""}>
+                    <td>{room.name}</td>
+                    <td>{room.currentStage?.name || "-"}</td>
+                    <td>{room.currentStage ? `Day ${room.daysElapsed}` : "-"}</td>
+                    <td>{room.dueNextStage ? "Overdue" : "No"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 
-      <div className="grid grid-2">
+      {(workMode === "expense" || workMode === "admin") && vendors.length ? <div className="grid grid-2">
         <div className="card">
           <h3 className="panel-title">Top vendors</h3>
           <div className="table-wrap">
@@ -227,9 +241,9 @@ export default function DashboardPage() {
           </table>
           </div>
         </div>
-      </div>
+      </div> : null}
 
-      <div className="card">
+      {(workMode === "expense" || workMode === "admin") ? <div className="card">
         <h3 className="panel-title">Payment summary</h3>
         {tax ? (
           <div className="panel-inset" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -251,87 +265,111 @@ export default function DashboardPage() {
             </div>
 
             <div>
-              <h4 style={{ margin: "0 0 10px", fontSize: 14 }}>Vendor-wise spend and tax</h4>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Vendor</th>
-                      <th>Vouchers</th>
-                      <th>Tax</th>
-                      <th>Paid amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(tax.vendorPayments || []).length ? (
-                      (tax.vendorPayments || []).map((row) => (
-                        <tr key={String(row._id)}>
-                          <td>{row.vendor?.name || "—"}</td>
-                          <td>{row.voucherCount}</td>
-                          <td>{row.totalTax.toFixed(2)}</td>
-                          <td>{row.totalPaidAmount.toFixed(2)}</td>
-                        </tr>
-                      ))
-                    ) : (
+              <button
+                type="button"
+                className="section-toggle"
+                onClick={() => setVendorTaxOpen((o) => !o)}
+                aria-expanded={vendorTaxOpen}
+              >
+                <span className="section-toggle__title">Vendor-wise spend and tax</span>
+                <span className="section-toggle__chevron" aria-hidden>
+                  {vendorTaxOpen ? "▼" : "▶"}
+                </span>
+              </button>
+              {vendorTaxOpen ? (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
                       <tr>
-                        <td colSpan={4}>
-                          <span className="page-lead" style={{ margin: 0 }}>
-                            No vouchers in range.
-                          </span>
-                        </td>
+                        <th>Vendor</th>
+                        <th>Vouchers</th>
+                        <th>Tax</th>
+                        <th>Paid amount</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(tax.vendorPayments || []).length ? (
+                        (tax.vendorPayments || []).map((row) => (
+                          <tr key={String(row._id)}>
+                            <td>{row.vendor?.name || "—"}</td>
+                            <td>{row.voucherCount}</td>
+                            <td>{row.totalTax.toFixed(2)}</td>
+                            <td>{row.totalPaidAmount.toFixed(2)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4}>
+                            <span className="page-lead" style={{ margin: 0 }}>
+                              No vouchers in range.
+                            </span>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </div>
 
             <div>
-              <h4 style={{ margin: "0 0 10px", fontSize: 14 }}>Voucher-wise (latest 30)</h4>
-              <div className="table-wrap">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Voucher no.</th>
-                      <th>Vendor</th>
-                      <th>Paid amount</th>
-                      <th>Tax</th>
-                      <th>Status</th>
-                      <th>Method</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(tax.voucherPayments || []).length ? (
-                      (tax.voucherPayments || []).map((row) => (
-                        <tr key={String(row._id)}>
-                          <td>{new Date(row.dateOfPurchase).toLocaleDateString()}</td>
-                          <td>{row.voucherNumber || "-"}</td>
-                          <td>{row.vendorName || "—"}</td>
-                          <td>{row.paidAmount.toFixed(2)}</td>
-                          <td>{row.taxAmount.toFixed(2)}</td>
-                          <td>{row.paymentStatus}</td>
-                          <td>{row.paymentMethod}</td>
-                        </tr>
-                      ))
-                    ) : (
+              <button
+                type="button"
+                className="section-toggle"
+                onClick={() => setVoucherLatestOpen((o) => !o)}
+                aria-expanded={voucherLatestOpen}
+              >
+                <span className="section-toggle__title">Voucher-wise (latest 30)</span>
+                <span className="section-toggle__chevron" aria-hidden>
+                  {voucherLatestOpen ? "▼" : "▶"}
+                </span>
+              </button>
+              {voucherLatestOpen ? (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
                       <tr>
-                        <td colSpan={7}>
-                          <span className="page-lead" style={{ margin: 0 }}>
-                            No vouchers in range.
-                          </span>
-                        </td>
+                        <th>Date</th>
+                        <th>Voucher no.</th>
+                        <th>Vendor</th>
+                        <th>Paid amount</th>
+                        <th>Tax</th>
+                        <th>Status</th>
+                        <th>Method</th>
                       </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {(tax.voucherPayments || []).length ? (
+                        (tax.voucherPayments || []).map((row) => (
+                          <tr key={String(row._id)}>
+                            <td>{new Date(row.dateOfPurchase).toLocaleDateString()}</td>
+                            <td>{row.voucherNumber || "-"}</td>
+                            <td>{row.vendorName || "—"}</td>
+                            <td>{row.paidAmount.toFixed(2)}</td>
+                            <td>{row.taxAmount.toFixed(2)}</td>
+                            <td>{row.paymentStatus}</td>
+                            <td>{row.paymentMethod}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={7}>
+                            <span className="page-lead" style={{ margin: 0 }}>
+                              No vouchers in range.
+                            </span>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
             </div>
           </div>
         ) : (
           <p className="page-lead">Loading payment data…</p>
         )}
-      </div>
+      </div> : null}
     </div>
   );
 }

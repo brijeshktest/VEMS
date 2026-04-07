@@ -1,0 +1,78 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { apiFetch } from "../../lib/api.js";
+import { getWorkMode, setWorkMode } from "../../lib/workMode.js";
+import PageHeader from "../../components/PageHeader.js";
+
+export default function WorkModePage() {
+  const router = useRouter();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [allowRoomOps, setAllowRoomOps] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const [meData, permData] = await Promise.all([apiFetch("/auth/me"), apiFetch("/auth/permissions")]);
+        const admin = meData.user?.role === "admin";
+        setIsAdmin(admin);
+        if (admin || permData.permissions === "all") {
+          setAllowRoomOps(true);
+          return;
+        }
+        const canRoomStages = Boolean(permData.permissions?.roomStages?.view || permData.permissions?.roomStages?.edit);
+        const canRoomActivities = Boolean(
+          permData.permissions?.roomActivities?.view || permData.permissions?.roomActivities?.edit
+        );
+        setAllowRoomOps(canRoomStages || canRoomActivities);
+      } catch (err) {
+        setError(err.message);
+      }
+    }
+    load();
+  }, []);
+
+  function chooseMode(mode) {
+    setWorkMode(mode);
+    router.push("/dashboard");
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Workspace"
+        title="Choose your work area"
+        description="Select what you want to work on now. You can switch this anytime from the header."
+      />
+
+      {error ? <div className="alert alert-error">{error}</div> : null}
+
+      <div className="grid grid-3">
+        <button className="card stat-card mode-card" type="button" onClick={() => chooseMode("expense")}>
+          <span className="stat-label">Mode</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Expense management</span>
+          <span className="stat-hint">Vendors, materials, vouchers, and reports</span>
+        </button>
+        <button
+          className="card stat-card mode-card"
+          type="button"
+          disabled={!allowRoomOps}
+          onClick={() => chooseMode("room")}
+        >
+          <span className="stat-label">Mode</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Room operations</span>
+          <span className="stat-hint">Room stage and activity operations summary</span>
+        </button>
+        {isAdmin ? (
+          <button className="card stat-card mode-card" type="button" onClick={() => chooseMode("admin")}>
+            <span className="stat-label">Mode</span>
+            <span className="stat-value" style={{ fontSize: 22 }}>Admin</span>
+            <span className="stat-hint">Admin console and related controls</span>
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}

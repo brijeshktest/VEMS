@@ -3,6 +3,7 @@ import Material from "../models/Material.js";
 import Vendor from "../models/Vendor.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
 import { requireFields } from "../utils/validators.js";
+import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
 
@@ -52,6 +53,14 @@ router.post("/", requireAuth, requirePermission("materials", "create"), async (r
     vendorIds
   });
   await syncMaterialVendors(material._id, vendorIds);
+  await logChange({
+    entityType: "material",
+    entityId: material._id,
+    action: "create",
+    user: req.user,
+    before: null,
+    after: material.toObject()
+  });
   return res.status(201).json(material);
 });
 
@@ -60,6 +69,7 @@ router.put("/:id", requireAuth, requirePermission("materials", "edit"), async (r
   if (!material) {
     return res.status(404).json({ error: "Material not found" });
   }
+  const before = material.toObject();
   const vendorIds = req.body.vendorIds ?? material.vendorIds;
   if (vendorIds.length) {
     const vendors = await Vendor.countDocuments({ _id: { $in: vendorIds } });
@@ -74,6 +84,14 @@ router.put("/:id", requireAuth, requirePermission("materials", "edit"), async (r
   material.vendorIds = vendorIds;
   await material.save();
   await syncMaterialVendors(material._id, vendorIds);
+  await logChange({
+    entityType: "material",
+    entityId: material._id,
+    action: "update",
+    user: req.user,
+    before,
+    after: material.toObject()
+  });
   return res.json(material);
 });
 
@@ -82,11 +100,20 @@ router.delete("/:id", requireAuth, requirePermission("materials", "delete"), asy
   if (!material) {
     return res.status(404).json({ error: "Material not found" });
   }
+  const before = material.toObject();
   await material.deleteOne();
   await Vendor.updateMany(
     { materialsSupplied: material._id },
     { $pull: { materialsSupplied: material._id } }
   );
+  await logChange({
+    entityType: "material",
+    entityId: material._id,
+    action: "delete",
+    user: req.user,
+    before,
+    after: null
+  });
   return res.json({ ok: true });
 });
 

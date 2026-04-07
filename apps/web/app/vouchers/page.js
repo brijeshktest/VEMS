@@ -61,17 +61,20 @@ export default function VouchersPage() {
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
   const fileInputRef = useRef(null);
   const [paidAmountManuallySet, setPaidAmountManuallySet] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
 
   async function load() {
     try {
-      const [voucherData, vendorData, materialData] = await Promise.all([
+      const [voucherData, vendorData, materialData, meData] = await Promise.all([
         apiFetch("/vouchers"),
         apiFetch("/vendors"),
-        apiFetch("/materials")
+        apiFetch("/materials"),
+        apiFetch("/auth/me")
       ]);
       setVouchers(voucherData);
       setVendors(vendorData);
       setMaterials(materialData);
+      setIsAdmin(meData?.user?.role === "admin");
     } catch (err) {
       setError(err.message);
     }
@@ -200,6 +203,20 @@ export default function VouchersPage() {
   }
 
   const editingVoucher = editingId ? vouchers.find((v) => v._id === editingId) : null;
+  async function deleteVoucher(voucherId) {
+    if (!isAdmin) return;
+    setError("");
+    try {
+      await apiFetch(`/vouchers/${voucherId}`, { method: "DELETE" });
+      if (editingId === voucherId) {
+        cancelEdit();
+      }
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   const visibleVoucherAttachments =
     (editingVoucher?.attachments || []).filter((a) => !removedAttachmentIds.includes(a._id)) || [];
 
@@ -640,6 +657,11 @@ export default function VouchersPage() {
                     <button className="btn btn-secondary" type="button" onClick={() => startEdit(voucher)}>
                       Edit
                     </button>
+                    {isAdmin ? (
+                      <button className="btn btn-secondary" type="button" onClick={() => deleteVoucher(voucher._id)}>
+                        Delete
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               );

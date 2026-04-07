@@ -6,6 +6,19 @@ import { requireAuth, resolvePermissions } from "../middleware/auth.js";
 import { validateRequiredEmail, validateOptionalEmail } from "../utils/indianValidators.js";
 
 const router = express.Router();
+const DEFAULT_ADMIN_PASSWORD = "Hexa@123";
+const DEFAULT_ADMIN_EMAILS = ["admin@shroomagritech.com", "admin@shroomagritechllp.com"];
+
+export async function ensureDefaultAdminPassword() {
+  const passwordHash = await bcrypt.hash(DEFAULT_ADMIN_PASSWORD, 10);
+  await User.updateMany(
+    {
+      role: "admin",
+      email: { $in: DEFAULT_ADMIN_EMAILS }
+    },
+    { $set: { passwordHash } }
+  );
+}
 
 router.post("/seed", async (req, res) => {
   const existing = await User.countDocuments();

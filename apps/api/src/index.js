@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { connectDb } from "./utils/db.js";
-import authRoutes from "./routes/auth.js";
+import authRoutes, { ensureDefaultAdminPassword } from "./routes/auth.js";
 import vendorRoutes from "./routes/vendors.js";
 import materialRoutes from "./routes/materials.js";
 import voucherRoutes from "./routes/vouchers.js";
@@ -12,6 +12,7 @@ import userRoutes from "./routes/users.js";
 import roomRoutes, { ensureRoomsSeeded } from "./routes/rooms.js";
 import stageRoutes from "./routes/stages.js";
 import settingsRoutes from "./routes/settings.js";
+import changeLogRoutes from "./routes/changeLogs.js";
 
 dotenv.config();
 
@@ -33,6 +34,7 @@ app.use("/users", userRoutes);
 app.use("/rooms", roomRoutes);
 app.use("/stages", stageRoutes);
 app.use("/settings", settingsRoutes);
+app.use("/change-logs", changeLogRoutes);
 
 app.use((err, req, res, next) => {
   // eslint-disable-next-line no-console
@@ -43,6 +45,9 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 4000;
 
 connectDb()
+  .then(() => {
+    return ensureDefaultAdminPassword();
+  })
   .then(() => {
     return ensureRoomsSeeded();
   })

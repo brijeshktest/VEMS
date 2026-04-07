@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, apiFetchForm, API_URL } from "../../lib/api.js";
 import PageHeader from "../../components/PageHeader.js";
@@ -42,6 +42,9 @@ export default function AdminPage() {
   const [roles, setRoles] = useState([]);
   const [users, setUsers] = useState([]);
   const [error, setError] = useState("");
+  const [changeLogs, setChangeLogs] = useState([]);
+  const [logFilter, setLogFilter] = useState({ entityType: "", entityId: "" });
+  const [openLogIds, setOpenLogIds] = useState([]);
 
   const [roleForm, setRoleForm] = useState({ name: "", description: "", permissions: emptyPermissions() });
   const [editingRoleId, setEditingRoleId] = useState(null);
@@ -64,14 +67,38 @@ export default function AdminPage() {
       const [roleData, userData] = await Promise.all([apiFetch("/roles"), apiFetch("/users")]);
       setRoles(roleData);
       setUsers(userData);
+      await loadChangeLogs();
     } catch (err) {
       setError(err.message);
     }
   }
 
+  async function loadChangeLogs() {
+    const params = new URLSearchParams();
+    if (logFilter.entityType.trim()) params.set("entityType", logFilter.entityType.trim());
+    if (logFilter.entityId.trim()) params.set("entityId", logFilter.entityId.trim());
+    const query = params.toString();
+    const data = await apiFetch(`/change-logs${query ? `?${query}` : ""}`);
+    setChangeLogs(data);
+  }
+
   useEffect(() => {
     load();
   }, []);
+
+  async function applyLogFilter(event) {
+    event.preventDefault();
+    setError("");
+    try {
+      await loadChangeLogs();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  function toggleLogDetails(logId) {
+    setOpenLogIds((prev) => (prev.includes(logId) ? prev.filter((id) => id !== logId) : [...prev, logId]));
+  }
 
   async function refreshBranding() {
     try {
@@ -474,6 +501,84 @@ export default function AdminPage() {
             </tbody>
           </table>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 className="panel-title">Record change log</h3>
+        <form className="grid grid-3" onSubmit={applyLogFilter} style={{ marginBottom: 12 }}>
+          <input
+            className="input"
+            placeholder="Entity type (vendor, material, voucher, room...)"
+            value={logFilter.entityType}
+            onChange={(e) => setLogFilter((prev) => ({ ...prev, entityType: e.target.value }))}
+          />
+          <input
+            className="input"
+            placeholder="Entity ID (optional)"
+            value={logFilter.entityId}
+            onChange={(e) => setLogFilter((prev) => ({ ...prev, entityId: e.target.value }))}
+          />
+          <button className="btn btn-secondary" type="submit">
+            Refresh log
+          </button>
+        </form>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Entity</th>
+                <th>Action</th>
+                <th>Changed by</th>
+                <th>Record ID</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody>
+              {changeLogs.map((row) => (
+                <Fragment key={row._id}>
+                  <tr>
+                    <td>{new Date(row.createdAt).toLocaleString()}</td>
+                    <td>{row.entityType}</td>
+                    <td>{row.action}</td>
+                    <td>{row.changedByName || "-"}</td>
+                    <td>{row.entityId}</td>
+                    <td>
+                      <button className="btn btn-secondary btn-tiny" type="button" onClick={() => toggleLogDetails(row._id)}>
+                        {openLogIds.includes(row._id) ? "Hide" : "View"}
+                      </button>
+                    </td>
+                  </tr>
+                  {openLogIds.includes(row._id) ? (
+                    <tr key={`${row._id}-details`}>
+                      <td colSpan={6}>
+                        <div className="grid grid-2" style={{ gap: 10 }}>
+                          <div className="panel-inset">
+                            <h4 style={{ marginTop: 0 }}>Before</h4>
+                            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12 }}>
+                              {JSON.stringify(row.before, null, 2) || "null"}
+                            </pre>
+                          </div>
+                          <div className="panel-inset">
+                            <h4 style={{ marginTop: 0 }}>After</h4>
+                            <pre style={{ margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word", fontSize: 12 }}>
+                              {JSON.stringify(row.after, null, 2) || "null"}
+                            </pre>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                </Fragment>
+              ))}
+              {!changeLogs.length ? (
+                <tr>
+                  <td colSpan={6}>No log entries found.</td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

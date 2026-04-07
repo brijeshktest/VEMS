@@ -3,20 +3,21 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, getToken, setToken } from "../../lib/api.js";
+import { setWorkMode } from "../../lib/workMode.js";
 
-const DEFAULT_ADMIN_EMAIL = "admin@shroomagritechllp.com";
+const DEFAULT_ADMIN_EMAIL = "admin@shroomagritech.com";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [form, setForm] = useState({ email: DEFAULT_ADMIN_EMAIL, password: "" });
-  const [seed, setSeed] = useState({ name: "", email: DEFAULT_ADMIN_EMAIL, password: "" });
+  const [form, setForm] = useState({ email: "", password: "" });
+  const [seed, setSeed] = useState({ name: "", email: "", password: "" });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [seedAvailable, setSeedAvailable] = useState(false);
 
   useEffect(() => {
     if (getToken()) {
-      router.replace("/dashboard");
+      router.replace("/work-mode");
     }
   }, [router]);
 
@@ -42,7 +43,8 @@ export default function LoginPage() {
         body: JSON.stringify(form)
       });
       setToken(data.token);
-      router.push("/dashboard");
+      setWorkMode("");
+      router.push("/work-mode");
     } catch (err) {
       setError(err.message);
     }
@@ -58,7 +60,7 @@ export default function LoginPage() {
         body: JSON.stringify({ ...seed, role: "admin" })
       });
       setMessage("Admin user created. Please sign in.");
-      setSeed({ name: "", email: DEFAULT_ADMIN_EMAIL, password: "" });
+      setSeed({ name: "", email: "", password: "" });
       setSeedAvailable(false);
     } catch (err) {
       setError(err.message);
@@ -102,7 +104,7 @@ export default function LoginPage() {
                 <input
                   id="login-email"
                   className="input"
-                  placeholder={DEFAULT_ADMIN_EMAIL}
+                  placeholder="name@company.com"
                   type="email"
                   autoComplete="username"
                   value={form.email}
@@ -152,7 +154,7 @@ export default function LoginPage() {
                   <input
                     id="seed-email"
                     className="input"
-                    placeholder={DEFAULT_ADMIN_EMAIL}
+                  placeholder="admin@company.com"
                     type="email"
                     value={seed.email}
                     onChange={(e) => setSeed({ ...seed, email: e.target.value })}
