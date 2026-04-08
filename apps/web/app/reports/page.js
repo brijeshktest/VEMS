@@ -45,7 +45,7 @@ export default function ReportsPage() {
       {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card toolbar-card">
-        <div style={{ flex: "1 1 200px" }}>
+        <div className="toolbar-field">
           <label htmlFor="report-start">From</label>
           <input
             id="report-start"
@@ -55,7 +55,7 @@ export default function ReportsPage() {
             onChange={(e) => setRange({ ...range, start: e.target.value })}
           />
         </div>
-        <div style={{ flex: "1 1 200px" }}>
+        <div className="toolbar-field">
           <label htmlFor="report-end">To</label>
           <input
             id="report-end"
@@ -95,7 +95,7 @@ export default function ReportsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={4} style={{ color: "var(--muted)" }}>
+                    <td colSpan={4} className="cell-empty">
                       Run reports to load data.
                     </td>
                   </tr>
@@ -126,7 +126,7 @@ export default function ReportsPage() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={3} style={{ color: "var(--muted)" }}>
+                    <td colSpan={3} className="cell-empty">
                       Run reports to load data.
                     </td>
                   </tr>
@@ -141,17 +141,17 @@ export default function ReportsPage() {
         <div className="card">
           <h3 className="panel-title">Expense summary</h3>
           {summary ? (
-            <div className="panel-inset">
-              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+            <div className="panel-inset panel-inset--strong totals-list">
+              <p className="totals-item">
                 <strong>Total voucher amount:</strong> {summary.totalVoucherAmount.toFixed(2)}
               </p>
-              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+              <p className="totals-item">
                 <strong>Total paid amount:</strong> {summary.totalPaidAmount.toFixed(2)}
               </p>
-              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+              <p className="totals-item">
                 <strong>Total tax:</strong> {summary.totalTax.toFixed(2)}
               </p>
-              <p style={{ margin: 0, fontSize: 14 }}>
+              <p className="totals-item">
                 <strong>Voucher count:</strong> {summary.voucherCount}
               </p>
             </div>
@@ -162,14 +162,14 @@ export default function ReportsPage() {
         <div className="card">
           <h3 className="panel-title">Tax and payment summary</h3>
           {taxData ? (
-            <div className="panel-inset">
-              <p style={{ margin: "0 0 8px", fontSize: 14 }}>
+            <div className="panel-inset panel-inset--strong totals-list">
+              <p className="totals-item">
                 <strong>Total tax:</strong> {taxData.tax.totalTax.toFixed(2)}
               </p>
-              <p style={{ margin: 0, fontSize: 14 }}>
+              <p className="totals-item">
                 <strong>Total voucher amount:</strong> {taxData.tax.totalVoucherAmount.toFixed(2)}
               </p>
-              <p style={{ margin: "8px 0 0", fontSize: 14 }}>
+              <p className="totals-item">
                 <strong>Total paid amount:</strong> {taxData.tax.totalPaidAmount.toFixed(2)}
               </p>
             </div>

@@ -7,6 +7,12 @@ import { useRouter } from "next/navigation";
 import PageHeader from "../../components/PageHeader.js";
 import { getWorkMode } from "../../lib/workMode.js";
 
+function paymentStatusClass(status) {
+  if (status === "Paid") return "status-pill status-pill--paid";
+  if (status === "Partially Paid") return "status-pill status-pill--partial";
+  return "status-pill status-pill--pending";
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [summary, setSummary] = useState(null);
@@ -124,9 +130,9 @@ export default function DashboardPage() {
       </div> : null}
 
       {(workMode === "room" || workMode === "admin") && roomPrompts.length ? (
-        <div className="card">
+        <div className="card card-soft">
           <h3 className="panel-title">Room stage prompts</h3>
-          <p className="page-lead" style={{ marginBottom: 16 }}>
+          <p className="page-lead">
             These rooms are due to advance to the next stage.
           </p>
           <div className="table-wrap">
@@ -163,9 +169,9 @@ export default function DashboardPage() {
       ) : null}
 
       {(workMode === "room" || workMode === "admin") && roomSummary.length ? (
-        <div className="card">
+        <div className="card card-soft">
           <h3 className="panel-title">Room operations summary</h3>
-          <p className="page-lead" style={{ margin: "0 0 16px" }}>
+          <p className="page-lead">
             Current stage and timing across all growing rooms.
           </p>
           <div className="table-wrap">
@@ -184,7 +190,11 @@ export default function DashboardPage() {
                     <td>{room.name}</td>
                     <td>{room.currentStage?.name || "-"}</td>
                     <td>{room.currentStage ? `Day ${room.daysElapsed}` : "-"}</td>
-                    <td>{room.dueNextStage ? "Overdue" : "No"}</td>
+                    <td>
+                      <span className={room.dueNextStage ? "status-pill status-pill--pending" : "status-pill status-pill--active"}>
+                        {room.dueNextStage ? "Overdue" : "On track"}
+                      </span>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -246,15 +256,15 @@ export default function DashboardPage() {
       {(workMode === "expense" || workMode === "admin") ? <div className="card">
         <h3 className="panel-title">Payment summary</h3>
         {tax ? (
-          <div className="panel-inset" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+          <div className="panel-inset panel-inset--strong section-stack">
             <div className="grid grid-2">
               <div>
                 <p className="tag">Paid amount: {tax.tax.totalPaidAmount.toFixed(2)}</p>
                 <p className="tag">Tax: {tax.tax.totalTax.toFixed(2)}</p>
               </div>
               <div>
-                <h4 style={{ margin: "0 0 8px", fontSize: 14 }}>Payment status</h4>
-                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 14 }}>
+                <h4 className="panel-title">Payment status</h4>
+                <ul className="inline-note">
                   {(tax.paymentStatus || []).map((row) => (
                     <li key={row._id ?? "unknown"}>
                       {row._id}: {row.totalPaidAmount.toFixed(2)} paid ({row.count} vouchers)
@@ -300,7 +310,7 @@ export default function DashboardPage() {
                       ) : (
                         <tr>
                           <td colSpan={4}>
-                            <span className="page-lead" style={{ margin: 0 }}>
+                            <span className="cell-empty">
                               No vouchers in range.
                             </span>
                           </td>
@@ -347,14 +357,16 @@ export default function DashboardPage() {
                             <td>{row.vendorName || "—"}</td>
                             <td>{row.paidAmount.toFixed(2)}</td>
                             <td>{row.taxAmount.toFixed(2)}</td>
-                            <td>{row.paymentStatus}</td>
+                            <td>
+                              <span className={paymentStatusClass(row.paymentStatus)}>{row.paymentStatus}</span>
+                            </td>
                             <td>{row.paymentMethod}</td>
                           </tr>
                         ))
                       ) : (
                         <tr>
                           <td colSpan={7}>
-                            <span className="page-lead" style={{ margin: 0 }}>
+                            <span className="cell-empty">
                               No vouchers in range.
                             </span>
                           </td>

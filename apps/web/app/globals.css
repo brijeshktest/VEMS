@@ -35,8 +35,27 @@
   --shadow-sm: 0 1px 2px rgba(12, 15, 14, 0.05);
   --shadow-md: 0 4px 16px rgba(12, 15, 14, 0.07);
   --shadow-lg: 0 12px 40px rgba(12, 15, 14, 0.1);
+  --shadow-focus: 0 0 0 3px var(--primary-ring);
 
   --space-page: clamp(20px, 4vw, 32px);
+  --card-pad: clamp(18px, 3vw, 22px);
+  --control-py: 11px;
+  --control-px: 14px;
+  --btn-py: 10px;
+  --btn-px: 18px;
+  --table-cell-py: 12px;
+  --table-cell-px: 14px;
+}
+
+:root[data-density="compact"] {
+  --space-page: clamp(14px, 2.6vw, 20px);
+  --card-pad: 14px;
+  --control-py: 8px;
+  --control-px: 11px;
+  --btn-py: 8px;
+  --btn-px: 14px;
+  --table-cell-py: 9px;
+  --table-cell-px: 11px;
 }
 
 * {
@@ -487,6 +506,7 @@ a.brand {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
   margin-left: 4px;
 }
 
@@ -494,9 +514,13 @@ a.brand {
 .card {
   background: var(--surface-elevated);
   border-radius: var(--radius-lg);
-  padding: clamp(18px, 3vw, 22px);
+  padding: var(--card-pad);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-md);
+}
+
+.card-soft {
+  background: linear-gradient(180deg, #ffffff 0%, #fbfcfb 100%);
 }
 
 .card > h3,
@@ -518,6 +542,10 @@ a.brand {
   border-radius: var(--radius-md);
   padding: 14px 16px;
   margin-top: 8px;
+}
+
+.panel-inset--strong {
+  background: linear-gradient(180deg, #f9fbfa 0%, #f2f6f4 100%);
 }
 
 .panel-inset > h4 {
@@ -625,7 +653,7 @@ label {
 .input,
 select.input {
   width: 100%;
-  padding: 11px 14px;
+  padding: var(--control-py) var(--control-px);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   background: var(--surface-elevated);
@@ -680,35 +708,44 @@ select.input {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  padding: 10px 18px;
+  padding: var(--btn-py) var(--btn-px);
   border-radius: var(--radius-md);
-  border: none;
-  background: var(--primary);
+  border: 1px solid transparent;
+  background: linear-gradient(180deg, #117160 0%, var(--primary) 100%);
   color: #fff;
   cursor: pointer;
   font-family: inherit;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.01em;
-  transition: background 0.15s ease, transform 0.1s ease;
+  box-shadow: 0 8px 20px rgba(13, 92, 77, 0.2);
+  transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .btn:hover {
-  background: var(--primary-hover);
+  background: linear-gradient(180deg, #0f6656 0%, var(--primary-hover) 100%);
+  box-shadow: 0 10px 24px rgba(13, 92, 77, 0.25);
 }
 
 .btn:active {
   transform: scale(0.98);
 }
 
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--shadow-focus);
+}
+
 .btn-secondary {
-  background: var(--surface-muted);
+  background: linear-gradient(180deg, #f9fbfa 0%, var(--surface-muted) 100%);
   color: var(--ink-soft);
   border: 1px solid var(--border);
+  box-shadow: 0 2px 8px rgba(12, 15, 14, 0.06);
 }
 
 .btn-secondary:hover {
-  background: var(--border);
+  background: linear-gradient(180deg, #f0f3f1 0%, #e3e9e5 100%);
+  border-color: var(--border-strong);
   color: var(--ink);
 }
 
@@ -728,23 +765,29 @@ select.input {
   font-size: 13px;
 }
 
+.btn-density {
+  min-width: 92px;
+}
+
 /* Tables */
 .table-wrap {
   overflow-x: auto;
   margin: 0 -4px;
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
+  background: #fff;
 }
 
 .table {
   width: 100%;
   border-collapse: collapse;
   font-size: 14px;
+  min-width: 680px;
 }
 
 .table th,
 .table td {
-  padding: 12px 14px;
+  padding: var(--table-cell-py) var(--table-cell-px);
   text-align: left;
   border-bottom: 1px solid var(--border);
 }
@@ -755,15 +798,22 @@ select.input {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
-  background: var(--surface);
+  background: #f1f5f3;
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .table tbody tr:last-child td {
   border-bottom: none;
 }
 
+.table tbody tr:nth-child(even) td {
+  background: #fcfdfc;
+}
+
 .table tbody tr:hover td {
-  background: rgba(13, 92, 77, 0.03);
+  background: rgba(13, 92, 77, 0.06);
 }
 
 .highlight-row {
@@ -805,6 +855,43 @@ select.input {
   background: var(--primary-soft);
   color: var(--primary);
   margin: 0 8px 8px 0;
+}
+
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+}
+
+.status-pill--paid,
+.status-pill--active {
+  color: #065f46;
+  background: rgba(5, 150, 105, 0.12);
+  border-color: rgba(5, 150, 105, 0.24);
+}
+
+.status-pill--pending {
+  color: #92400e;
+  background: rgba(217, 119, 6, 0.14);
+  border-color: rgba(217, 119, 6, 0.3);
+}
+
+.status-pill--partial {
+  color: #155e75;
+  background: rgba(8, 145, 178, 0.12);
+  border-color: rgba(8, 145, 178, 0.24);
+}
+
+.status-pill--inactive {
+  color: #6b7280;
+  background: rgba(107, 114, 128, 0.14);
+  border-color: rgba(107, 114, 128, 0.3);
 }
 
 /* File chips */
@@ -875,6 +962,13 @@ select.input {
   font-size: 14px;
 }
 
+.cell-empty {
+  color: var(--muted);
+  font-style: italic;
+  text-align: center;
+  padding: 20px 14px;
+}
+
 .field-hint {
   display: block;
   margin: 4px 0 0;
@@ -932,6 +1026,76 @@ select.input {
   flex-shrink: 0;
 }
 
+.toolbar-field {
+  flex: 1 1 200px;
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.inline-note {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.totals-list {
+  display: grid;
+  gap: 8px;
+}
+
+.totals-item {
+  margin: 0;
+  font-size: 14px;
+}
+
+.totals-item--strong {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.form-span-all {
+  grid-column: 1 / -1;
+}
+
+.line-item-row {
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: #fff;
+}
+
+.line-item-qty {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.line-item-unit {
+  min-width: 60px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.card-header-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 @media (max-width: 768px) {
   .nav-inner {
     flex-direction: column;
@@ -955,6 +1119,14 @@ select.input {
 
   .card {
     padding: 16px;
+  }
+
+  .table {
+    min-width: 560px;
+  }
+
+  .btn-density {
+    min-width: 0;
   }
 }
 

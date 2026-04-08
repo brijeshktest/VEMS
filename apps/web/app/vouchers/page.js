@@ -49,6 +49,12 @@ function dateFieldFocus(e) {
   requestAnimationFrame(() => el.select());
 }
 
+function paymentStatusClass(status) {
+  if (status === "Paid") return "status-pill status-pill--paid";
+  if (status === "Partially Paid") return "status-pill status-pill--partial";
+  return "status-pill status-pill--pending";
+}
+
 export default function VouchersPage() {
   const [vouchers, setVouchers] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -290,7 +296,7 @@ export default function VouchersPage() {
 
       <div className="card">
         <h3 className="panel-title">{editingId ? "Edit voucher" : "Create voucher"}</h3>
-        <form className="grid" onSubmit={onSubmit} style={{ gap: 16 }}>
+        <form className="grid section-stack" onSubmit={onSubmit}>
           <div className="grid grid-3">
             <div>
               <label>Vendor</label>
@@ -348,7 +354,7 @@ export default function VouchersPage() {
           <div className="panel-inset">
             <h4>Line items</h4>
             {items.map((item, index) => (
-              <div className="grid grid-3" key={index}>
+              <div className="grid grid-3 line-item-row" key={index}>
                 <div>
                   <label>Material</label>
                   <select
@@ -367,7 +373,7 @@ export default function VouchersPage() {
                 </div>
                 <div>
                   <label>Quantity</label>
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div className="line-item-qty">
                     <input
                       className="input"
                       type="number"
@@ -379,7 +385,7 @@ export default function VouchersPage() {
                       onFocus={numericFieldFocus}
                       required
                     />
-                    <span style={{ minWidth: 60 }}>
+                    <span className="line-item-unit">
                       {availableMaterials.find((mat) => mat._id === item.materialId)?.unit || "-"}
                     </span>
                   </div>
@@ -398,7 +404,7 @@ export default function VouchersPage() {
                     required
                   />
                 </div>
-                <div style={{ gridColumn: "1 / -1" }}>
+                <div className="form-span-all">
                   <label>Comment</label>
                   <input
                     className="input"
@@ -526,7 +532,7 @@ export default function VouchersPage() {
                   <option>Credit</option>
                 </select>
               </div>
-              <div style={{ gridColumn: "1 / -1" }}>
+              <div className="form-span-all">
                 <label>Payment comments</label>
                 <input
                   className="input"
@@ -539,17 +545,17 @@ export default function VouchersPage() {
             </div>
           ) : null}
 
-          <div className="panel-inset">
-            <p style={{ margin: "0 0 6px", fontSize: 14 }}>
+          <div className="panel-inset panel-inset--strong totals-list">
+            <p className="totals-item">
               <strong>Subtotal:</strong> {totals.subTotal.toFixed(2)}
             </p>
-            <p style={{ margin: "0 0 6px", fontSize: 14 }}>
+            <p className="totals-item">
               <strong>Tax:</strong> {totals.taxAmount.toFixed(2)}
             </p>
-            <p style={{ margin: 0, fontSize: 15, fontWeight: 600 }}>
+            <p className="totals-item--strong">
               <strong>Final amount:</strong> {totals.finalAmount.toFixed(2)}
             </p>
-            <p style={{ margin: "6px 0 0", fontSize: 14 }}>
+            <p className="totals-item">
               <strong>Paid amount:</strong> {Number(form.paidAmount || 0).toFixed(2)}
             </p>
           </div>
@@ -570,7 +576,7 @@ export default function VouchersPage() {
               </ul>
             ) : null}
             {editingId && visibleVoucherAttachments.length ? (
-              <div style={{ marginTop: 12 }}>
+              <div>
                 <label>Current files</label>
                 <ul className="file-chips">
                   {visibleVoucherAttachments.map((att) => (
@@ -606,10 +612,8 @@ export default function VouchersPage() {
       </div>
 
       <div className="card">
-        <div
-          style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: 12 }}
-        >
-          <h3 className="panel-title" style={{ margin: 0 }}>
+        <div className="card-header-row">
+          <h3 className="panel-title">
             All vouchers
           </h3>
           <button
@@ -650,18 +654,22 @@ export default function VouchersPage() {
                   <td>
                     <AttachmentListCell entity={voucher} kind="voucher" />
                   </td>
-                  <td>{voucher.paymentStatus}</td>
+                  <td>
+                    <span className={paymentStatusClass(voucher.paymentStatus)}>{voucher.paymentStatus}</span>
+                  </td>
                   <td>{voucher.createdByName || "-"}</td>
                   <td>{voucher.statusUpdatedByName || "-"}</td>
                   <td>
-                    <button className="btn btn-secondary" type="button" onClick={() => startEdit(voucher)}>
-                      Edit
-                    </button>
-                    {isAdmin ? (
-                      <button className="btn btn-secondary" type="button" onClick={() => deleteVoucher(voucher._id)}>
-                        Delete
+                    <div className="row-actions">
+                      <button className="btn btn-secondary" type="button" onClick={() => startEdit(voucher)}>
+                        Edit
                       </button>
-                    ) : null}
+                      {isAdmin ? (
+                        <button className="btn btn-secondary" type="button" onClick={() => deleteVoucher(voucher._id)}>
+                          Delete
+                        </button>
+                      ) : null}
+                    </div>
                   </td>
                 </tr>
               );

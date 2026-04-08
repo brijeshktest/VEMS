@@ -20,6 +20,15 @@ export default function Nav() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [workMode, setWorkModeState] = useState("");
   const [logoUpdatedAt, setLogoUpdatedAt] = useState(null);
+  const [density, setDensity] = useState("comfortable");
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = window.localStorage.getItem("vems-ui-density");
+    const next = saved === "compact" ? "compact" : "comfortable";
+    setDensity(next);
+    document.documentElement.setAttribute("data-density", next);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +82,15 @@ export default function Nav() {
     router.push("/login");
   }
 
+  function toggleDensity() {
+    const next = density === "compact" ? "comfortable" : "compact";
+    setDensity(next);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("vems-ui-density", next);
+    }
+    document.documentElement.setAttribute("data-density", next);
+  }
+
   const links = pathname === "/work-mode"
     ? []
     :
@@ -124,6 +142,9 @@ export default function Nav() {
                 </Link>
               ))}
               <span className="nav-actions">
+                <button className="btn btn-secondary btn-nav-logout btn-density" type="button" onClick={toggleDensity}>
+                  {density === "compact" ? "Comfortable" : "Compact"}
+                </button>
                 {pathname !== "/work-mode" ? (
                   <button
                     className="btn btn-secondary btn-nav-logout"

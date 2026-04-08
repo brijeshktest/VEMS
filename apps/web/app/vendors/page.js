@@ -329,11 +329,10 @@ export default function VendorsPage() {
             {fieldErrors.aadhaar ? <span className="field-error">{fieldErrors.aadhaar}</span> : null}
           </div>
           <input
-            className="input"
+            className="input form-span-all"
             placeholder="Address"
             value={form.address}
             onChange={(e) => setForm({ ...form, address: e.target.value })}
-            style={{ gridColumn: "1 / -1" }}
           />
           <select
             className="input"
@@ -343,7 +342,7 @@ export default function VendorsPage() {
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
           </select>
-          <div style={{ gridColumn: "1 / -1" }}>
+          <div className="form-span-all">
             <label>Attachments (optional, multiple files)</label>
             <input
               ref={fileInputRef}
@@ -365,7 +364,7 @@ export default function VendorsPage() {
               </ul>
             ) : null}
             {editingId && visibleAttachments.length ? (
-              <div style={{ marginTop: 12 }}>
+              <div>
                 <label>Current files</label>
                 <ul className="file-chips">
                   {visibleAttachments.map((att) => (
@@ -422,16 +421,22 @@ export default function VendorsPage() {
                 <td>
                   <AttachmentListCell entity={vendor} kind="vendor" />
                 </td>
-                <td>{vendor.status}</td>
                 <td>
-                  <button className="btn btn-secondary" type="button" onClick={() => startEdit(vendor)}>
-                    Edit
-                  </button>
-                  {isAdmin ? (
-                    <button className="btn btn-secondary" type="button" onClick={() => deleteVendor(vendor._id)}>
-                      Delete
+                  <span className={vendor.status === "Active" ? "status-pill status-pill--active" : "status-pill status-pill--inactive"}>
+                    {vendor.status}
+                  </span>
+                </td>
+                <td>
+                  <div className="row-actions">
+                    <button className="btn btn-secondary" type="button" onClick={() => startEdit(vendor)}>
+                      Edit
                     </button>
-                  ) : null}
+                    {isAdmin ? (
+                      <button className="btn btn-secondary" type="button" onClick={() => deleteVendor(vendor._id)}>
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ))}

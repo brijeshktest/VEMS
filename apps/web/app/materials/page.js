@@ -149,7 +149,7 @@ export default function MaterialsPage() {
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
           />
-          <div className="panel-inset" style={{ gridColumn: "1 / -1" }}>
+          <div className="panel-inset panel-inset--strong form-span-all">
             <h4>Linked vendors</h4>
             <div className="grid grid-3">
               {vendors.map((vendor) => (
@@ -198,14 +198,16 @@ export default function MaterialsPage() {
                 <td>{material.description || "-"}</td>
                 <td>{material.vendorIds?.length || 0}</td>
                 <td>
-                  <button className="btn btn-secondary" type="button" onClick={() => startEdit(material)}>
-                    Edit
-                  </button>
-                  {isAdmin ? (
-                    <button className="btn btn-secondary" type="button" onClick={() => deleteMaterial(material._id)}>
-                      Delete
+                  <div className="row-actions">
+                    <button className="btn btn-secondary" type="button" onClick={() => startEdit(material)}>
+                      Edit
                     </button>
-                  ) : null}
+                    {isAdmin ? (
+                      <button className="btn btn-secondary" type="button" onClick={() => deleteMaterial(material._id)}>
+                        Delete
+                      </button>
+                    ) : null}
+                  </div>
                 </td>
               </tr>
             ))}
