@@ -5,6 +5,7 @@ import { requireFields, ensurePositive } from "../utils/validators.js";
 import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
+const TARGET_CYCLE_DAYS = 53;
 
 function normalizeActivities(input = {}) {
   return {
@@ -43,8 +44,8 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
     return res.status(400).json({ error: "Stage name already exists" });
   }
   const currentTotal = await totalIntervalDays();
-  if (currentTotal + intervalDays.value > 60) {
-    return res.status(400).json({ error: "Total stage interval exceeds 60 days" });
+  if (currentTotal + intervalDays.value > TARGET_CYCLE_DAYS) {
+    return res.status(400).json({ error: `Total stage interval exceeds ${TARGET_CYCLE_DAYS} days` });
   }
   const stage = await Stage.create({
     name: req.body.name,
@@ -90,8 +91,8 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
       return res.status(400).json({ error: intervalDays.message });
     }
     const currentTotal = await totalIntervalDays(stage._id);
-    if (currentTotal + intervalDays.value > 60) {
-      return res.status(400).json({ error: "Total stage interval exceeds 60 days" });
+    if (currentTotal + intervalDays.value > TARGET_CYCLE_DAYS) {
+      return res.status(400).json({ error: `Total stage interval exceeds ${TARGET_CYCLE_DAYS} days` });
     }
     stage.intervalDays = intervalDays.value;
   }
@@ -150,7 +151,7 @@ router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
 router.get("/summary", requireAuth, requireAdmin, async (req, res) => {
   const stages = await Stage.find();
   const totalDays = stages.reduce((sum, stage) => sum + Number(stage.intervalDays || 0), 0);
-  return res.json({ totalDays, isValid: totalDays === 60 });
+  return res.json({ totalDays, isValid: totalDays === TARGET_CYCLE_DAYS });
 });
 
 export default router;

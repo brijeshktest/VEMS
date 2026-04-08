@@ -140,7 +140,7 @@ export default function StagesPage() {
           <p style={{ margin: 0, fontSize: 15 }}>
             Total days: <strong>{summary.totalDays}</strong>{" "}
             <span style={{ color: "var(--muted)" }}>
-              {summary.isValid ? "(valid cycle)" : "(target 60 days)"}
+              {summary.isValid ? "(valid cycle)" : "(target 53 days)"}
             </span>
           </p>
         </div>
