@@ -11,7 +11,8 @@ function normalizeActivities(input = {}) {
   return {
     watering: Boolean(input.watering),
     ruffling: Boolean(input.ruffling),
-    thumping: Boolean(input.thumping)
+    thumping: Boolean(input.thumping),
+    ventilation: Boolean(input.ventilation)
   };
 }
 

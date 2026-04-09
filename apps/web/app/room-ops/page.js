@@ -112,7 +112,7 @@ export default function RoomOpsPage() {
                 <td>
                   {room.currentStage?.activities ? (
                     <div className="grid" style={{ gap: 6 }}>
-                      {["watering", "ruffling", "thumping"]
+                      {["watering", "ruffling", "thumping", "ventilation"]
                         .filter((key) => room.currentStage.activities[key])
                         .map((key) => (
                           <label key={key}>

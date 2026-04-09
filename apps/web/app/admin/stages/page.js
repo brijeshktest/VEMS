@@ -16,7 +16,8 @@ const initialForm = {
   activities: {
     watering: false,
     ruffling: false,
-    thumping: false
+    thumping: false,
+    ventilation: false
   }
 };
 
@@ -90,7 +91,8 @@ export default function StagesPage() {
       activities: {
         watering: Boolean(stage.activities?.watering),
         ruffling: Boolean(stage.activities?.ruffling),
-        thumping: Boolean(stage.activities?.thumping)
+        thumping: Boolean(stage.activities?.thumping),
+        ventilation: Boolean(stage.activities?.ventilation)
       }
     });
   }
@@ -253,6 +255,14 @@ export default function StagesPage() {
                 />{" "}
                 Thumping
               </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={form.activities.ventilation}
+                  onChange={() => toggleActivity("ventilation")}
+                />{" "}
+                Ventilation
+              </label>
             </div>
           </div>
           <button className="btn" type="submit">
@@ -294,7 +304,9 @@ export default function StagesPage() {
                 <td>{stage.co2Level ?? 0} ppm</td>
                 <td>{stage.notes || "-"}</td>
                 <td>
-                  {["watering", "ruffling", "thumping"].filter((key) => stage.activities?.[key]).join(", ") || "-"}
+                  {["watering", "ruffling", "thumping", "ventilation"]
+                    .filter((key) => stage.activities?.[key])
+                    .join(", ") || "-"}
                 </td>
                 <td>
                   <button className="btn btn-secondary" type="button" onClick={() => startEdit(stage)}>

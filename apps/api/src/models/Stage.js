@@ -4,7 +4,8 @@ const ActivitySchema = new mongoose.Schema(
   {
     watering: { type: Boolean, default: false },
     ruffling: { type: Boolean, default: false },
-    thumping: { type: Boolean, default: false }
+    thumping: { type: Boolean, default: false },
+    ventilation: { type: Boolean, default: false }
   },
   { _id: false }
 );

@@ -22,11 +22,21 @@ function isLikelyIosSafari() {
   return iOS && webkit && noChrome;
 }
 
+function isLikelyAndroidChromium() {
+  if (typeof window === "undefined") return false;
+  const ua = window.navigator.userAgent || "";
+  const isAndroid = /Android/i.test(ua);
+  const isChromiumFamily = /Chrome|CriOS|EdgA|SamsungBrowser|OPR/i.test(ua);
+  const isFirefox = /Firefox|FxiOS/i.test(ua);
+  return isAndroid && isChromiumFamily && !isFirefox;
+}
+
 export default function PwaInstallPrompt() {
   const [deferred, setDeferred] = useState(null);
   const deferredRef = useRef(null);
   const [showChromium, setShowChromium] = useState(false);
   const [showIosHint, setShowIosHint] = useState(false);
+  const [showAndroidHint, setShowAndroidHint] = useState(false);
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
@@ -41,6 +51,7 @@ export default function PwaInstallPrompt() {
     }
     setShowChromium(false);
     setShowIosHint(false);
+    setShowAndroidHint(false);
     setDeferred(null);
   }, []);
 
@@ -58,12 +69,14 @@ export default function PwaInstallPrompt() {
       setDeferred(e);
       setShowChromium(true);
       setShowIosHint(false);
+      setShowAndroidHint(false);
     };
 
     const onAppInstalled = () => {
       setDeferred(null);
       setShowChromium(false);
       setShowIosHint(false);
+      setShowAndroidHint(false);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
@@ -86,30 +99,37 @@ export default function PwaInstallPrompt() {
 
     const t = window.setTimeout(() => {
       if (deferredRef.current) return;
-      if (!isLikelyIosSafari()) return;
-      if (window.navigator.standalone === true) return;
-      setShowIosHint(true);
+      if (isLikelyIosSafari()) {
+        if (window.navigator.standalone === true) return;
+        setShowIosHint(true);
+        return;
+      }
+      if (isLikelyAndroidChromium()) {
+        setShowAndroidHint(true);
+      }
     }, 1800);
 
     return () => window.clearTimeout(t);
   }, []);
 
   const onInstallClick = async () => {
-    if (!deferred) return;
+    const promptEvent = deferredRef.current;
+    if (!promptEvent) return;
     setInstalling(true);
     try {
-      await deferred.prompt();
-      await deferred.userChoice;
+      await promptEvent.prompt();
+      await promptEvent.userChoice;
     } catch {
       /* user dismissed native sheet or prompt failed */
     } finally {
       setInstalling(false);
+      deferredRef.current = null;
       setDeferred(null);
       setShowChromium(false);
     }
   };
 
-  if (!showChromium && !showIosHint) return null;
+  if (!showChromium && !showIosHint && !showAndroidHint) return null;
 
   return (
     <div className="pwa-install" role="region" aria-label="Install app">
@@ -129,13 +149,28 @@ export default function PwaInstallPrompt() {
               </button>
             </div>
           </>
-        ) : (
+        ) : showIosHint ? (
           <>
             <div className="pwa-install-text">
               <strong className="pwa-install-title">Add to Home Screen</strong>
               <p className="pwa-install-desc">
                 Tap <span className="pwa-install-kbd">Share</span>, then <span className="pwa-install-kbd">Add to Home Screen</span>{" "}
                 to install this app on your iPhone or iPad.
+              </p>
+            </div>
+            <div className="pwa-install-actions">
+              <button type="button" className="btn pwa-install-primary" onClick={dismiss}>
+                OK
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="pwa-install-text">
+              <strong className="pwa-install-title">Install from browser menu</strong>
+              <p className="pwa-install-desc">
+                Open your browser menu (<span className="pwa-install-kbd">⋮</span>) and tap{" "}
+                <span className="pwa-install-kbd">Install app</span> or <span className="pwa-install-kbd">Add to Home screen</span>.
               </p>
             </div>
             <div className="pwa-install-actions">

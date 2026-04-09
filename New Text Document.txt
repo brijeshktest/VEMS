@@ -7,7 +7,7 @@ db.stages.insertMany([
     humidity: 90,
     temperature: 24,
     co2Level: 10000,
-    activities: { watering: false, ruffling: false, thumping: false },
+    activities: { watering: false, ruffling: false, thumping: false, ventilation: false },
     notes: "No watering required",
     createdAt: ISODate("2026-01-29T06:12:45.704Z"),
     updatedAt: ISODate("2026-01-29T06:30:22.791Z"),
@@ -22,7 +22,7 @@ db.stages.insertMany([
     temperature: 24,
     co2Level: 5000,
     notes: "1. 400 ml water in each bag twice or thrice a day on the day of casing\n2. No water unless you see mycelium using torch other wise 200 ml twice a day\n3. 66% casing\n4. Casing depth: 3–4 cm\n5. Moist, porous casing (peat/soil + FYM + chalk)\n6. No standing water",
-    activities: { watering: true, ruffling: false, thumping: false },
+    activities: { watering: true, ruffling: false, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:17:33.426Z"),
     updatedAt: ISODate("2026-01-29T06:33:34.128Z"),
     __v: 0
@@ -36,7 +36,7 @@ db.stages.insertMany([
     temperature: 24,
     co2Level: 7000,
     notes: "Break the soil and put remaining .5 inch casing, 100 to 200 ml water each bag twice a day till pinhead are visible.\nLight misting only if casing dries. No pin formation yet. CO2 level between 4000-8000 ppm.",
-    activities: { watering: true, ruffling: true, thumping: false },
+    activities: { watering: true, ruffling: true, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:19:06.076Z"),
     updatedAt: ISODate("2026-01-29T06:36:55.508Z"),
     __v: 0
@@ -50,7 +50,7 @@ db.stages.insertMany([
     temperature: 22,
     co2Level: 2000,
     notes: "Bring down the temperature from 24 to 22 degree.",
-    activities: { watering: true, ruffling: false, thumping: false },
+    activities: { watering: true, ruffling: false, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:22:09.283Z"),
     updatedAt: ISODate("2026-01-29T06:38:12.773Z"),
     __v: 0
@@ -64,7 +64,7 @@ db.stages.insertMany([
     temperature: 19,
     co2Level: 1000,
     notes: "Bring down the temperature to 19 degree.",
-    activities: { watering: true, ruffling: false, thumping: false },
+    activities: { watering: true, ruffling: false, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:22:54.788Z"),
     updatedAt: ISODate("2026-01-29T06:38:40.663Z"),
     __v: 0
@@ -78,7 +78,7 @@ db.stages.insertMany([
     temperature: 16,
     co2Level: 1500,
     notes: "Bring the temperature down to 16 degree.\nIncrease fresh air\nPins appear by Day 36–38",
-    activities: { watering: false, ruffling: false, thumping: false },
+    activities: { watering: false, ruffling: false, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:23:27.636Z"),
     updatedAt: ISODate("2026-01-29T06:41:03.368Z"),
     __v: 0
@@ -92,7 +92,7 @@ db.stages.insertMany([
     temperature: 16,
     co2Level: 2000,
     notes: "Check for CO2 and humidity levels twice a day.",
-    activities: { watering: true, ruffling: false, thumping: false },
+    activities: { watering: true, ruffling: false, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:25:39.124Z"),
     updatedAt: ISODate("2026-01-29T06:42:29.665Z"),
     __v: 0
@@ -106,7 +106,7 @@ db.stages.insertMany([
     temperature: 17,
     co2Level: 1000,
     notes: "Major yield stage (50–60% of total)\nHarvest tight buttons daily\nAvoid over-watering",
-    activities: { watering: true, ruffling: false, thumping: false },
+    activities: { watering: true, ruffling: false, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:46:19.687Z"),
     updatedAt: ISODate("2026-01-29T06:46:19.687Z"),
     __v: 0
@@ -120,7 +120,7 @@ db.stages.insertMany([
     temperature: 18,
     co2Level: 1500,
     notes: "Light ruffling after 1st flush\nYield: 25–30%",
-    activities: { watering: false, ruffling: true, thumping: false },
+    activities: { watering: false, ruffling: true, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:47:43.033Z"),
     updatedAt: ISODate("2026-01-29T06:47:43.033Z"),
     __v: 0
@@ -134,7 +134,7 @@ db.stages.insertMany([
     temperature: 20,
     co2Level: 2000,
     notes: "Yield: 10–15%\nHigh disease risk\nMany Indian farms stop after this stage",
-    activities: { watering: false, ruffling: false, thumping: false },
+    activities: { watering: false, ruffling: false, thumping: false, ventilation: false },
     createdAt: ISODate("2026-01-29T06:49:28.028Z"),
     updatedAt: ISODate("2026-01-29T06:49:28.028Z"),
     __v: 0

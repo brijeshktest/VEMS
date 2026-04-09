@@ -208,7 +208,7 @@ export default function GrowingRoomsPage() {
                 <td>
                   {room.currentStageId?.activities ? (
                     <div className="grid" style={{ gap: 6 }}>
-                      {["watering", "ruffling", "thumping"]
+                      {["watering", "ruffling", "thumping", "ventilation"]
                         .filter((key) => room.currentStageId.activities[key])
                         .map((key) => (
                           <label key={key}>

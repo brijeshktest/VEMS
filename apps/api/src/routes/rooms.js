@@ -67,7 +67,8 @@ router.get("/status", requireAuth, async (req, res) => {
       room.activityStatus = {
         watering: false,
         ruffling: false,
-        thumping: false
+        thumping: false,
+        ventilation: false
       };
       await room.save();
     }
@@ -167,7 +168,8 @@ router.post("/:id/move-stage", requireAuth, requirePermission("roomStages", "edi
   room.activityStatus = {
     watering: false,
     ruffling: false,
-    thumping: false
+    thumping: false,
+    ventilation: false
   };
   await room.save();
   await logChange({
@@ -199,7 +201,8 @@ router.post("/:id/init-stage", requireAuth, requirePermission("roomStages", "edi
   room.activityStatus = {
     watering: false,
     ruffling: false,
-    thumping: false
+    thumping: false,
+    ventilation: false
   };
   await room.save();
   await logChange({
@@ -221,7 +224,7 @@ router.post("/:id/activities", requireAuth, requirePermission("roomActivities", 
   }
   const before = room.toObject();
   const { activity, done } = req.body;
-  if (!activity || !["watering", "ruffling", "thumping"].includes(activity)) {
+  if (!activity || !["watering", "ruffling", "thumping", "ventilation"].includes(activity)) {
     return res.status(400).json({ error: "Invalid activity" });
   }
   if (!room.currentStageId) {

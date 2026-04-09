@@ -11,7 +11,8 @@
   "activities": {
     "watering": false,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:12:45.704Z"
@@ -36,7 +37,8 @@
   "activities": {
     "watering": true,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:17:33.426Z"
@@ -60,7 +62,8 @@
   "activities": {
     "watering": true,
     "ruffling": true,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:19:06.076Z"
@@ -84,7 +87,8 @@
   "activities": {
     "watering": true,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:22:09.283Z"
@@ -108,7 +112,8 @@
   "activities": {
     "watering": true,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:22:54.788Z"
@@ -132,7 +137,8 @@
   "activities": {
     "watering": false,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:23:27.636Z"
@@ -156,7 +162,8 @@
   "activities": {
     "watering": true,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:25:39.124Z"
@@ -180,7 +187,8 @@
   "activities": {
     "watering": true,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:46:19.687Z"
@@ -204,7 +212,8 @@
   "activities": {
     "watering": false,
     "ruffling": true,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:47:43.033Z"
@@ -228,7 +237,8 @@
   "activities": {
     "watering": false,
     "ruffling": false,
-    "thumping": false
+    "thumping": false,
+    "ventilation": false
   },
   "createdAt": {
     "$date": "2026-01-29T06:49:28.028Z"
