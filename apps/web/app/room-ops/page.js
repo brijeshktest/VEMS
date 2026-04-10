@@ -6,6 +6,7 @@ import PageHeader from "../../components/PageHeader.js";
 
 export default function RoomOpsPage() {
   const [rooms, setRooms] = useState([]);
+  const [tunnelPrompts, setTunnelPrompts] = useState([]);
   const [permissions, setPermissions] = useState(null);
   const [error, setError] = useState("");
 
@@ -13,8 +14,12 @@ export default function RoomOpsPage() {
     try {
       const permData = await apiFetch("/auth/permissions");
       setPermissions(permData.permissions);
-      const data = await apiFetch("/rooms/status");
+      const [data, tunnelAlerts] = await Promise.all([
+        apiFetch("/rooms/status"),
+        apiFetch("/tunnel-bunker/alerts").catch(() => ({ dueItems: [] }))
+      ]);
       setRooms(data);
+      setTunnelPrompts(tunnelAlerts?.dueItems || []);
     } catch (err) {
       setError(err.message);
     }
@@ -68,6 +73,25 @@ export default function RoomOpsPage() {
     }
   }
 
+  async function moveTunnelBatch(batch) {
+    setError("");
+    try {
+      const payload = {};
+      if (batch.requiresTunnelSelection) {
+        const selected = window.prompt("Enter tunnel number for this batch:");
+        if (!selected) return;
+        payload.tunnelNumber = Number(selected);
+      }
+      await apiFetch(`/tunnel-bunker/batches/${batch.id}/move-next`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -77,6 +101,40 @@ export default function RoomOpsPage() {
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
+
+      {tunnelPrompts.length ? (
+        <div className="card card-soft">
+          <h3 className="panel-title">Compost turning / move alerts</h3>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th>Current stage</th>
+                  <th>Next stage</th>
+                  <th>Due at</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tunnelPrompts.map((batch) => (
+                  <tr key={batch.id} className="highlight-row">
+                    <td>{batch.batchCode}</td>
+                    <td>{batch.currentStageLabel}</td>
+                    <td>{batch.nextStageLabel}</td>
+                    <td>{batch.dueAt ? new Date(batch.dueAt).toLocaleString() : "-"}</td>
+                    <td>
+                      <button className="btn btn-secondary" type="button" onClick={() => moveTunnelBatch(batch)}>
+                        Move next
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       <div className="card">
         <h3 className="panel-title">All rooms</h3>

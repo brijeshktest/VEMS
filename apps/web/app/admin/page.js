@@ -14,6 +14,7 @@ const modules = [
   "rooms",
   "roomStages",
   "roomActivities",
+  "tunnelBunkerOps",
   "roles",
   "users"
 ];
@@ -291,6 +292,9 @@ export default function AdminPage() {
           </Link>
           <Link className="btn btn-secondary" href="/admin/stages">
             Room stages
+          </Link>
+          <Link className="btn btn-secondary" href="/admin/tunnel-bunker">
+            Tunnel &amp; bunker settings
           </Link>
         </div>
       </div>

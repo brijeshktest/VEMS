@@ -21,6 +21,7 @@ export default function DashboardPage() {
   const [tax, setTax] = useState(null);
   const [roomPrompts, setRoomPrompts] = useState([]);
   const [roomSummary, setRoomSummary] = useState([]);
+  const [tunnelPrompts, setTunnelPrompts] = useState([]);
   const [vendorTaxOpen, setVendorTaxOpen] = useState(false);
   const [voucherLatestOpen, setVoucherLatestOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -65,9 +66,17 @@ export default function DashboardPage() {
             router.replace("/work-mode");
             return;
           }
-          const roomData = await apiFetch("/rooms/status");
+          const [roomData, tunnelAlerts] = await Promise.all([
+            apiFetch("/rooms/status"),
+            apiFetch("/tunnel-bunker/alerts").catch(() => ({ dueItems: [] }))
+          ]);
           setRoomPrompts(roomData.filter((room) => room.dueNextStage));
           setRoomSummary(roomData);
+          setTunnelPrompts(tunnelAlerts?.dueItems || []);
+        }
+        if (selectedMode === "tunnel") {
+          const tunnelAlerts = await apiFetch("/tunnel-bunker/alerts");
+          setTunnelPrompts(tunnelAlerts?.dueItems || []);
         }
       } catch (err) {
         setError(err.message);
@@ -89,6 +98,25 @@ export default function DashboardPage() {
     }
   }
 
+  async function moveTunnelBatch(batch) {
+    try {
+      const payload = {};
+      if (batch.requiresTunnelSelection) {
+        const selected = window.prompt("Enter tunnel number for this batch:");
+        if (!selected) return;
+        payload.tunnelNumber = Number(selected);
+      }
+      await apiFetch(`/tunnel-bunker/batches/${batch.id}/move-next`, {
+        method: "POST",
+        body: JSON.stringify(payload)
+      });
+      const tunnelAlerts = await apiFetch("/tunnel-bunker/alerts");
+      setTunnelPrompts(tunnelAlerts?.dueItems || []);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -97,13 +125,54 @@ export default function DashboardPage() {
         description={
           workMode === "room"
             ? "Room operations summary and stage movement status."
-            : workMode === "admin"
+            : workMode === "tunnel"
+              ? "Tunnel and bunker compost movement alerts and quick actions."
+              : workMode === "admin"
               ? "Administrative overview with operations and financial visibility."
               : "Spend, tax, and voucher activity at a glance."
         }
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
+
+      {(workMode === "room" || workMode === "admin" || workMode === "tunnel") && tunnelPrompts.length ? (
+        <div className="card card-soft">
+          <h3 className="panel-title">Compost movement alerts</h3>
+          <p className="page-lead">
+            These batches are due for turning/movement to the next bunker or tunnel stage.
+          </p>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th>Current stage</th>
+                  <th>Next stage</th>
+                  <th>Due at</th>
+                  <th>Overdue</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tunnelPrompts.map((batch) => (
+                  <tr key={batch.id} className="highlight-row">
+                    <td>{batch.batchCode}</td>
+                    <td>{batch.currentStageLabel}</td>
+                    <td>{batch.nextStageLabel}</td>
+                    <td>{batch.dueAt ? new Date(batch.dueAt).toLocaleString() : "-"}</td>
+                    <td>{batch.overdueDays} day(s)</td>
+                    <td>
+                      <button className="btn btn-secondary" type="button" onClick={() => moveTunnelBatch(batch)}>
+                        Move now
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       {(workMode === "expense" || workMode === "admin") && summary ? <div className="grid grid-3">
         <Link className="stat-link" href="/reports">

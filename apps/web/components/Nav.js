@@ -96,12 +96,16 @@ export default function Nav() {
     :
     workMode === "room"
       ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/room-ops", label: "Room ops" }]
+      : workMode === "tunnel"
+        ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" }]
       : workMode === "admin"
         ? [
             { href: "/dashboard", label: "Dashboard" },
+            { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" },
             { href: "/admin", label: "Admin" },
             { href: "/admin/rooms", label: "Rooms" },
-            { href: "/admin/stages", label: "Stages" }
+            { href: "/admin/stages", label: "Stages" },
+            { href: "/admin/tunnel-bunker", label: "Tunnel settings" }
           ]
         : [
             { href: "/dashboard", label: "Dashboard" },

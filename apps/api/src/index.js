@@ -13,6 +13,7 @@ import roomRoutes, { ensureRoomsSeeded } from "./routes/rooms.js";
 import stageRoutes from "./routes/stages.js";
 import settingsRoutes from "./routes/settings.js";
 import changeLogRoutes from "./routes/changeLogs.js";
+import tunnelBunkerRoutes from "./routes/tunnelBunker.js";
 
 dotenv.config();
 
@@ -36,6 +37,7 @@ api.use("/rooms", roomRoutes);
 api.use("/stages", stageRoutes);
 api.use("/settings", settingsRoutes);
 api.use("/change-logs", changeLogRoutes);
+api.use("/tunnel-bunker", tunnelBunkerRoutes);
 
 app.use("/api", api);
 

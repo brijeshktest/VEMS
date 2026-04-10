@@ -10,6 +10,7 @@ export default function WorkModePage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState(false);
   const [allowRoomOps, setAllowRoomOps] = useState(false);
+  const [allowTunnelOps, setAllowTunnelOps] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -20,13 +21,16 @@ export default function WorkModePage() {
         setIsAdmin(admin);
         if (admin || permData.permissions === "all") {
           setAllowRoomOps(true);
+          setAllowTunnelOps(true);
           return;
         }
         const canRoomStages = Boolean(permData.permissions?.roomStages?.view || permData.permissions?.roomStages?.edit);
         const canRoomActivities = Boolean(
           permData.permissions?.roomActivities?.view || permData.permissions?.roomActivities?.edit
         );
+        const canTunnelOps = Boolean(permData.permissions?.tunnelBunkerOps?.view || permData.permissions?.tunnelBunkerOps?.edit);
         setAllowRoomOps(canRoomStages || canRoomActivities);
+        setAllowTunnelOps(canTunnelOps);
       } catch (err) {
         setError(err.message);
       }
@@ -64,6 +68,16 @@ export default function WorkModePage() {
           <span className="stat-label">Mode</span>
           <span className="stat-value" style={{ fontSize: 22 }}>Room operations</span>
           <span className="stat-hint">Room stage and activity operations summary</span>
+        </button>
+        <button
+          className="card stat-card mode-card"
+          type="button"
+          disabled={!allowTunnelOps}
+          onClick={() => chooseMode("tunnel")}
+        >
+          <span className="stat-label">Mode</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Tunnel &amp; Bunker Ops</span>
+          <span className="stat-hint">Compost batches, movement alerts, and tunnel flow</span>
         </button>
         {isAdmin ? (
           <button className="card stat-card mode-card" type="button" onClick={() => chooseMode("admin")}>

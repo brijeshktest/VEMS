@@ -7,6 +7,7 @@ export const MODULES = [
   "rooms",
   "roomStages",
   "roomActivities",
+  "tunnelBunkerOps",
   "roles",
   "users"
 ];
