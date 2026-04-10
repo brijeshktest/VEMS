@@ -21,8 +21,7 @@ module.exports = {
       interpreter: "none",
       env: {
         NODE_ENV: "production",
-        NEXT_PUBLIC_API_URL:
-          "http://ec2-13-233-164-155.ap-south-1.compute.amazonaws.com:4000",
+        NEXT_PUBLIC_API_URL: "/api",
       },
     },
   ],

@@ -6,8 +6,8 @@
 #   - Node.js and npm
 #   - MongoDB reachable (default: mongodb://localhost:27017/vendor_expense)
 #   - apps/api/.env — copy from apps/api/.env.example (MONGO_URL, JWT_SECRET, PORT, etc.)
-#   - apps/web/.env.local — copy from apps/web/.env.example; set NEXT_PUBLIC_API_URL to your API URL
-#     before build (e.g. http://localhost:4000 for same host).
+#   - apps/web/.env.local — copy from apps/web/.env.example; set NEXT_PUBLIC_API_URL before build
+#     (e.g. http://localhost:4000/api for local dev, or /api when the API is reverse-proxied on the same host).
 # Optional for seedAdmin.mjs: ADMIN_EMAIL (default admin@shroomagritechllp.com), ADMIN_PASSWORD.
 #
 # Environment:

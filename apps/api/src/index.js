@@ -20,21 +20,24 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: "2mb" }));
 
-app.get("/health", (req, res) => {
+const api = express.Router();
+api.get("/health", (req, res) => {
   res.json({ ok: true });
 });
 
-app.use("/auth", authRoutes);
-app.use("/vendors", vendorRoutes);
-app.use("/materials", materialRoutes);
-app.use("/vouchers", voucherRoutes);
-app.use("/reports", reportRoutes);
-app.use("/roles", roleRoutes);
-app.use("/users", userRoutes);
-app.use("/rooms", roomRoutes);
-app.use("/stages", stageRoutes);
-app.use("/settings", settingsRoutes);
-app.use("/change-logs", changeLogRoutes);
+api.use("/auth", authRoutes);
+api.use("/vendors", vendorRoutes);
+api.use("/materials", materialRoutes);
+api.use("/vouchers", voucherRoutes);
+api.use("/reports", reportRoutes);
+api.use("/roles", roleRoutes);
+api.use("/users", userRoutes);
+api.use("/rooms", roomRoutes);
+api.use("/stages", stageRoutes);
+api.use("/settings", settingsRoutes);
+api.use("/change-logs", changeLogRoutes);
+
+app.use("/api", api);
 
 app.use((err, req, res, next) => {
   // eslint-disable-next-line no-console

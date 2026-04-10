@@ -1,6 +1,5 @@
 export const API_URL =
-  process.env.NEXT_PUBLIC_API_URL ||
-  "http://ec2-13-233-164-155.ap-south-1.compute.amazonaws.com:4000";
+  process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000/api";
 
 export function getToken() {
   if (typeof window === "undefined") return null;
