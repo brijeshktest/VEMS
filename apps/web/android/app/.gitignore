@@ -1,5 +1,2 @@
 /build/*
 !/build/.npmkeep
-!/build/outputs/
-!/build/outputs/apk/
-!/build/outputs/apk/**
