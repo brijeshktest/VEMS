@@ -1,5 +1,6 @@
 export default function manifest() {
   return {
+    id: "/",
     name: "Shroom Agritech LLP — Vendor & Expense",
     short_name: "Shroom Agritech",
     description: "Shroom Agritech LLP — vendor, materials, and expense tracking",

@@ -13,6 +13,10 @@ function isInstalledDisplayMode() {
   return mqStandalone || mqFullscreen || mqMinimal || iosStandalone;
 }
 
+function isLocalDevHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
 function isLikelyIosSafari() {
   if (typeof window === "undefined") return false;
   const ua = window.navigator.userAgent || "";
@@ -37,6 +41,8 @@ export default function PwaInstallPrompt() {
   const [showChromium, setShowChromium] = useState(false);
   const [showIosHint, setShowIosHint] = useState(false);
   const [showAndroidHint, setShowAndroidHint] = useState(false);
+  const [showFallbackHint, setShowFallbackHint] = useState(false);
+  const [showHttpHint, setShowHttpHint] = useState(false);
   const [installing, setInstalling] = useState(false);
 
   useEffect(() => {
@@ -52,6 +58,8 @@ export default function PwaInstallPrompt() {
     setShowChromium(false);
     setShowIosHint(false);
     setShowAndroidHint(false);
+    setShowFallbackHint(false);
+    setShowHttpHint(false);
     setDeferred(null);
   }, []);
 
@@ -64,12 +72,20 @@ export default function PwaInstallPrompt() {
       /* ignore */
     }
 
+    const { protocol, hostname } = window.location;
+    if (protocol === "http:" && !isLocalDevHost(hostname)) {
+      setShowHttpHint(true);
+      return;
+    }
+
     const onBeforeInstallPrompt = (e) => {
       e.preventDefault();
       setDeferred(e);
       setShowChromium(true);
       setShowIosHint(false);
       setShowAndroidHint(false);
+      setShowFallbackHint(false);
+      setShowHttpHint(false);
     };
 
     const onAppInstalled = () => {
@@ -77,27 +93,14 @@ export default function PwaInstallPrompt() {
       setShowChromium(false);
       setShowIosHint(false);
       setShowAndroidHint(false);
+      setShowFallbackHint(false);
+      setShowHttpHint(false);
     };
 
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt);
     window.addEventListener("appinstalled", onAppInstalled);
 
-    return () => {
-      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
-      window.removeEventListener("appinstalled", onAppInstalled);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (isInstalledDisplayMode()) return;
-    try {
-      if (localStorage.getItem(DISMISS_KEY) === "1") return;
-    } catch {
-      /* ignore */
-    }
-
-    const t = window.setTimeout(() => {
+    const timer = window.setTimeout(() => {
       if (deferredRef.current) return;
       if (isLikelyIosSafari()) {
         if (window.navigator.standalone === true) return;
@@ -106,10 +109,16 @@ export default function PwaInstallPrompt() {
       }
       if (isLikelyAndroidChromium()) {
         setShowAndroidHint(true);
+        return;
       }
-    }, 1800);
+      setShowFallbackHint(true);
+    }, 2200);
 
-    return () => window.clearTimeout(t);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("beforeinstallprompt", onBeforeInstallPrompt);
+      window.removeEventListener("appinstalled", onAppInstalled);
+    };
   }, []);
 
   const onInstallClick = async () => {
@@ -129,12 +138,27 @@ export default function PwaInstallPrompt() {
     }
   };
 
-  if (!showChromium && !showIosHint && !showAndroidHint) return null;
+  if (!showChromium && !showIosHint && !showAndroidHint && !showFallbackHint && !showHttpHint) return null;
 
   return (
     <div className="pwa-install" role="region" aria-label="Install app">
       <div className="pwa-install-inner">
-        {showChromium ? (
+        {showHttpHint ? (
+          <>
+            <div className="pwa-install-text">
+              <strong className="pwa-install-title">Secure connection required</strong>
+              <p className="pwa-install-desc">
+                Installing this app requires HTTPS. Open the site with <span className="pwa-install-kbd">https://</span> in the address
+                bar, or ask your administrator to enable SSL.
+              </p>
+            </div>
+            <div className="pwa-install-actions">
+              <button type="button" className="btn pwa-install-primary" onClick={dismiss}>
+                OK
+              </button>
+            </div>
+          </>
+        ) : showChromium ? (
           <>
             <div className="pwa-install-text">
               <strong className="pwa-install-title">Install Shroom Agritech</strong>
@@ -164,7 +188,7 @@ export default function PwaInstallPrompt() {
               </button>
             </div>
           </>
-        ) : (
+        ) : showAndroidHint ? (
           <>
             <div className="pwa-install-text">
               <strong className="pwa-install-title">Install from browser menu</strong>
@@ -174,6 +198,25 @@ export default function PwaInstallPrompt() {
               </p>
             </div>
             <div className="pwa-install-actions">
+              <button type="button" className="btn pwa-install-primary" onClick={dismiss}>
+                OK
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="pwa-install-text">
+              <strong className="pwa-install-title">Install this app</strong>
+              <p className="pwa-install-desc">
+                In Chrome or Edge, look for the install icon in the address bar, or open the menu (<span className="pwa-install-kbd">⋮</span>
+                ) and choose <span className="pwa-install-kbd">Install Shroom Agritech</span> or{" "}
+                <span className="pwa-install-kbd">Apps</span> → <span className="pwa-install-kbd">Install this site as an app</span>.
+              </p>
+            </div>
+            <div className="pwa-install-actions">
+              <button type="button" className="btn btn-secondary pwa-install-dismiss" onClick={dismiss}>
+                Not now
+              </button>
               <button type="button" className="btn pwa-install-primary" onClick={dismiss}>
                 OK
               </button>
