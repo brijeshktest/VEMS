@@ -77,7 +77,7 @@ export default function WorkModePage() {
         >
           <span className="stat-label">Mode</span>
           <span className="stat-value" style={{ fontSize: 22 }}>Tunnel &amp; Bunker Ops</span>
-          <span className="stat-hint">Compost batches, movement alerts, and tunnel flow</span>
+          <span className="stat-hint">Bunkers, one tunnel per batch, then growing rooms; movement alerts</span>
         </button>
         {isAdmin ? (
           <button className="card stat-card mode-card" type="button" onClick={() => chooseMode("admin")}>

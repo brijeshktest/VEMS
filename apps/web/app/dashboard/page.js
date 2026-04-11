@@ -139,7 +139,7 @@ export default function DashboardPage() {
         <div className="card card-soft">
           <h3 className="panel-title">Compost movement alerts</h3>
           <p className="page-lead">
-            These batches are due for turning/movement to the next bunker or tunnel stage.
+            These batches are due for turning/movement to the next bunker, into a single tunnel, or into growing rooms.
           </p>
           <div className="table-wrap">
             <table className="table">

@@ -6,6 +6,25 @@ import PageHeader from "../../components/PageHeader.js";
 
 const newBatchDefault = { batchCode: "", compostType: "Mushroom compost", notes: "" };
 
+function ConfiguredFlowLead({ config }) {
+  const bunkerPhaseDays = config.bunkerCount * config.bunkerIntervalDays;
+  const totalCycleDays = bunkerPhaseDays + config.tunnelIntervalDays;
+  return (
+    <p className="page-lead">
+      {config.bunkerCount} bunkers × {config.bunkerIntervalDays} day(s) = {bunkerPhaseDays} day(s) in bunkers, then 1
+      tunnel × {config.tunnelIntervalDays} day(s). Total cycle {totalCycleDays} day(s). Compost is then ready and
+      shifted to growing rooms.
+      {config.tunnelCount > 1 ? (
+        <>
+          {" "}
+          The site has {config.tunnelCount} tunnel line(s) for parallel batches; each batch still occupies only one
+          tunnel before growing rooms.
+        </>
+      ) : null}
+    </p>
+  );
+}
+
 export default function TunnelBunkerOpsPage() {
   const [config, setConfig] = useState(null);
   const [batches, setBatches] = useState([]);
@@ -88,7 +107,7 @@ export default function TunnelBunkerOpsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Tunnel & Bunker Ops"
-        description="Track compost batches through bunkers and tunnels with due-time movement alerts."
+        description="Track compost through the bunker chain, then a single tunnel stay per batch, then growing rooms, with due-time movement alerts."
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
@@ -97,10 +116,7 @@ export default function TunnelBunkerOpsPage() {
       {config ? (
         <div className="card">
           <h3 className="panel-title">Configured flow</h3>
-          <p className="page-lead">
-            {config.bunkerCount} bunkers × {config.bunkerIntervalDays} day(s), then {config.tunnelCount} tunnel(s) ×{" "}
-            {config.tunnelIntervalDays} day(s).
-          </p>
+          <ConfiguredFlowLead config={config} />
         </div>
       ) : null}
 

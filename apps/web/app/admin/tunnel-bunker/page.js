@@ -64,7 +64,7 @@ export default function TunnelBunkerAdminPage() {
       <PageHeader
         eyebrow="Administration"
         title="Tunnel & bunker settings"
-        description="Configure default bunker and tunnel days used by all compost batches."
+        description="Configure bunker depth, parallel tunnel lines, dwell times, and optional auto-advance. Each batch uses one tunnel only before growing rooms."
       >
         <Link href="/admin" className="btn btn-ghost">
           ← Admin home
@@ -100,6 +100,10 @@ export default function TunnelBunkerAdminPage() {
               onChange={(e) => setForm((prev) => ({ ...prev, tunnelCount: e.target.value }))}
               required
             />
+            <span className="field-hint">
+              Number of parallel tunnel lines for occupancy. Each compost batch occupies one tunnel only, then moves to
+              growing rooms—it never runs through a second tunnel.
+            </span>
           </div>
           <div>
             <label>Days in one bunker</label>
