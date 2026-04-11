@@ -116,6 +116,8 @@ a {
 }
 
 .main-surface.saas-main {
+  position: relative;
+  z-index: 0;
   padding: clamp(24px, 5vw, 44px) 0 clamp(32px, 6vw, 56px);
   background: linear-gradient(180deg, var(--surface-muted) 0%, var(--surface) 36%, var(--surface) 100%);
 }
@@ -581,11 +583,12 @@ main.main-surface.login-layout-main {
   line-height: 1.58;
 }
 
-/* Navigation */
+/* Navigation — high z-index + isolate so dropdowns / mobile drawer paint above main (iOS Safari + backdrop-filter) */
 .nav {
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: 1000;
+  isolation: isolate;
   min-height: var(--nav-height);
   height: auto;
   display: flex;
@@ -596,6 +599,7 @@ main.main-surface.login-layout-main {
   background: rgba(255, 255, 255, 0.92);
   border-bottom: 1px solid var(--border);
   backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
   box-shadow: 0 1px 0 rgba(26, 28, 26, 0.04);
 }
 
@@ -650,6 +654,7 @@ main.main-surface.login-layout-main {
   grid-area: brand;
   min-width: 0;
   justify-self: start;
+  overflow-x: clip;
 }
 
 .nav-cell-controls {
@@ -686,6 +691,7 @@ main.main-surface.login-layout-main {
 .nav-user {
   position: relative;
   flex-shrink: 0;
+  z-index: 1;
 }
 
 .nav-user-trigger {
@@ -737,7 +743,7 @@ main.main-surface.login-layout-main {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
-  z-index: 60;
+  z-index: 1100;
 }
 
 .nav-user-dropdown-header {
@@ -841,6 +847,8 @@ main.main-surface.login-layout-main {
 
   .nav-links.nav-links--mobile-drawer.nav-links--mobile-drawer--open {
     display: flex;
+    position: relative;
+    z-index: 1;
   }
 
   .nav-links.nav-links--mobile-drawer .nav-link {
@@ -1726,13 +1734,13 @@ select.input {
   }
 }
 
-/* PWA install prompt */
+/* PWA install prompt — above nav chrome (1000) */
 .pwa-install {
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 100;
+  z-index: 5000;
   padding: 12px clamp(16px, 4vw, 28px);
   padding-bottom: max(12px, env(safe-area-inset-bottom));
   pointer-events: none;

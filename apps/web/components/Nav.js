@@ -152,8 +152,8 @@ export default function Nav() {
         setUserMenuOpen(false);
       }
     }
-    document.addEventListener("mousedown", handlePointerDown);
-    return () => document.removeEventListener("mousedown", handlePointerDown);
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
   }, [userMenuOpen]);
 
   useEffect(() => {
@@ -316,7 +316,7 @@ export default function Nav() {
   );
 
   return (
-    <nav className="nav nav--full-bleed w-full min-w-0 max-w-full overflow-x-clip pt-[env(safe-area-inset-top,0px)]">
+    <nav className="nav nav--full-bleed w-full min-w-0 max-w-full pt-[env(safe-area-inset-top,0px)]">
       {isAuthenticated ? (
         <div className="nav-page-inner nav-inner nav-inner--app nav-inner--auth-grail">
           {brandLink}
