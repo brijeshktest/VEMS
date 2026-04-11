@@ -1,5 +1,14 @@
 const nextConfig = {
-  reactStrictMode: true
+  reactStrictMode: true,
+  images: {
+    remotePatterns: [
+      {
+        protocol: "https",
+        hostname: "shroomagritech.com",
+        pathname: "/images/**"
+      }
+    ]
+  }
 };
 
 module.exports = nextConfig;

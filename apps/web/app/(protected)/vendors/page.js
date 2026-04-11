@@ -1,16 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { apiFetch, apiFetchForm, downloadAttachment } from "../../lib/api.js";
-import PageHeader from "../../components/PageHeader.js";
-import AttachmentListCell from "../../components/AttachmentListCell.js";
+import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
+import PageHeader from "../../../components/PageHeader.js";
+import AttachmentListCell from "../../../components/AttachmentListCell.js";
 import {
   validateOptionalEmail,
   validateOptionalGstin,
   validateOptionalPan,
   validateOptionalAadhaar,
   validateOptionalIndianMobile
-} from "../../lib/indianValidators.js";
+} from "../../../lib/indianValidators.js";
 
 function collectVendorFieldErrors(f) {
   const errors = {};

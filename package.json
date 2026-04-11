@@ -8,6 +8,7 @@
   "scripts": {
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
+    "dev:web:fresh": "npm --workspace apps/web run dev:fresh",
     "pm2:start": "pm2 start ecosystem.config.cjs",
     "pm2:stop": "pm2 delete vems-api vems-web",
     "pm2:restart": "pm2 restart ecosystem.config.cjs",

@@ -1,14 +1,19 @@
-import { DM_Sans } from "next/font/google";
+import { Manrope, Work_Sans } from "next/font/google";
 import "./globals.css";
-import Nav from "../components/Nav.js";
-import AuthGate from "../components/AuthGate.js";
 import PwaRegister from "../components/PwaRegister.js";
 import PwaInstallPrompt from "../components/PwaInstallPrompt.js";
 
-const dmSans = DM_Sans({
+const workSans = Work_Sans({
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+  weight: ["300", "400", "500", "600"],
   variable: "--font-sans",
+  display: "swap"
+});
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  weight: ["600", "700", "800"],
+  variable: "--font-display",
   display: "swap"
 });
 
@@ -31,7 +36,7 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: "#0d5c4d",
+  themeColor: "#724c1f",
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover"
@@ -39,15 +44,10 @@ export const viewport = {
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en" className={dmSans.variable}>
-      <body className={dmSans.className}>
-        <div className="app-shell">
-          <Nav />
-          <AuthGate>
-            <main className="main-surface">
-              <div className="container">{children}</div>
-            </main>
-          </AuthGate>
+    <html lang="en" className={`${workSans.variable} ${manrope.variable}`}>
+      <body className={`${workSans.className} min-w-0 overflow-x-hidden antialiased`}>
+        <div className="app-shell flex min-h-dvh w-full min-w-0 max-w-[100vw] flex-col">
+          {children}
           <PwaRegister />
           <PwaInstallPrompt />
         </div>

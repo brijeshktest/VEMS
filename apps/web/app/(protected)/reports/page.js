@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { apiFetch } from "../../lib/api.js";
-import PageHeader from "../../components/PageHeader.js";
+import { apiFetch } from "../../../lib/api.js";
+import PageHeader from "../../../components/PageHeader.js";
 
 export default function ReportsPage() {
   const [range, setRange] = useState({ start: "", end: "" });

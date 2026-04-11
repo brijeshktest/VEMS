@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { apiFetch } from "../../lib/api.js";
+import { apiFetch } from "../../../lib/api.js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import PageHeader from "../../components/PageHeader.js";
-import { getWorkMode } from "../../lib/workMode.js";
+import PageHeader from "../../../components/PageHeader.js";
+import { getWorkMode } from "../../../lib/workMode.js";
 
 function paymentStatusClass(status) {
   if (status === "Paid") return "status-pill status-pill--paid";
@@ -174,29 +174,33 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {(workMode === "expense" || workMode === "admin") && summary ? <div className="grid grid-3">
-        <Link className="stat-link" href="/reports">
-          <div className="card stat-card">
-            <span className="stat-label">Total paid amount</span>
-            <span className="stat-value">{summary ? summary.totalPaidAmount.toFixed(2) : "—"}</span>
-            <span className="stat-hint">Open reports →</span>
+      {(workMode === "expense" || workMode === "admin") && summary ? (
+        <section className="saas-section" aria-label="Key metrics">
+          <div className="grid grid-3">
+            <Link className="stat-link" href="/reports">
+              <div className="card stat-card">
+                <span className="stat-label">Total paid amount</span>
+                <span className="stat-value">{summary ? summary.totalPaidAmount.toFixed(2) : "—"}</span>
+                <span className="stat-hint">Open reports →</span>
+              </div>
+            </Link>
+            <Link className="stat-link" href="/reports">
+              <div className="card stat-card">
+                <span className="stat-label">Total tax</span>
+                <span className="stat-value">{summary ? summary.totalTax.toFixed(2) : "—"}</span>
+                <span className="stat-hint">Open reports →</span>
+              </div>
+            </Link>
+            <Link className="stat-link" href="/vouchers">
+              <div className="card stat-card">
+                <span className="stat-label">Vouchers</span>
+                <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
+                <span className="stat-hint">View vouchers →</span>
+              </div>
+            </Link>
           </div>
-        </Link>
-        <Link className="stat-link" href="/reports">
-          <div className="card stat-card">
-            <span className="stat-label">Total tax</span>
-            <span className="stat-value">{summary ? summary.totalTax.toFixed(2) : "—"}</span>
-            <span className="stat-hint">Open reports →</span>
-          </div>
-        </Link>
-        <Link className="stat-link" href="/vouchers">
-          <div className="card stat-card">
-            <span className="stat-label">Vouchers</span>
-            <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
-            <span className="stat-hint">View vouchers →</span>
-          </div>
-        </Link>
-      </div> : null}
+        </section>
+      ) : null}
 
       {(workMode === "room" || workMode === "admin") && roomPrompts.length ? (
         <div className="card card-soft">
@@ -272,7 +276,9 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {(workMode === "expense" || workMode === "admin") && vendors.length ? <div className="grid grid-2">
+      {(workMode === "expense" || workMode === "admin") && vendors.length ? (
+        <section className="saas-section" aria-label="Top vendors and materials">
+          <div className="grid grid-2">
         <div className="card">
           <h3 className="panel-title">Top vendors</h3>
           <div className="table-wrap">
@@ -320,7 +326,9 @@ export default function DashboardPage() {
           </table>
           </div>
         </div>
-      </div> : null}
+          </div>
+        </section>
+      ) : null}
 
       {(workMode === "expense" || workMode === "admin") ? <div className="card">
         <h3 className="panel-title">Payment summary</h3>

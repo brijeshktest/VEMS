@@ -12,11 +12,11 @@ export default function AuthGate({ children }) {
 
   useEffect(() => {
     const token = getToken();
-    if (!token && pathname !== "/login") {
+    if (!token) {
       router.replace("/login");
       return;
     }
-    if (token && pathname && pathname !== "/login" && pathname !== "/work-mode") {
+    if (pathname && pathname !== "/work-mode") {
       const mode = getWorkMode();
       if (!mode) {
         router.replace("/work-mode");
@@ -45,7 +45,6 @@ export default function AuthGate({ children }) {
         return;
       }
     }
-    // pathname can be null until the client router is ready (static routes); avoid throwing.
     if (token && pathname?.startsWith("/admin")) {
       const signal =
         typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
@@ -67,8 +66,16 @@ export default function AuthGate({ children }) {
     setReady(true);
   }, [pathname, router]);
 
-  if (!ready && pathname !== "/login") {
-    return null;
+  if (!ready) {
+    return (
+      <main className="main-surface saas-main auth-gate-loading w-full min-w-0 max-w-full flex-1">
+        <div className="container saas-container flex min-h-[50dvh] items-center justify-center">
+          <p className="text-sm text-[var(--muted)]" role="status" aria-live="polite">
+            Loading…
+          </p>
+        </div>
+      </main>
+    );
   }
 
   return children;

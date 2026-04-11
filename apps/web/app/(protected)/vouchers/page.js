@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiFetch, apiFetchForm, downloadAttachment } from "../../lib/api.js";
-import PageHeader from "../../components/PageHeader.js";
-import AttachmentListCell from "../../components/AttachmentListCell.js";
+import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
+import PageHeader from "../../../components/PageHeader.js";
+import AttachmentListCell from "../../../components/AttachmentListCell.js";
 
 const initialForm = {
   vendorId: "",

@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "../../lib/api.js";
-import { getWorkMode, setWorkMode } from "../../lib/workMode.js";
-import PageHeader from "../../components/PageHeader.js";
+import { apiFetch } from "../../../lib/api.js";
+import { setWorkMode } from "../../../lib/workMode.js";
+import PageHeader from "../../../components/PageHeader.js";
 
 export default function WorkModePage() {
   const router = useRouter();

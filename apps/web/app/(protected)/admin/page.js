@@ -2,8 +2,8 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { apiFetch, apiFetchForm, API_URL } from "../../lib/api.js";
-import PageHeader from "../../components/PageHeader.js";
+import { apiFetch, apiFetchForm, API_URL } from "../../../lib/api.js";
+import PageHeader from "../../../components/PageHeader.js";
 
 const modules = [
   "dashboard",
