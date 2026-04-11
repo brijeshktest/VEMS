@@ -1706,6 +1706,16 @@ select.input {
   grid-column: 1 / -1;
 }
 
+.grid-3 .form-span-2 {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 768px) {
+  .grid-3 .form-span-2 {
+    grid-column: span 2;
+  }
+}
+
 .line-item-row {
   padding: 12px;
   border-radius: var(--radius-sm);

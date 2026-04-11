@@ -80,9 +80,33 @@ function normalizeItems(items) {
   }));
 }
 
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 router.get("/", requireAuth, requirePermission("vouchers", "view"), async (req, res) => {
   const vouchers = await Voucher.find().sort({ dateOfPurchase: -1 });
   return res.json(vouchers);
+});
+
+/** Distinct payment-made-from labels (stored as paymentMadeBy) for autocomplete (must be before /:id). */
+router.get("/payment-made-by-options", requireAuth, requirePermission("vouchers", "view"), async (req, res) => {
+  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
+  const match = {
+    paymentMadeBy: { $exists: true, $nin: [null, ""] }
+  };
+  if (q) {
+    match.paymentMadeBy = { $regex: escapeRegex(q), $options: "i" };
+  }
+  try {
+    const values = await Voucher.distinct("paymentMadeBy", match);
+    const cleaned = [...new Set(values.map((s) => String(s || "").trim()).filter(Boolean))].sort((a, b) =>
+      a.localeCompare(b, undefined, { sensitivity: "base" })
+    );
+    return res.json({ options: cleaned.slice(0, 80) });
+  } catch (e) {
+    return res.status(500).json({ error: e.message || "Could not load options" });
+  }
 });
 
 router.get(
@@ -199,6 +223,7 @@ router.post("/", requireAuth, requirePermission("vouchers", "create"), condition
       paymentMethod: payload.paymentMethod,
       paymentStatus: payload.paymentStatus,
       paymentDate: payload.paymentDate ? new Date(payload.paymentDate) : undefined,
+      paymentMadeBy: (payload.paymentMadeBy && String(payload.paymentMadeBy).trim()) || "",
       paidByMode: payload.paidByMode || "",
       paymentComments: payload.paymentComments || "",
       createdByName: req.user?.name || "",
@@ -301,6 +326,9 @@ router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), condition
   }
   if (payload.paymentDate !== undefined) {
     voucher.paymentDate = payload.paymentDate ? new Date(payload.paymentDate) : null;
+  }
+  if (payload.paymentMadeBy !== undefined) {
+    voucher.paymentMadeBy = (payload.paymentMadeBy && String(payload.paymentMadeBy).trim()) || "";
   }
   if (payload.paidByMode !== undefined) {
     voucher.paidByMode = payload.paidByMode || "";

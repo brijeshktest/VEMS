@@ -16,6 +16,7 @@ const initialForm = {
   paymentMethod: "Cash",
   paymentStatus: "Pending",
   paymentDate: "",
+  paymentMadeBy: "",
   paidByMode: "",
   paymentComments: ""
 };
@@ -68,6 +69,7 @@ export default function VouchersPage() {
   const fileInputRef = useRef(null);
   const [paidAmountManuallySet, setPaidAmountManuallySet] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [paymentMadeByOptions, setPaymentMadeByOptions] = useState([]);
 
   async function load() {
     try {
@@ -89,6 +91,34 @@ export default function VouchersPage() {
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const q = (form.paymentMadeBy || "").trim();
+    const run = async () => {
+      try {
+        const path =
+          q.length > 0
+            ? `/vouchers/payment-made-by-options?q=${encodeURIComponent(q)}`
+            : "/vouchers/payment-made-by-options";
+        const data = await apiFetch(path);
+        if (!cancelled && Array.isArray(data?.options)) {
+          setPaymentMadeByOptions(data.options);
+        }
+      } catch {
+        if (!cancelled) setPaymentMadeByOptions([]);
+      }
+    };
+    if (form.paymentStatus !== "Paid") {
+      setPaymentMadeByOptions([]);
+      return undefined;
+    }
+    const t = setTimeout(run, q.length > 0 ? 220 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [form.paymentMadeBy, form.paymentStatus]);
 
   const availableMaterials = useMemo(() => {
     if (!form.vendorId) return materials;
@@ -123,6 +153,7 @@ export default function VouchersPage() {
         ...form,
         items,
         paymentDate: form.paymentStatus === "Paid" ? form.paymentDate : null,
+        paymentMadeBy: form.paymentStatus === "Paid" ? (form.paymentMadeBy || "").trim() : "",
         paidByMode: form.paymentStatus === "Paid" ? form.paidByMode : "",
         paymentComments: form.paymentStatus === "Paid" ? form.paymentComments : ""
       };
@@ -165,6 +196,7 @@ export default function VouchersPage() {
       paymentMethod: voucher.paymentMethod || "Cash",
       paymentStatus: voucher.paymentStatus || "Pending",
       paymentDate: voucher.paymentDate ? new Date(voucher.paymentDate).toISOString().slice(0, 10) : "",
+      paymentMadeBy: voucher.paymentMadeBy || "",
       paidByMode: voucher.paidByMode || "",
       paymentComments: voucher.paymentComments || ""
     });
@@ -242,6 +274,7 @@ export default function VouchersPage() {
           "Voucher amount": Number(voucher.finalAmount),
           "Paid amount": Number(voucher.paidAmount ?? voucher.finalAmount ?? 0),
           Status: voucher.paymentStatus,
+          "Payment made from": voucher.paymentMadeBy || "",
           "Created By": voucher.createdByName || "-",
           "Status Updated By": voucher.statusUpdatedByName || "-"
         };
@@ -494,6 +527,7 @@ export default function VouchersPage() {
                     ...prev,
                     paymentStatus: value,
                     paymentDate: value === "Paid" ? prev.paymentDate || prev.dateOfPurchase : "",
+                    paymentMadeBy: value === "Paid" ? prev.paymentMadeBy : "",
                     paidByMode: value === "Paid" ? prev.paidByMode || prev.paymentMethod : "",
                     paymentComments: value === "Paid" ? prev.paymentComments : ""
                   }));
@@ -518,6 +552,24 @@ export default function VouchersPage() {
                   onMouseDown={numericFieldMouseDown}
                   onFocus={dateFieldFocus}
                 />
+              </div>
+              <div className="form-span-2">
+                <label htmlFor="voucher-payment-made-from">Payment made from</label>
+                <input
+                  id="voucher-payment-made-from"
+                  className="input"
+                  type="text"
+                  list="voucher-payment-made-from-datalist"
+                  autoComplete="off"
+                  value={form.paymentMadeBy}
+                  onChange={(e) => setForm({ ...form, paymentMadeBy: e.target.value })}
+                  placeholder="Original source of payment"
+                />
+                <datalist id="voucher-payment-made-from-datalist">
+                  {paymentMadeByOptions.map((opt) => (
+                    <option key={opt} value={opt} />
+                  ))}
+                </datalist>
               </div>
               <div>
                 <label>Paid by mode</label>
@@ -636,6 +688,7 @@ export default function VouchersPage() {
               <th>Vendor</th>
               <th>Voucher amount</th>
               <th>Paid amount</th>
+              <th>Payment made from</th>
               <th>Documents</th>
               <th>Status</th>
               <th>Created By</th>
@@ -653,6 +706,7 @@ export default function VouchersPage() {
                   <td>{vendor?.name || "Unknown"}</td>
                   <td>{voucher.finalAmount.toFixed(2)}</td>
                   <td>{Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2)}</td>
+                  <td>{voucher.paymentMadeBy?.trim() ? voucher.paymentMadeBy : "—"}</td>
                   <td>
                     <AttachmentListCell entity={voucher} kind="voucher" />
                   </td>

@@ -27,6 +27,7 @@ const VoucherSchema = new mongoose.Schema(
     paymentMethod: { type: String, required: true },
     paymentStatus: { type: String, enum: ["Paid", "Pending", "Partially Paid"], required: true },
     paymentDate: { type: Date },
+    paymentMadeBy: { type: String, trim: true, default: "" },
     paidByMode: { type: String, trim: true },
     paymentComments: { type: String, trim: true },
     createdByName: { type: String, trim: true },
