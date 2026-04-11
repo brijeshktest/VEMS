@@ -54,13 +54,17 @@ export default function WorkModePage() {
       {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="grid grid-3">
-        <button className="card stat-card mode-card" type="button" onClick={() => chooseMode("expense")}>
+        <button
+          className="card stat-card mode-card mode-card--expense"
+          type="button"
+          onClick={() => chooseMode("expense")}
+        >
           <span className="stat-label">Mode</span>
           <span className="stat-value" style={{ fontSize: 22 }}>Expense management</span>
           <span className="stat-hint">Vendors, materials, vouchers, and reports</span>
         </button>
         <button
-          className="card stat-card mode-card"
+          className="card stat-card mode-card mode-card--room"
           type="button"
           disabled={!allowRoomOps}
           onClick={() => chooseMode("room")}
@@ -70,7 +74,7 @@ export default function WorkModePage() {
           <span className="stat-hint">Room stage and activity operations summary</span>
         </button>
         <button
-          className="card stat-card mode-card"
+          className="card stat-card mode-card mode-card--tunnel"
           type="button"
           disabled={!allowTunnelOps}
           onClick={() => chooseMode("tunnel")}
@@ -80,7 +84,7 @@ export default function WorkModePage() {
           <span className="stat-hint">Bunkers, one tunnel per batch, then growing rooms; movement alerts</span>
         </button>
         {isAdmin ? (
-          <button className="card stat-card mode-card" type="button" onClick={() => chooseMode("admin")}>
+          <button className="card stat-card mode-card mode-card--admin" type="button" onClick={() => chooseMode("admin")}>
             <span className="stat-label">Mode</span>
             <span className="stat-value" style={{ fontSize: 22 }}>Admin</span>
             <span className="stat-hint">Admin console and related controls</span>

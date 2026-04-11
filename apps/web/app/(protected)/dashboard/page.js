@@ -13,6 +13,73 @@ function paymentStatusClass(status) {
   return "status-pill status-pill--pending";
 }
 
+/** Card / paid amount — bank card */
+function IconStatPaid({ className = "" }) {
+  return (
+    <svg
+      className={className}
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="1.5" y="5" width="21" height="14" rx="2" />
+      <line x1="1.5" y1="10" x2="22.5" y2="10" />
+    </svg>
+  );
+}
+
+/** Tax — document with folded corner */
+function IconStatTax({ className = "" }) {
+  return (
+    <svg
+      className={className}
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+/** Vouchers — stacked slips */
+function IconStatVouchers({ className = "" }) {
+  return (
+    <svg
+      className={className}
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="4" y="4" width="14" height="11" rx="1" strokeOpacity="0.38" />
+      <rect x="6" y="7" width="14" height="11" rx="1" />
+      <line x1="9" y1="11" x2="17" y2="11" />
+      <line x1="9" y1="14" x2="15" y2="14" />
+    </svg>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [summary, setSummary] = useState(null);
@@ -178,24 +245,39 @@ export default function DashboardPage() {
         <section className="" aria-label="Key metrics">
           <div className="grid grid-3">
             <Link className="stat-link" href="/reports">
-              <div className="card stat-card">
-                <span className="stat-label">Total paid amount</span>
-                <span className="stat-value">{summary ? summary.totalPaidAmount.toFixed(2) : "—"}</span>
-                <span className="stat-hint">Open reports →</span>
+              <div className="card stat-card stat-dashlet">
+                <div className="stat-dashlet__icon" aria-hidden>
+                  <IconStatPaid />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Total paid amount</span>
+                  <span className="stat-value">{summary ? summary.totalPaidAmount.toFixed(2) : "—"}</span>
+                  <span className="stat-hint">Open reports →</span>
+                </div>
               </div>
             </Link>
             <Link className="stat-link" href="/reports">
-              <div className="card stat-card">
-                <span className="stat-label">Total tax</span>
-                <span className="stat-value">{summary ? summary.totalTax.toFixed(2) : "—"}</span>
-                <span className="stat-hint">Open reports →</span>
+              <div className="card stat-card stat-dashlet">
+                <div className="stat-dashlet__icon" aria-hidden>
+                  <IconStatTax />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Total tax</span>
+                  <span className="stat-value">{summary ? summary.totalTax.toFixed(2) : "—"}</span>
+                  <span className="stat-hint">Open reports →</span>
+                </div>
               </div>
             </Link>
             <Link className="stat-link" href="/vouchers">
-              <div className="card stat-card">
-                <span className="stat-label">Vouchers</span>
-                <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
-                <span className="stat-hint">View vouchers →</span>
+              <div className="card stat-card stat-dashlet">
+                <div className="stat-dashlet__icon" aria-hidden>
+                  <IconStatVouchers />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Vouchers</span>
+                  <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
+                  <span className="stat-hint">View vouchers →</span>
+                </div>
               </div>
             </Link>
           </div>

@@ -29,6 +29,16 @@
   --brand-green: #20bd5a;
   --brand-green-soft: rgba(32, 189, 90, 0.14);
 
+  /* Work-mode card left accents */
+  --mode-expense-border: var(--primary);
+  --mode-expense-border-hover: var(--primary-pressed);
+  --mode-room-border: #168a48;
+  --mode-room-border-hover: #0f6b37;
+  --mode-tunnel-border: #0d7fa5;
+  --mode-tunnel-border-hover: #0a6585;
+  --mode-admin-border: #5c4d96;
+  --mode-admin-border-hover: #453873;
+
   --danger-soft: rgba(220, 38, 38, 0.1);
   --danger: #dc2626;
   --success-soft: rgba(32, 189, 90, 0.14);
@@ -1177,12 +1187,63 @@ a.brand {
   border-left: 4px solid var(--primary);
 }
 
+/* Dashboard expense dashlets: icon + metrics */
+.stat-dashlet {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.stat-dashlet__icon {
+  flex-shrink: 0;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--primary);
+}
+
+.stat-dashlet__icon svg {
+  display: block;
+}
+
+.stat-dashlet__body {
+  min-width: 0;
+  flex: 1;
+}
+
+.stat-dashlet__body .stat-label {
+  margin-top: 2px;
+}
+
 .mode-card {
   cursor: pointer;
 }
 
+.mode-card--expense {
+  border-left-color: var(--mode-expense-border);
+}
+
+.mode-card--room {
+  border-left-color: var(--mode-room-border);
+}
+
+.mode-card--tunnel {
+  border-left-color: var(--mode-tunnel-border);
+}
+
+.mode-card--admin {
+  border-left-color: var(--mode-admin-border);
+}
+
 .mode-card:disabled {
   cursor: not-allowed;
+  border-left-color: var(--border-strong);
+  opacity: 0.72;
 }
 
 .section-toggle {
@@ -1236,7 +1297,22 @@ a.brand {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
   border-color: var(--border-strong);
-  border-left-color: var(--primary-pressed);
+}
+
+.mode-card--expense:hover:not(:disabled) {
+  border-left-color: var(--mode-expense-border-hover);
+}
+
+.mode-card--room:hover:not(:disabled) {
+  border-left-color: var(--mode-room-border-hover);
+}
+
+.mode-card--tunnel:hover:not(:disabled) {
+  border-left-color: var(--mode-tunnel-border-hover);
+}
+
+.mode-card--admin:hover:not(:disabled) {
+  border-left-color: var(--mode-admin-border-hover);
 }
 
 .stat-label {
