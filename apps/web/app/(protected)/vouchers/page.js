@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
+import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 
 const initialForm = {
   vendorId: "",
@@ -70,6 +71,7 @@ export default function VouchersPage() {
   const [paidAmountManuallySet, setPaidAmountManuallySet] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [paymentMadeByOptions, setPaymentMadeByOptions] = useState([]);
+  const [voucherModalOpen, setVoucherModalOpen] = useState(false);
 
   async function load() {
     try {
@@ -145,43 +147,25 @@ export default function VouchersPage() {
     setItems((prev) => prev.filter((_, idx) => idx !== index));
   }
 
-  async function onSubmit(event) {
-    event.preventDefault();
-    setError("");
-    try {
-      const payload = {
-        ...form,
-        items,
-        paymentDate: form.paymentStatus === "Paid" ? form.paymentDate : null,
-        paymentMadeBy: form.paymentStatus === "Paid" ? (form.paymentMadeBy || "").trim() : "",
-        paidByMode: form.paymentStatus === "Paid" ? form.paidByMode : "",
-        paymentComments: form.paymentStatus === "Paid" ? form.paymentComments : ""
-      };
-      const fd = new FormData();
-      fd.append("data", JSON.stringify(payload));
-      for (const file of pendingFiles) {
-        fd.append("files", file);
-      }
-      if (editingId && removedAttachmentIds.length) {
-        fd.append("removedAttachmentIds", JSON.stringify(removedAttachmentIds));
-      }
-      if (editingId) {
-        await apiFetchForm(`/vouchers/${editingId}`, fd, { method: "PUT" });
-      } else {
-        await apiFetchForm("/vouchers", fd, { method: "POST" });
-      }
-      setForm(initialForm);
-      setPaidAmountManuallySet(false);
-      setItems([{ materialId: "", quantity: 1, pricePerUnit: 0, comment: "" }]);
-      setEditingId(null);
-      setPendingFiles([]);
-      setRemovedAttachmentIds([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      await load();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
+  const resetVoucherForm = useCallback(() => {
+    setEditingId(null);
+    setForm(initialForm);
+    setPaidAmountManuallySet(false);
+    setItems([{ materialId: "", quantity: 1, pricePerUnit: 0, comment: "" }]);
+    setPendingFiles([]);
+    setRemovedAttachmentIds([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    resetVoucherForm();
+    setVoucherModalOpen(false);
+  }, [resetVoucherForm]);
+
+  const openCreateVoucherModal = useCallback(() => {
+    resetVoucherForm();
+    setVoucherModalOpen(true);
+  }, [resetVoucherForm]);
 
   function startEdit(voucher) {
     setEditingId(voucher._id);
@@ -212,16 +196,56 @@ export default function VouchersPage() {
     setPendingFiles([]);
     setRemovedAttachmentIds([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    setVoucherModalOpen(true);
   }
 
-  function cancelEdit() {
-    setEditingId(null);
-    setForm(initialForm);
-    setPaidAmountManuallySet(false);
-    setItems([{ materialId: "", quantity: 1, pricePerUnit: 0, comment: "" }]);
-    setPendingFiles([]);
-    setRemovedAttachmentIds([]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+  useEffect(() => {
+    if (!voucherModalOpen) return undefined;
+    function onKey(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelEdit();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [voucherModalOpen, cancelEdit]);
+
+  async function onSubmit(event) {
+    event.preventDefault();
+    setError("");
+    try {
+      const payload = {
+        ...form,
+        items,
+        paymentDate: form.paymentStatus === "Paid" ? form.paymentDate : null,
+        paymentMadeBy: form.paymentStatus === "Paid" ? (form.paymentMadeBy || "").trim() : "",
+        paidByMode: form.paymentStatus === "Paid" ? form.paidByMode : "",
+        paymentComments: form.paymentStatus === "Paid" ? form.paymentComments : ""
+      };
+      const fd = new FormData();
+      fd.append("data", JSON.stringify(payload));
+      for (const file of pendingFiles) {
+        fd.append("files", file);
+      }
+      if (editingId && removedAttachmentIds.length) {
+        fd.append("removedAttachmentIds", JSON.stringify(removedAttachmentIds));
+      }
+      if (editingId) {
+        await apiFetchForm(`/vouchers/${editingId}`, fd, { method: "PUT" });
+      } else {
+        await apiFetchForm("/vouchers", fd, { method: "POST" });
+      }
+      cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
   }
 
   function onFilePick(e) {
@@ -328,9 +352,95 @@ export default function VouchersPage() {
       {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card">
-        <h3 className="panel-title">{editingId ? "Edit voucher" : "Create voucher"}</h3>
-        <form className="grid section-stack" onSubmit={onSubmit}>
-          <div className="grid grid-3">
+        <div className="card-header-row card-header-row--voucher-toolbar">
+          <h3 className="panel-title">All vouchers</h3>
+          <div className="voucher-table-toolbar-actions">
+            <button className="btn" type="button" onClick={openCreateVoucherModal}>
+              Create voucher
+            </button>
+            <ExcelDownloadIconButton
+              disabled={!vouchers.length}
+              onClick={() => void downloadVouchersExcel()}
+            />
+          </div>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Voucher no.</th>
+              <th>Vendor</th>
+              <th>Voucher amount</th>
+              <th>Paid amount</th>
+              <th>Payment made from</th>
+              <th>Documents</th>
+              <th>Status</th>
+              <th>Created By</th>
+              <th>Status Updated By</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {vouchers.map((voucher) => {
+              const vid = voucher.vendorId?._id ?? voucher.vendorId;
+              const vendor = vendors.find((v) => String(v._id) === String(vid));
+              return (
+                <tr key={voucher._id}>
+                  <td>{new Date(voucher.dateOfPurchase).toLocaleDateString()}</td>
+                  <td>{voucher.voucherNumber || "-"}</td>
+                  <td>{vendor?.name || "Unknown"}</td>
+                  <td>{voucher.finalAmount.toFixed(2)}</td>
+                  <td>{Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2)}</td>
+                  <td>{voucher.paymentMadeBy?.trim() ? voucher.paymentMadeBy : "—"}</td>
+                  <td>
+                    <AttachmentListCell entity={voucher} kind="voucher" />
+                  </td>
+                  <td>
+                    <span className={paymentStatusClass(voucher.paymentStatus)}>{voucher.paymentStatus}</span>
+                  </td>
+                  <td>{voucher.createdByName || "-"}</td>
+                  <td>{voucher.statusUpdatedByName || "-"}</td>
+                  <td>
+                    <div className="row-actions">
+                      <EditIconButton onClick={() => startEdit(voucher)} />
+                      {isAdmin ? <DeleteIconButton onClick={() => deleteVoucher(voucher._id)} /> : null}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        </div>
+      </div>
+
+      {voucherModalOpen ? (
+        <div
+          className="voucher-modal-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancelEdit();
+          }}
+        >
+          <div
+            className="voucher-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="voucher-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="voucher-modal-header">
+              <h3 id="voucher-modal-title" className="voucher-modal-title">
+                {editingId ? "Edit voucher" : "Create voucher"}
+              </h3>
+              <button type="button" className="voucher-modal-close" aria-label="Close" onClick={cancelEdit}>
+                ×
+              </button>
+            </div>
+            <div className="voucher-modal-body">
+        <form className="grid section-stack voucher-modal-form" onSubmit={onSubmit}>
+          <div className="grid grid-4">
             <div>
               <label>Vendor</label>
               <select
@@ -388,7 +498,7 @@ export default function VouchersPage() {
             <h4>Line items</h4>
             <div className="voucher-line-items">
             {items.map((item, index) => (
-              <div className="grid grid-3 line-item-row" key={index}>
+              <div className="grid grid-4 line-item-row" key={index}>
                 <div>
                   <label>Material</label>
                   <select
@@ -438,6 +548,18 @@ export default function VouchersPage() {
                     required
                   />
                 </div>
+                <div className="line-item-remove-col">
+                  {items.length > 1 ? (
+                    <button
+                      type="button"
+                      className="btn btn-secondary line-item-remove-btn"
+                      aria-label="Remove line item"
+                      onClick={() => removeItem(index)}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </div>
                 <div className="form-span-all">
                   <label>Comment</label>
                   <input
@@ -448,11 +570,6 @@ export default function VouchersPage() {
                     placeholder="Optional notes for this line item"
                   />
                 </div>
-                {items.length > 1 ? (
-                  <button type="button" className="btn btn-secondary" onClick={() => removeItem(index)}>
-                    Remove
-                  </button>
-                ) : null}
               </div>
             ))}
             </div>
@@ -461,7 +578,7 @@ export default function VouchersPage() {
             </button>
           </div>
 
-          <div className="grid grid-3">
+          <div className="grid grid-4">
             <div>
               <label>Tax %</label>
               <input
@@ -541,7 +658,7 @@ export default function VouchersPage() {
           </div>
 
           {form.paymentStatus === "Paid" ? (
-            <div className="grid grid-3">
+            <div className="grid grid-4">
               <div className="voucher-field-date">
                 <label>Payment date</label>
                 <input
@@ -654,86 +771,19 @@ export default function VouchersPage() {
             ) : null}
           </div>
 
-          <button className="btn" type="submit">
-            {editingId ? "Update Voucher" : "Save Voucher"}
-          </button>
-          {editingId ? (
+          <div className="voucher-modal-actions">
+            <button className="btn" type="submit">
+              {editingId ? "Update Voucher" : "Save Voucher"}
+            </button>
             <button className="btn btn-secondary" type="button" onClick={cancelEdit}>
               Cancel
             </button>
-          ) : null}
+          </div>
         </form>
-      </div>
-
-      <div className="card">
-        <div className="card-header-row">
-          <h3 className="panel-title">
-            All vouchers
-          </h3>
-          <button
-            className="btn btn-secondary"
-            type="button"
-            disabled={!vouchers.length}
-            onClick={() => void downloadVouchersExcel()}
-          >
-            Download Excel
-          </button>
+            </div>
+          </div>
         </div>
-        <div className="table-wrap">
-          <table className="table">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Voucher no.</th>
-              <th>Vendor</th>
-              <th>Voucher amount</th>
-              <th>Paid amount</th>
-              <th>Payment made from</th>
-              <th>Documents</th>
-              <th>Status</th>
-              <th>Created By</th>
-              <th>Status Updated By</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {vouchers.map((voucher) => {
-              const vendor = vendors.find((v) => v._id === voucher.vendorId);
-              return (
-                <tr key={voucher._id}>
-                  <td>{new Date(voucher.dateOfPurchase).toLocaleDateString()}</td>
-                  <td>{voucher.voucherNumber || "-"}</td>
-                  <td>{vendor?.name || "Unknown"}</td>
-                  <td>{voucher.finalAmount.toFixed(2)}</td>
-                  <td>{Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2)}</td>
-                  <td>{voucher.paymentMadeBy?.trim() ? voucher.paymentMadeBy : "—"}</td>
-                  <td>
-                    <AttachmentListCell entity={voucher} kind="voucher" />
-                  </td>
-                  <td>
-                    <span className={paymentStatusClass(voucher.paymentStatus)}>{voucher.paymentStatus}</span>
-                  </td>
-                  <td>{voucher.createdByName || "-"}</td>
-                  <td>{voucher.statusUpdatedByName || "-"}</td>
-                  <td>
-                    <div className="row-actions">
-                      <button className="btn btn-secondary" type="button" onClick={() => startEdit(voucher)}>
-                        Edit
-                      </button>
-                      {isAdmin ? (
-                        <button className="btn btn-secondary" type="button" onClick={() => deleteVoucher(voucher._id)}>
-                          Delete
-                        </button>
-                      ) : null}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }

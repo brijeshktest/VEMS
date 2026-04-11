@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../../../lib/api.js";
 import PageHeader from "../../../../components/PageHeader.js";
+import { EditIconButton, DeleteIconButton } from "../../../../components/EditDeleteIconButtons.js";
 
 const initialForm = {
   name: "",
@@ -226,15 +227,13 @@ export default function GrowingRoomsPage() {
                   )}
                 </td>
                 <td>
-                  <button className="btn btn-secondary" type="button" onClick={() => startEdit(room)}>
-                    Edit
-                  </button>{" "}
-                  <button className="btn btn-secondary" type="button" onClick={() => moveToNextStage(room._id)}>
-                    Move Stage
-                  </button>{" "}
-                  <button className="btn btn-secondary" type="button" onClick={() => deleteRoom(room._id)}>
-                    Delete
-                  </button>
+                  <div className="row-actions">
+                    <EditIconButton onClick={() => startEdit(room)} />
+                    <button className="btn btn-secondary" type="button" onClick={() => moveToNextStage(room._id)}>
+                      Move Stage
+                    </button>
+                    <DeleteIconButton onClick={() => deleteRoom(room._id)} />
+                  </div>
                   <div style={{ marginTop: 8 }}>
                     <select
                       className="input"

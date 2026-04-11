@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
+import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
 import {
   validateOptionalEmail,
@@ -49,7 +50,27 @@ export default function VendorsPage() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
   const fileInputRef = useRef(null);
+
+  const resetVendorForm = useCallback(() => {
+    setFieldErrors({});
+    setEditingId(null);
+    setForm(initialForm);
+    setPendingFiles([]);
+    setRemovedAttachmentIds([]);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    resetVendorForm();
+    setVendorModalOpen(false);
+  }, [resetVendorForm]);
+
+  const openAddVendorModal = useCallback(() => {
+    resetVendorForm();
+    setVendorModalOpen(true);
+  }, [resetVendorForm]);
 
   async function load() {
     try {
@@ -60,6 +81,7 @@ export default function VendorsPage() {
       setError(err.message);
     }
   }
+
   async function deleteVendor(vendorId) {
     if (!isAdmin) return;
     setError("");
@@ -74,10 +96,26 @@ export default function VendorsPage() {
     }
   }
 
-
   useEffect(() => {
     load();
   }, []);
+
+  useEffect(() => {
+    if (!vendorModalOpen) return undefined;
+    function onKey(e) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        cancelEdit();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [vendorModalOpen, cancelEdit]);
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -111,11 +149,7 @@ export default function VendorsPage() {
       } else {
         await apiFetchForm("/vendors", fd, { method: "POST" });
       }
-      setForm(initialForm);
-      setEditingId(null);
-      setPendingFiles([]);
-      setRemovedAttachmentIds([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      cancelEdit();
       await load();
     } catch (err) {
       setError(err.message);
@@ -140,15 +174,7 @@ export default function VendorsPage() {
     setPendingFiles([]);
     setRemovedAttachmentIds([]);
     if (fileInputRef.current) fileInputRef.current.value = "";
-  }
-
-  function cancelEdit() {
-    setFieldErrors({});
-    setEditingId(null);
-    setForm(initialForm);
-    setPendingFiles([]);
-    setRemovedAttachmentIds([]);
-    if (fileInputRef.current) fileInputRef.current.value = "";
+    setVendorModalOpen(true);
   }
 
   function onFilePick(e) {
@@ -185,265 +211,303 @@ export default function VendorsPage() {
       {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="card">
-        <h3 className="panel-title">{editingId ? "Edit vendor" : "Add vendor"}</h3>
-        <form className="grid grid-3" onSubmit={onSubmit}>
-          <div>
-            <label htmlFor="vendor-name">Vendor name</label>
-            <input
-              id="vendor-name"
-              className="input"
-              placeholder="Legal or trading name"
-              value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              required
-            />
-          </div>
-          <div>
-            <label htmlFor="vendor-contact-person">Contact person</label>
-            <input
-              id="vendor-contact-person"
-              className="input"
-              placeholder="Name"
-              value={form.contactPerson}
-              onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
-            />
-          </div>
-          <div>
-            <label htmlFor="vendor-type">Vendor type (optional)</label>
-            <input
-              id="vendor-type"
-              className="input"
-              list="vendor-type-options"
-              placeholder="Type and select/add"
-              value={form.vendorType}
-              onChange={(e) => setForm({ ...form, vendorType: e.target.value })}
-            />
-            <datalist id="vendor-type-options">
-              {vendorTypeOptions.map((type) => (
-                <option key={type} value={type} />
-              ))}
-            </datalist>
-          </div>
-          <div>
-            <label htmlFor="vendor-gstin">GSTIN (optional)</label>
-            <input
-              id="vendor-gstin"
-              className={`input${fieldErrors.gstin ? " input--error" : ""}`}
-              placeholder="15 character GSTIN"
-              maxLength={15}
-              value={form.gstin}
-              onChange={(e) => {
-                setFieldErrors((prev) => {
-                  const next = { ...prev };
-                  delete next.gstin;
-                  return next;
-                });
-                setForm({ ...form, gstin: e.target.value.toUpperCase() });
-              }}
-            />
-            <span className="field-hint">Format: 27ABCDE1234F1Z5 (15 characters).</span>
-            {fieldErrors.gstin ? <span className="field-error">{fieldErrors.gstin}</span> : null}
-          </div>
-          <div>
-            <label htmlFor="vendor-mobile">Mobile (optional)</label>
-            <input
-              id="vendor-mobile"
-              className={`input${fieldErrors.contactNumber ? " input--error" : ""}`}
-              placeholder="9876543210 or +91 9876543210"
-              inputMode="tel"
-              autoComplete="tel"
-              value={form.contactNumber}
-              onChange={(e) => {
-                setFieldErrors((prev) => {
-                  const next = { ...prev };
-                  delete next.contactNumber;
-                  return next;
-                });
-                setForm({ ...form, contactNumber: e.target.value });
-              }}
-            />
-            <span className="field-hint">10-digit Indian mobile; must start with 6–9. +91 or leading 0 accepted.</span>
-            {fieldErrors.contactNumber ? <span className="field-error">{fieldErrors.contactNumber}</span> : null}
-          </div>
-          <div>
-            <label htmlFor="vendor-email">Email (optional)</label>
-            <input
-              id="vendor-email"
-              type="email"
-              className={`input${fieldErrors.email ? " input--error" : ""}`}
-              placeholder="vendor@example.com"
-              autoComplete="email"
-              value={form.email}
-              onChange={(e) => {
-                setFieldErrors((prev) => {
-                  const next = { ...prev };
-                  delete next.email;
-                  return next;
-                });
-                setForm({ ...form, email: e.target.value });
-              }}
-            />
-            <span className="field-hint">Standard email format; stored in lowercase.</span>
-            {fieldErrors.email ? <span className="field-error">{fieldErrors.email}</span> : null}
-          </div>
-          <div>
-            <label htmlFor="vendor-pan">PAN (optional)</label>
-            <input
-              id="vendor-pan"
-              className={`input${fieldErrors.pan ? " input--error" : ""}`}
-              placeholder="ABCDE1234F"
-              autoCapitalize="characters"
-              maxLength={10}
-              value={form.pan}
-              onChange={(e) => {
-                setFieldErrors((prev) => {
-                  const next = { ...prev };
-                  delete next.pan;
-                  return next;
-                });
-                setForm({ ...form, pan: e.target.value.toUpperCase() });
-              }}
-            />
-            <span className="field-hint">Format AAAAA9999A; 4th letter is holder type (e.g. P individual, C company).</span>
-            {fieldErrors.pan ? <span className="field-error">{fieldErrors.pan}</span> : null}
-          </div>
-          <div>
-            <label htmlFor="vendor-aadhaar">Aadhaar (optional)</label>
-            <input
-              id="vendor-aadhaar"
-              className={`input${fieldErrors.aadhaar ? " input--error" : ""}`}
-              placeholder="12 digits (spaces ok)"
-              inputMode="numeric"
-              autoComplete="off"
-              value={form.aadhaar}
-              onChange={(e) => {
-                setFieldErrors((prev) => {
-                  const next = { ...prev };
-                  delete next.aadhaar;
-                  return next;
-                });
-                setForm({ ...form, aadhaar: e.target.value });
-              }}
-            />
-            <span className="field-hint">12 digits; UIDAI Verhoeff checksum is verified.</span>
-            {fieldErrors.aadhaar ? <span className="field-error">{fieldErrors.aadhaar}</span> : null}
-          </div>
-          <input
-            className="input form-span-all"
-            placeholder="Address"
-            value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
-          />
-          <select
-            className="input"
-            value={form.status}
-            onChange={(e) => setForm({ ...form, status: e.target.value })}
-          >
-            <option value="Active">Active</option>
-            <option value="Inactive">Inactive</option>
-          </select>
-          <div className="form-span-all">
-            <label>Attachments (optional, multiple files)</label>
-            <input
-              ref={fileInputRef}
-              className="input"
-              type="file"
-              multiple
-              onChange={onFilePick}
-            />
-            {pendingFiles.length ? (
-              <ul className="file-chips">
-                {pendingFiles.map((file, index) => (
-                  <li key={`${file.name}-${index}`}>
-                    <span>{file.name}</span>
-                    <button type="button" className="btn btn-secondary btn-tiny" onClick={() => removePendingFile(index)}>
-                      Remove
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {editingId && visibleAttachments.length ? (
-              <div>
-                <label>Current files</label>
-                <ul className="file-chips">
-                  {visibleAttachments.map((att) => (
-                    <li key={att._id}>
-                      <button
-                        type="button"
-                        className="link-btn"
-                        onClick={() =>
-                          downloadAttachment(`/vendors/${editingId}/attachments/download/${att.storedName}`)
-                        }
-                      >
-                        {att.originalName}
-                      </button>
-                      <button type="button" className="btn btn-secondary btn-tiny" onClick={() => markAttachmentRemoved(att._id)}>
-                        Remove
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-          </div>
-          <button className="btn" type="submit">
-            {editingId ? "Update" : "Save"}
-          </button>
-          {editingId ? (
-            <button className="btn btn-secondary" type="button" onClick={cancelEdit}>
-              Cancel
+        <div className="card-header-row card-header-row--voucher-toolbar">
+          <h3 className="panel-title">All vendors</h3>
+          <div className="voucher-table-toolbar-actions">
+            <button className="btn" type="button" onClick={openAddVendorModal}>
+              Add vendor
             </button>
-          ) : null}
-        </form>
-      </div>
-
-      <div className="card">
-        <h3 className="panel-title">All vendors</h3>
+          </div>
+        </div>
         <div className="table-wrap">
           <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Contact</th>
-              <th>Documents</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {vendors.map((vendor) => (
-              <tr key={vendor._id}>
-                <td>{vendor.name}</td>
-                <td>
-                  {vendor.contactPerson || "-"} ({vendor.contactNumber || "-"})
-                </td>
-                <td>
-                  <AttachmentListCell entity={vendor} kind="vendor" />
-                </td>
-                <td>
-                  <span className={vendor.status === "Active" ? "status-pill status-pill--active" : "status-pill status-pill--inactive"}>
-                    {vendor.status}
-                  </span>
-                </td>
-                <td>
-                  <div className="row-actions">
-                    <button className="btn btn-secondary" type="button" onClick={() => startEdit(vendor)}>
-                      Edit
-                    </button>
-                    {isAdmin ? (
-                      <button className="btn btn-secondary" type="button" onClick={() => deleteVendor(vendor._id)}>
-                        Delete
-                      </button>
-                    ) : null}
-                  </div>
-                </td>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Contact</th>
+                <th>Documents</th>
+                <th>Status</th>
+                <th>Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {vendors.map((vendor) => (
+                <tr key={vendor._id}>
+                  <td>{vendor.name}</td>
+                  <td>
+                    {vendor.contactPerson || "-"} ({vendor.contactNumber || "-"})
+                  </td>
+                  <td>
+                    <AttachmentListCell entity={vendor} kind="vendor" />
+                  </td>
+                  <td>
+                    <span
+                      className={
+                        vendor.status === "Active"
+                          ? "status-pill status-pill--active"
+                          : "status-pill status-pill--inactive"
+                      }
+                    >
+                      {vendor.status}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="row-actions">
+                      <EditIconButton onClick={() => startEdit(vendor)} />
+                      {isAdmin ? <DeleteIconButton onClick={() => deleteVendor(vendor._id)} /> : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </div>
+
+      {vendorModalOpen ? (
+        <div
+          className="voucher-modal-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) cancelEdit();
+          }}
+        >
+          <div
+            className="voucher-modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="vendor-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="voucher-modal-header">
+              <h3 id="vendor-modal-title" className="voucher-modal-title">
+                {editingId ? "Edit vendor" : "Add vendor"}
+              </h3>
+              <button type="button" className="voucher-modal-close" aria-label="Close" onClick={cancelEdit}>
+                ×
+              </button>
+            </div>
+            <div className="voucher-modal-body">
+              <form className="grid grid-3 section-stack voucher-modal-form" onSubmit={onSubmit}>
+                <div>
+                  <label htmlFor="vendor-name">Vendor name</label>
+                  <input
+                    id="vendor-name"
+                    className="input"
+                    placeholder="Legal or trading name"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    required
+                  />
+                </div>
+                <div>
+                  <label htmlFor="vendor-contact-person">Contact person</label>
+                  <input
+                    id="vendor-contact-person"
+                    className="input"
+                    placeholder="Name"
+                    value={form.contactPerson}
+                    onChange={(e) => setForm({ ...form, contactPerson: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="vendor-type">Vendor type (optional)</label>
+                  <input
+                    id="vendor-type"
+                    className="input"
+                    list="vendor-type-options"
+                    placeholder="Type and select/add"
+                    value={form.vendorType}
+                    onChange={(e) => setForm({ ...form, vendorType: e.target.value })}
+                  />
+                  <datalist id="vendor-type-options">
+                    {vendorTypeOptions.map((type) => (
+                      <option key={type} value={type} />
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label htmlFor="vendor-gstin">GSTIN (optional)</label>
+                  <input
+                    id="vendor-gstin"
+                    className={`input${fieldErrors.gstin ? " input--error" : ""}`}
+                    placeholder="15 character GSTIN"
+                    maxLength={15}
+                    value={form.gstin}
+                    onChange={(e) => {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.gstin;
+                        return next;
+                      });
+                      setForm({ ...form, gstin: e.target.value.toUpperCase() });
+                    }}
+                  />
+                  <span className="field-hint">Format: 27ABCDE1234F1Z5 (15 characters).</span>
+                  {fieldErrors.gstin ? <span className="field-error">{fieldErrors.gstin}</span> : null}
+                </div>
+                <div>
+                  <label htmlFor="vendor-mobile">Mobile (optional)</label>
+                  <input
+                    id="vendor-mobile"
+                    className={`input${fieldErrors.contactNumber ? " input--error" : ""}`}
+                    placeholder="9876543210 or +91 9876543210"
+                    inputMode="tel"
+                    autoComplete="tel"
+                    value={form.contactNumber}
+                    onChange={(e) => {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.contactNumber;
+                        return next;
+                      });
+                      setForm({ ...form, contactNumber: e.target.value });
+                    }}
+                  />
+                  <span className="field-hint">
+                    10-digit Indian mobile; must start with 6–9. +91 or leading 0 accepted.
+                  </span>
+                  {fieldErrors.contactNumber ? <span className="field-error">{fieldErrors.contactNumber}</span> : null}
+                </div>
+                <div>
+                  <label htmlFor="vendor-email">Email (optional)</label>
+                  <input
+                    id="vendor-email"
+                    type="email"
+                    className={`input${fieldErrors.email ? " input--error" : ""}`}
+                    placeholder="vendor@example.com"
+                    autoComplete="email"
+                    value={form.email}
+                    onChange={(e) => {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.email;
+                        return next;
+                      });
+                      setForm({ ...form, email: e.target.value });
+                    }}
+                  />
+                  <span className="field-hint">Standard email format; stored in lowercase.</span>
+                  {fieldErrors.email ? <span className="field-error">{fieldErrors.email}</span> : null}
+                </div>
+                <div>
+                  <label htmlFor="vendor-pan">PAN (optional)</label>
+                  <input
+                    id="vendor-pan"
+                    className={`input${fieldErrors.pan ? " input--error" : ""}`}
+                    placeholder="ABCDE1234F"
+                    autoCapitalize="characters"
+                    maxLength={10}
+                    value={form.pan}
+                    onChange={(e) => {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.pan;
+                        return next;
+                      });
+                      setForm({ ...form, pan: e.target.value.toUpperCase() });
+                    }}
+                  />
+                  <span className="field-hint">
+                    Format AAAAA9999A; 4th letter is holder type (e.g. P individual, C company).
+                  </span>
+                  {fieldErrors.pan ? <span className="field-error">{fieldErrors.pan}</span> : null}
+                </div>
+                <div>
+                  <label htmlFor="vendor-aadhaar">Aadhaar (optional)</label>
+                  <input
+                    id="vendor-aadhaar"
+                    className={`input${fieldErrors.aadhaar ? " input--error" : ""}`}
+                    placeholder="12 digits (spaces ok)"
+                    inputMode="numeric"
+                    autoComplete="off"
+                    value={form.aadhaar}
+                    onChange={(e) => {
+                      setFieldErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.aadhaar;
+                        return next;
+                      });
+                      setForm({ ...form, aadhaar: e.target.value });
+                    }}
+                  />
+                  <span className="field-hint">12 digits; UIDAI Verhoeff checksum is verified.</span>
+                  {fieldErrors.aadhaar ? <span className="field-error">{fieldErrors.aadhaar}</span> : null}
+                </div>
+                <input
+                  className="input form-span-all"
+                  placeholder="Address"
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                />
+                <select
+                  className="input"
+                  value={form.status}
+                  onChange={(e) => setForm({ ...form, status: e.target.value })}
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+                <div className="form-span-all">
+                  <label>Attachments (optional, multiple files)</label>
+                  <input ref={fileInputRef} className="input" type="file" multiple onChange={onFilePick} />
+                  {pendingFiles.length ? (
+                    <ul className="file-chips">
+                      {pendingFiles.map((file, index) => (
+                        <li key={`${file.name}-${index}`}>
+                          <span>{file.name}</span>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-tiny"
+                            onClick={() => removePendingFile(index)}
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {editingId && visibleAttachments.length ? (
+                    <div>
+                      <label>Current files</label>
+                      <ul className="file-chips">
+                        {visibleAttachments.map((att) => (
+                          <li key={att._id}>
+                            <button
+                              type="button"
+                              className="link-btn"
+                              onClick={() =>
+                                downloadAttachment(`/vendors/${editingId}/attachments/download/${att.storedName}`)
+                              }
+                            >
+                              {att.originalName}
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-tiny"
+                              onClick={() => markAttachmentRemoved(att._id)}
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="voucher-modal-actions form-span-all">
+                  <button className="btn" type="submit">
+                    {editingId ? "Update" : "Save"}
+                  </button>
+                  <button className="btn btn-secondary" type="button" onClick={cancelEdit}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -175,7 +175,7 @@ export default function DashboardPage() {
       ) : null}
 
       {(workMode === "expense" || workMode === "admin") && summary ? (
-        <section className="saas-section" aria-label="Key metrics">
+        <section className="" aria-label="Key metrics">
           <div className="grid grid-3">
             <Link className="stat-link" href="/reports">
               <div className="card stat-card">
@@ -279,7 +279,7 @@ export default function DashboardPage() {
       {(workMode === "expense" || workMode === "admin") && vendors.length ? (
         <section className="saas-section" aria-label="Top vendors and materials">
           <div className="grid grid-2">
-        <div className="card">
+        <div className="dashboard-table-block">
           <h3 className="panel-title">Top vendors</h3>
           <div className="table-wrap">
             <table className="table">
@@ -300,7 +300,7 @@ export default function DashboardPage() {
           </table>
           </div>
         </div>
-        <div className="card">
+        <div className="dashboard-table-block">
           <h3 className="panel-title">Top materials</h3>
           <div className="table-wrap">
             <table className="table">

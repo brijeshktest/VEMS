@@ -1224,6 +1224,14 @@ a.brand {
   border-left-color: var(--primary-pressed);
 }
 
+.dashboard-table-block {
+  min-width: 0;
+}
+
+.dashboard-table-block > .panel-title {
+  margin-bottom: 12px;
+}
+
 .mode-card:hover:not(:disabled) {
   transform: translateY(-2px);
   box-shadow: var(--shadow-lg);
@@ -1642,6 +1650,10 @@ select.input {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
+.grid-4 {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
 .grid-2 {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
 }
@@ -1671,6 +1683,39 @@ select.input {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  align-items: center;
+}
+
+/* Table row Edit / Delete as compact icon buttons */
+.btn-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.375rem;
+  height: 2.375rem;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.btn-icon svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+.btn-icon:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-icon--danger:hover:not(:disabled) {
+  border-color: rgba(185, 28, 28, 0.45);
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.btn-icon--excel:hover:not(:disabled) {
+  border-color: rgba(33, 115, 70, 0.45);
+  background: rgba(33, 115, 70, 0.1);
 }
 
 .section-stack {
@@ -1716,6 +1761,17 @@ select.input {
   }
 }
 
+/* Voucher modal: four columns on wide dialogs */
+.voucher-modal-form .grid-4 .form-span-2 {
+  grid-column: 1 / -1;
+}
+
+@media (min-width: 640px) {
+  .voucher-modal-form .grid-4 .form-span-2 {
+    grid-column: span 2;
+  }
+}
+
 .line-item-row {
   padding: 12px;
   border-radius: var(--radius-sm);
@@ -1735,6 +1791,18 @@ select.input {
   color: var(--muted);
 }
 
+.line-item-remove-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
+}
+
+.line-item-remove-btn {
+  width: 100%;
+}
+
 .card-header-row {
   display: flex;
   flex-wrap: wrap;
@@ -1746,6 +1814,107 @@ select.input {
 
 .card-header-row .panel-title {
   margin-bottom: 0;
+}
+
+.card-header-row--voucher-toolbar {
+  align-items: flex-start;
+}
+
+.voucher-table-toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* Vouchers create/edit modal */
+.voucher-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 16px 24px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(26, 28, 26, 0.48);
+}
+
+.voucher-modal-dialog {
+  width: min(1180px, 100%);
+  max-width: 100%;
+  margin-top: min(4vh, 36px);
+  margin-bottom: auto;
+  max-height: min(94dvh, 900px);
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--card-radius);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  box-shadow: var(--card-shadow), 0 24px 80px rgba(15, 23, 42, 0.18);
+}
+
+.voucher-modal-header {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.voucher-modal-title {
+  margin: 0;
+  font-size: clamp(1.05rem, 2.4vw, 1.2rem);
+  font-weight: 800;
+  font-family: var(--font-display), "Manrope", var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.voucher-modal-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.voucher-modal-close:hover {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.voucher-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: clamp(16px, 2.5vw, 22px);
+}
+
+.voucher-modal-form.section-stack {
+  gap: clamp(16px, 2.2vw, 22px);
+}
+
+.voucher-modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
 }
 
 @media (max-width: 768px) {

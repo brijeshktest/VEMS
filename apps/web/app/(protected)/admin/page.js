@@ -4,6 +4,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { apiFetch, apiFetchForm, API_URL } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
+import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
 
 const modules = [
   "dashboard",
@@ -411,12 +412,10 @@ export default function AdminPage() {
                   <td>{role.name}</td>
                   <td>{role.description || "-"}</td>
                   <td>
-                    <button className="btn btn-secondary" type="button" onClick={() => startEditRole(role)}>
-                      Edit
-                    </button>{" "}
-                    <button className="btn btn-secondary" type="button" onClick={() => deleteRole(role._id)}>
-                      Delete
-                    </button>
+                    <div className="row-actions">
+                      <EditIconButton onClick={() => startEditRole(role)} />
+                      <DeleteIconButton onClick={() => deleteRole(role._id)} />
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -493,12 +492,10 @@ export default function AdminPage() {
                   <td>{user.email}</td>
                   <td>{(user.roleIds || []).map((id) => roleLookup[id]).filter(Boolean).join(", ") || "-"}</td>
                   <td>
-                    <button className="btn btn-secondary" type="button" onClick={() => startEditUser(user)}>
-                      Edit
-                    </button>{" "}
-                    <button className="btn btn-secondary" type="button" onClick={() => deleteUser(user.id)}>
-                      Delete
-                    </button>
+                    <div className="row-actions">
+                      <EditIconButton onClick={() => startEditUser(user)} />
+                      <DeleteIconButton onClick={() => deleteUser(user.id)} />
+                    </div>
                   </td>
                 </tr>
               ))}

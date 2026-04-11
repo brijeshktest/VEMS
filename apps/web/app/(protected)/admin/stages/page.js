@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { apiFetch } from "../../../../lib/api.js";
 import PageHeader from "../../../../components/PageHeader.js";
+import { EditIconButton, DeleteIconButton } from "../../../../components/EditDeleteIconButtons.js";
 
 const initialForm = {
   name: "",
@@ -309,12 +310,10 @@ export default function StagesPage() {
                     .join(", ") || "-"}
                 </td>
                 <td>
-                  <button className="btn btn-secondary" type="button" onClick={() => startEdit(stage)}>
-                    Edit
-                  </button>{" "}
-                  <button className="btn btn-secondary" type="button" onClick={() => deleteStage(stage._id)}>
-                    Delete
-                  </button>
+                  <div className="row-actions">
+                    <EditIconButton onClick={() => startEdit(stage)} />
+                    <DeleteIconButton onClick={() => deleteStage(stage._id)} />
+                  </div>
                 </td>
               </tr>
             ))}

@@ -9,11 +9,13 @@
     "dev:api": "npm --workspace apps/api run dev",
     "dev:web": "npm --workspace apps/web run dev",
     "dev:web:fresh": "npm --workspace apps/web run dev:fresh",
-    "pm2:start": "pm2 start ecosystem.config.cjs",
-    "pm2:stop": "pm2 delete vems-api vems-web",
-    "pm2:restart": "pm2 restart ecosystem.config.cjs",
-    "pm2:logs": "pm2 logs",
-    "pm2:status": "pm2 status"
+    "ports:free": "node scripts/free-ports.cjs",
+    "pm2:start": "npm run ports:free && npx pm2 start ecosystem.config.cjs",
+    "pm2:stop": "npx pm2 delete vems-api vems-web 2>/dev/null || true",
+    "pm2:restart": "npm run pm2:stop && npm run ports:free && npx pm2 start ecosystem.config.cjs",
+    "pm2:rebuild": "npm --workspace apps/web run build && npm run pm2:restart",
+    "pm2:logs": "npx pm2 logs",
+    "pm2:status": "npx pm2 status"
   },
   "devDependencies": {
     "pm2": "^6.0.14"
