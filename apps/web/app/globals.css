@@ -1147,6 +1147,23 @@ a.brand {
   color: var(--muted);
 }
 
+/* Vouchers: line item stack + clear gap before Add Item */
+.panel-inset--voucher-lines {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(14px, 2vw, 18px);
+}
+
+.voucher-line-items {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 1.8vw, 16px);
+}
+
+.voucher-add-line-btn {
+  align-self: flex-start;
+}
+
 /* Stat cards */
 .stat-link {
   display: block;
@@ -1301,6 +1318,20 @@ select.input {
   background-repeat: no-repeat;
   background-position: right 14px center;
   padding-right: 36px;
+}
+
+/* Native date inputs: fill grid cell; min size avoids WebKit squishing */
+.voucher-field-date {
+  min-width: 0;
+  width: 100%;
+}
+
+.input.input--date[type="date"] {
+  box-sizing: border-box;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: min(100%, 12.5rem);
 }
 
 /* Buttons */
@@ -1700,6 +1731,11 @@ select.input {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  margin-bottom: clamp(14px, 2vw, 20px);
+}
+
+.card-header-row .panel-title {
+  margin-bottom: 0;
 }
 
 @media (max-width: 768px) {

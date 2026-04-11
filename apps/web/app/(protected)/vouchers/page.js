@@ -314,10 +314,10 @@ export default function VouchersPage() {
                 ))}
               </select>
             </div>
-            <div>
+            <div className="voucher-field-date">
               <label>Date of purchase</label>
               <input
-                className="input"
+                className="input input--date"
                 type="date"
                 value={form.dateOfPurchase}
                 onChange={(e) => setForm({ ...form, dateOfPurchase: e.target.value })}
@@ -351,8 +351,9 @@ export default function VouchersPage() {
             </div>
           </div>
 
-          <div className="panel-inset">
+          <div className="panel-inset panel-inset--voucher-lines">
             <h4>Line items</h4>
+            <div className="voucher-line-items">
             {items.map((item, index) => (
               <div className="grid grid-3 line-item-row" key={index}>
                 <div>
@@ -421,7 +422,8 @@ export default function VouchersPage() {
                 ) : null}
               </div>
             ))}
-            <button type="button" className="btn btn-secondary" onClick={addItem}>
+            </div>
+            <button type="button" className="btn btn-secondary voucher-add-line-btn" onClick={addItem}>
               Add Item
             </button>
           </div>
@@ -506,10 +508,10 @@ export default function VouchersPage() {
 
           {form.paymentStatus === "Paid" ? (
             <div className="grid grid-3">
-              <div>
+              <div className="voucher-field-date">
                 <label>Payment date</label>
                 <input
-                  className="input"
+                  className="input input--date"
                   type="date"
                   value={form.paymentDate}
                   onChange={(e) => setForm({ ...form, paymentDate: e.target.value })}
