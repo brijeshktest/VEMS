@@ -35,10 +35,15 @@ export default function AuthGate({ children }) {
         router.replace("/dashboard");
         return;
       }
+      if (mode === "sales" && pathname !== "/dashboard" && pathname !== "/sales") {
+        router.replace("/dashboard");
+        return;
+      }
       if (
         mode === "admin" &&
         pathname !== "/dashboard" &&
         pathname !== "/tunnel-bunker-ops" &&
+        pathname !== "/sales" &&
         !(pathname === "/admin" || pathname.startsWith("/admin/"))
       ) {
         router.replace("/dashboard");

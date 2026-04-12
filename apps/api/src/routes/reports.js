@@ -1,6 +1,7 @@
 import express from "express";
 import Voucher from "../models/Voucher.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
+import { PAYMENT_MADE_FROM_CHOICES } from "../utils/paymentMadeFrom.js";
 
 const router = express.Router();
 
@@ -99,6 +100,55 @@ router.get("/expenses", requireAuth, requirePermission("reports", "view"), async
     }
   ]);
   return res.json(summary || { totalVoucherAmount: 0, totalPaidAmount: 0, totalTax: 0, voucherCount: 0 });
+});
+
+/** Paid vouchers aggregated by fixed "Payment made from" persons (+ other). */
+router.get("/payment-made-from-aggregate", requireAuth, requirePermission("reports", "view"), async (req, res) => {
+  const dateMatch = buildDateMatch(req.query.start, req.query.end);
+  const match = {
+    ...dateMatch,
+    paymentStatus: "Paid",
+    paymentMadeBy: { $exists: true, $nin: [null, ""] }
+  };
+  const agg = await Voucher.aggregate([
+    { $match: match },
+    {
+      $addFields: {
+        payer: { $trim: { input: { $toString: "$paymentMadeBy" } } }
+      }
+    },
+    {
+      $group: {
+        _id: "$payer",
+        totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
+        voucherCount: { $sum: 1 }
+      }
+    }
+  ]);
+  const byPayer = Object.fromEntries(
+    agg.map((row) => [row._id, { totalPaidAmount: row.totalPaidAmount, voucherCount: row.voucherCount }])
+  );
+  let otherPaid = 0;
+  let otherCount = 0;
+  for (const row of agg) {
+    if (!PAYMENT_MADE_FROM_CHOICES.includes(row._id)) {
+      otherPaid += row.totalPaidAmount;
+      otherCount += row.voucherCount;
+    }
+  }
+  const rows = PAYMENT_MADE_FROM_CHOICES.map((name) => ({
+    paymentMadeBy: name,
+    totalPaidAmount: byPayer[name]?.totalPaidAmount ?? 0,
+    voucherCount: byPayer[name]?.voucherCount ?? 0
+  }));
+  if (otherCount > 0) {
+    rows.push({
+      paymentMadeBy: "Other (not in fixed list)",
+      totalPaidAmount: otherPaid,
+      voucherCount: otherCount
+    });
+  }
+  return res.json(rows);
 });
 
 router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), async (req, res) => {

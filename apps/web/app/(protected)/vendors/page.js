@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
 import {
   validateOptionalEmail,
@@ -51,6 +52,7 @@ export default function VendorsPage() {
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const { confirm, dialog } = useConfirmDialog();
   const fileInputRef = useRef(null);
 
   const resetVendorForm = useCallback(() => {
@@ -82,8 +84,15 @@ export default function VendorsPage() {
     }
   }
 
-  async function deleteVendor(vendorId) {
+  async function deleteVendor(vendor) {
     if (!isAdmin) return;
+    const label = (vendor.name || "").trim() || "this vendor";
+    const ok = await confirm({
+      title: "Delete vendor?",
+      message: `Remove “${label}” and related records may be affected. This cannot be undone.`
+    });
+    if (!ok) return;
+    const vendorId = vendor._id;
     setError("");
     try {
       await apiFetch(`/vendors/${vendorId}`, { method: "DELETE" });
@@ -202,6 +211,7 @@ export default function VendorsPage() {
 
   return (
     <div className="page-stack">
+      {dialog}
       <PageHeader
         eyebrow="Directory"
         title="Vendors"
@@ -254,7 +264,7 @@ export default function VendorsPage() {
                   <td>
                     <div className="row-actions">
                       <EditIconButton onClick={() => startEdit(vendor)} />
-                      {isAdmin ? <DeleteIconButton onClick={() => deleteVendor(vendor._id)} /> : null}
+                      {isAdmin ? <DeleteIconButton onClick={() => void deleteVendor(vendor)} /> : null}
                     </div>
                   </td>
                 </tr>

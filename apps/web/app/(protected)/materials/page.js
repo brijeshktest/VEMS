@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 
 const initialForm = {
   name: "",
@@ -21,6 +22,7 @@ export default function MaterialsPage() {
   const [error, setError] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [materialModalOpen, setMaterialModalOpen] = useState(false);
+  const { confirm, dialog } = useConfirmDialog();
   const categoryOptions = Array.from(
     new Set(materials.map((material) => (material.category || "").trim()).filter(Boolean))
   );
@@ -120,8 +122,15 @@ export default function MaterialsPage() {
     setMaterialModalOpen(true);
   }
 
-  async function deleteMaterial(materialId) {
+  async function deleteMaterial(material) {
     if (!isAdmin) return;
+    const label = (material.name || "").trim() || "this material";
+    const ok = await confirm({
+      title: "Delete material?",
+      message: `Remove “${label}” from the catalog? This cannot be undone.`
+    });
+    if (!ok) return;
+    const materialId = material._id;
     setError("");
     try {
       await apiFetch(`/materials/${materialId}`, { method: "DELETE" });
@@ -136,6 +145,7 @@ export default function MaterialsPage() {
 
   return (
     <div className="page-stack">
+      {dialog}
       <PageHeader
         eyebrow="Catalog"
         title="Materials"
@@ -176,7 +186,7 @@ export default function MaterialsPage() {
                 <td>
                   <div className="row-actions">
                     <EditIconButton onClick={() => startEdit(material)} />
-                    {isAdmin ? <DeleteIconButton onClick={() => deleteMaterial(material._id)} /> : null}
+                    {isAdmin ? <DeleteIconButton onClick={() => void deleteMaterial(material)} /> : null}
                   </div>
                 </td>
               </tr>

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch, apiFetchForm, API_URL } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 
 const modules = [
   "dashboard",
@@ -16,9 +17,26 @@ const modules = [
   "roomStages",
   "roomActivities",
   "tunnelBunkerOps",
+  "sales",
   "roles",
   "users"
 ];
+
+const MODULE_LABELS = {
+  dashboard: "Dashboard",
+  vendors: "Vendors",
+  materials: "Materials",
+  vouchers: "Vouchers",
+  reports: "Reports",
+  rooms: "Rooms",
+  roomStages: "Room stages",
+  roomActivities: "Room activities",
+  tunnelBunkerOps: "Tunnel & bunker ops",
+  sales: "Sales management",
+  roles: "Roles",
+  users: "Users"
+};
+
 const actions = ["view", "create", "edit", "delete"];
 
 function emptyPermissions() {
@@ -55,6 +73,7 @@ export default function AdminPage() {
   const [editingUserId, setEditingUserId] = useState(null);
   const logoInputRef = useRef(null);
   const [brandingTs, setBrandingTs] = useState(null);
+  const { confirm, dialog } = useConfirmDialog();
 
   const roleLookup = useMemo(() => {
     const lookup = {};
@@ -143,6 +162,12 @@ export default function AdminPage() {
   }
 
   async function removeLogo() {
+    const ok = await confirm({
+      title: "Remove company logo?",
+      message: "The logo will be cleared from the app header and login screen.",
+      confirmLabel: "Remove"
+    });
+    if (!ok) return;
     setError("");
     try {
       await apiFetch("/settings/logo", { method: "DELETE" });
@@ -202,7 +227,14 @@ export default function AdminPage() {
     });
   }
 
-  async function deleteRole(roleId) {
+  async function deleteRole(role) {
+    const label = (role.name || "").trim() || "this role";
+    const ok = await confirm({
+      title: "Delete role?",
+      message: `Remove “${label}”? Users assigned only this role may lose access until reassigned.`
+    });
+    if (!ok) return;
+    const roleId = role._id;
     setError("");
     try {
       await apiFetch(`/roles/${roleId}`, { method: "DELETE" });
@@ -255,7 +287,14 @@ export default function AdminPage() {
     });
   }
 
-  async function deleteUser(userId) {
+  async function deleteUser(user) {
+    const label = (user.name || user.email || "").trim() || "this user";
+    const ok = await confirm({
+      title: "Delete user?",
+      message: `Permanently remove “${label}”? They will no longer be able to sign in.`
+    });
+    if (!ok) return;
+    const userId = user.id;
     setError("");
     try {
       await apiFetch(`/users/${userId}`, { method: "DELETE" });
@@ -276,6 +315,7 @@ export default function AdminPage() {
 
   return (
     <div className="page-stack">
+      {dialog}
       <PageHeader
         eyebrow="Administration"
         title="Admin console"
@@ -373,7 +413,7 @@ export default function AdminPage() {
                 <tbody>
                   {modules.map((moduleKey) => (
                     <tr key={moduleKey}>
-                      <td>{moduleKey}</td>
+                      <td>{MODULE_LABELS[moduleKey] || moduleKey}</td>
                       {actions.map((action) => (
                         <td key={`${moduleKey}-${action}`}>
                           <input
@@ -414,7 +454,7 @@ export default function AdminPage() {
                   <td>
                     <div className="row-actions">
                       <EditIconButton onClick={() => startEditRole(role)} />
-                      <DeleteIconButton onClick={() => deleteRole(role._id)} />
+                      <DeleteIconButton onClick={() => void deleteRole(role)} />
                     </div>
                   </td>
                 </tr>
@@ -494,7 +534,7 @@ export default function AdminPage() {
                   <td>
                     <div className="row-actions">
                       <EditIconButton onClick={() => startEditUser(user)} />
-                      <DeleteIconButton onClick={() => deleteUser(user.id)} />
+                      <DeleteIconButton onClick={() => void deleteUser(user)} />
                     </div>
                   </td>
                 </tr>

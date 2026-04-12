@@ -10,6 +10,7 @@ export default function ReportsPage() {
   const [materialData, setMaterialData] = useState([]);
   const [summary, setSummary] = useState(null);
   const [taxData, setTaxData] = useState(null);
+  const [paymentByPerson, setPaymentByPerson] = useState([]);
   const [error, setError] = useState("");
 
   async function runReports() {
@@ -19,16 +20,18 @@ export default function ReportsPage() {
       if (range.start) query.set("start", range.start);
       if (range.end) query.set("end", range.end);
       const qs = query.toString() ? `?${query.toString()}` : "";
-      const [vendors, materials, expenseSummary, tax] = await Promise.all([
+      const [vendors, materials, expenseSummary, tax, paidByAgg] = await Promise.all([
         apiFetch(`/reports/vendor-expenses${qs}`),
         apiFetch(`/reports/material-summary${qs}`),
         apiFetch(`/reports/expenses${qs}`),
-        apiFetch(`/reports/tax-payments${qs}`)
+        apiFetch(`/reports/tax-payments${qs}`),
+        apiFetch(`/reports/payment-made-from-aggregate${qs}`)
       ]);
       setVendorData(vendors);
       setMaterialData(materials);
       setSummary(expenseSummary);
       setTaxData(tax);
+      setPaymentByPerson(Array.isArray(paidByAgg) ? paidByAgg : []);
     } catch (err) {
       setError(err.message);
     }
@@ -39,7 +42,7 @@ export default function ReportsPage() {
       <PageHeader
         eyebrow="Analytics"
         title="Reports"
-        description="Filter by purchase date, then refresh vendor spend, material usage, and tax and payment rollups."
+        description="Filter by purchase date, then refresh vendor spend, material usage, tax rollups, and paid-by-person totals."
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
@@ -134,6 +137,41 @@ export default function ReportsPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 className="panel-title">Payment made from (paid vouchers only)</h3>
+        <p className="page-lead">
+          Totals use vouchers with status <strong>Paid</strong> in the selected date range, grouped by who the payment came from.
+        </p>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Payment made from</th>
+                <th>Total paid amount</th>
+                <th>Voucher count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paymentByPerson.length ? (
+                paymentByPerson.map((row) => (
+                  <tr key={row.paymentMadeBy}>
+                    <td>{row.paymentMadeBy}</td>
+                    <td>{Number(row.totalPaidAmount).toFixed(2)}</td>
+                    <td>{row.voucherCount}</td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={3} className="cell-empty">
+                    Run reports to load data.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 

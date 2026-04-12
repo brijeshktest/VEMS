@@ -38,6 +38,8 @@
   --mode-tunnel-border-hover: #0a6585;
   --mode-admin-border: #5c4d96;
   --mode-admin-border-hover: #453873;
+  --mode-sales-border: #b45309;
+  --mode-sales-border-hover: #92400e;
 
   --danger-soft: rgba(220, 38, 38, 0.1);
   --danger: #dc2626;
@@ -1240,6 +1242,10 @@ a.brand {
   border-left-color: var(--mode-admin-border);
 }
 
+.mode-card--sales {
+  border-left-color: var(--mode-sales-border);
+}
+
 .mode-card:disabled {
   cursor: not-allowed;
   border-left-color: var(--border-strong);
@@ -1313,6 +1319,10 @@ a.brand {
 
 .mode-card--admin:hover:not(:disabled) {
   border-left-color: var(--mode-admin-border-hover);
+}
+
+.mode-card--sales:hover:not(:disabled) {
+  border-left-color: var(--mode-sales-border-hover);
 }
 
 .stat-label {
@@ -1466,6 +1476,20 @@ select.input {
   color: var(--ink);
 }
 
+.btn--danger-solid {
+  background: linear-gradient(180deg, #ef4444 0%, var(--danger) 100%);
+  box-shadow: 0 8px 22px rgba(220, 38, 38, 0.28);
+}
+
+.btn--danger-solid:hover {
+  background: linear-gradient(180deg, #f87171 0%, #b91c1c 100%);
+  box-shadow: 0 10px 26px rgba(220, 38, 38, 0.35);
+}
+
+.btn--danger-solid:active {
+  background: linear-gradient(180deg, #b91c1c 0%, #991b1b 100%);
+}
+
 .btn-ghost {
   background: transparent;
   color: var(--muted);
@@ -1535,6 +1559,28 @@ select.input {
 
 .table tbody tr:hover td {
   background: rgba(114, 76, 31, 0.07);
+}
+
+.table thead .table-filter-row th {
+  position: static;
+  padding: 8px var(--table-cell-px);
+  font-weight: 500;
+  font-size: 12px;
+  font-family: var(--font-sans), system-ui, sans-serif;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--foreground);
+  background: #f7f6f3;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.table-filter-input {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  font-size: 13px;
+  padding: 6px 8px;
 }
 
 .highlight-row {
@@ -1901,6 +1947,50 @@ select.input {
   flex-wrap: wrap;
   gap: 10px;
   align-items: center;
+  justify-content: flex-end;
+}
+
+/* Global delete / destructive confirm (above form modals) */
+.confirm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 12500;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: max(12px, env(safe-area-inset-top, 0px)) 16px 24px;
+  background: rgba(26, 28, 26, 0.52);
+}
+
+.confirm-dialog-box {
+  width: min(420px, 100%);
+  padding: 22px 22px 18px;
+  border-radius: var(--card-radius);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  box-shadow: var(--card-shadow), 0 24px 80px rgba(15, 23, 42, 0.2);
+}
+
+.confirm-dialog-title {
+  margin: 0 0 10px;
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-family: var(--font-display), "Manrope", var(--font-sans), system-ui, sans-serif;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+}
+
+.confirm-dialog-message {
+  margin: 0 0 20px;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: flex-end;
 }
 

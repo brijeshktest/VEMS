@@ -16,6 +16,7 @@ import {
 } from "../utils/fileUpload.js";
 import fs from "node:fs/promises";
 import { logChange } from "../utils/changeLog.js";
+import { PAYMENT_MADE_FROM_CHOICES, isAllowedPaymentMadeBy } from "../utils/paymentMadeFrom.js";
 
 const router = express.Router();
 const upload = multerTmpUpload();
@@ -80,8 +81,18 @@ function normalizeItems(items) {
   }));
 }
 
-function escapeRegex(str) {
-  return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function validatePaidPaymentMadeBy(payload) {
+  if (payload.paymentStatus === "Paid") {
+    if (!isAllowedPaymentMadeBy(payload.paymentMadeBy)) {
+      return {
+        ok: false,
+        message: `When payment status is Paid, Payment made from is required and must be one of: ${PAYMENT_MADE_FROM_CHOICES.join(
+          ", "
+        )}`
+      };
+    }
+  }
+  return { ok: true };
 }
 
 router.get("/", requireAuth, requirePermission("vouchers", "view"), async (req, res) => {
@@ -89,24 +100,9 @@ router.get("/", requireAuth, requirePermission("vouchers", "view"), async (req, 
   return res.json(vouchers);
 });
 
-/** Distinct payment-made-from labels (stored as paymentMadeBy) for autocomplete (must be before /:id). */
+/** Fixed payment-made-from choices (must be before /:id). */
 router.get("/payment-made-by-options", requireAuth, requirePermission("vouchers", "view"), async (req, res) => {
-  const q = typeof req.query.q === "string" ? req.query.q.trim() : "";
-  const match = {
-    paymentMadeBy: { $exists: true, $nin: [null, ""] }
-  };
-  if (q) {
-    match.paymentMadeBy = { $regex: escapeRegex(q), $options: "i" };
-  }
-  try {
-    const values = await Voucher.distinct("paymentMadeBy", match);
-    const cleaned = [...new Set(values.map((s) => String(s || "").trim()).filter(Boolean))].sort((a, b) =>
-      a.localeCompare(b, undefined, { sensitivity: "base" })
-    );
-    return res.json({ options: cleaned.slice(0, 80) });
-  } catch (e) {
-    return res.status(500).json({ error: e.message || "Could not load options" });
-  }
+  return res.json({ options: [...PAYMENT_MADE_FROM_CHOICES] });
 });
 
 router.get(
@@ -182,6 +178,11 @@ router.post("/", requireAuth, requirePermission("vouchers", "create"), condition
   if (!Array.isArray(payload.items) || payload.items.length === 0) {
     await unlinkTmpFiles(req.files);
     return res.status(400).json({ error: "items must be a non-empty array" });
+  }
+  const paidSourceCheck = validatePaidPaymentMadeBy(payload);
+  if (!paidSourceCheck.ok) {
+    await unlinkTmpFiles(req.files);
+    return res.status(400).json({ error: paidSourceCheck.message });
   }
   const items = normalizeItems(payload.items);
   for (const item of items) {
@@ -335,6 +336,14 @@ router.put("/:id", requireAuth, requirePermission("vouchers", "edit"), condition
   }
   if (payload.paymentComments !== undefined) {
     voucher.paymentComments = payload.paymentComments || "";
+  }
+  const paidPutCheck = validatePaidPaymentMadeBy({
+    paymentStatus: voucher.paymentStatus,
+    paymentMadeBy: voucher.paymentMadeBy || ""
+  });
+  if (!paidPutCheck.ok) {
+    await unlinkTmpFiles(req.files);
+    return res.status(400).json({ error: paidPutCheck.message });
   }
   const files = req.files || [];
   if (files.length) {

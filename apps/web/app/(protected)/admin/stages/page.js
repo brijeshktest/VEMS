@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "../../../../lib/api.js";
 import PageHeader from "../../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton } from "../../../../components/EditDeleteIconButtons.js";
+import { useConfirmDialog } from "../../../../components/ConfirmDialog.js";
 
 const initialForm = {
   name: "",
@@ -28,6 +29,7 @@ export default function StagesPage() {
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const { confirm, dialog } = useConfirmDialog();
 
   async function load() {
     try {
@@ -103,7 +105,14 @@ export default function StagesPage() {
     setForm(initialForm);
   }
 
-  async function deleteStage(stageId) {
+  async function deleteStage(stage) {
+    const label = (stage.name || "").trim() || "this stage";
+    const ok = await confirm({
+      title: "Delete stage?",
+      message: `Remove “${label}”? Rooms referencing this stage may need to be updated. This cannot be undone.`
+    });
+    if (!ok) return;
+    const stageId = stage._id;
     setError("");
     try {
       await apiFetch(`/stages/${stageId}`, { method: "DELETE" });
@@ -125,6 +134,7 @@ export default function StagesPage() {
 
   return (
     <div className="page-stack">
+      {dialog}
       <PageHeader
         eyebrow="Administration"
         title="Room stages"
@@ -312,7 +322,7 @@ export default function StagesPage() {
                 <td>
                   <div className="row-actions">
                     <EditIconButton onClick={() => startEdit(stage)} />
-                    <DeleteIconButton onClick={() => deleteStage(stage._id)} />
+                    <DeleteIconButton onClick={() => void deleteStage(stage)} />
                   </div>
                 </td>
               </tr>

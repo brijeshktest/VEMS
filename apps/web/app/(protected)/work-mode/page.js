@@ -11,6 +11,7 @@ export default function WorkModePage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [allowRoomOps, setAllowRoomOps] = useState(false);
   const [allowTunnelOps, setAllowTunnelOps] = useState(false);
+  const [allowSales, setAllowSales] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -22,6 +23,7 @@ export default function WorkModePage() {
         if (admin || permData.permissions === "all") {
           setAllowRoomOps(true);
           setAllowTunnelOps(true);
+          setAllowSales(true);
           return;
         }
         const canRoomStages = Boolean(permData.permissions?.roomStages?.view || permData.permissions?.roomStages?.edit);
@@ -29,8 +31,10 @@ export default function WorkModePage() {
           permData.permissions?.roomActivities?.view || permData.permissions?.roomActivities?.edit
         );
         const canTunnelOps = Boolean(permData.permissions?.tunnelBunkerOps?.view || permData.permissions?.tunnelBunkerOps?.edit);
+        const canSales = Boolean(permData.permissions?.sales?.view || permData.permissions?.sales?.edit);
         setAllowRoomOps(canRoomStages || canRoomActivities);
         setAllowTunnelOps(canTunnelOps);
+        setAllowSales(canSales);
       } catch (err) {
         setError(err.message);
       }
@@ -62,6 +66,16 @@ export default function WorkModePage() {
           <span className="stat-label">Mode</span>
           <span className="stat-value" style={{ fontSize: 22 }}>Expense management</span>
           <span className="stat-hint">Vendors, materials, vouchers, and reports</span>
+        </button>
+        <button
+          className="card stat-card mode-card mode-card--sales"
+          type="button"
+          disabled={!allowSales}
+          onClick={() => chooseMode("sales")}
+        >
+          <span className="stat-label">Mode</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Sales management</span>
+          <span className="stat-hint">Sales invoices for mushrooms and compost</span>
         </button>
         <button
           className="card stat-card mode-card mode-card--room"

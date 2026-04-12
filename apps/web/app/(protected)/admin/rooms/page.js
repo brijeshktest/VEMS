@@ -5,6 +5,7 @@ import Link from "next/link";
 import { apiFetch } from "../../../../lib/api.js";
 import PageHeader from "../../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton } from "../../../../components/EditDeleteIconButtons.js";
+import { useConfirmDialog } from "../../../../components/ConfirmDialog.js";
 
 const initialForm = {
   name: "",
@@ -18,6 +19,7 @@ export default function GrowingRoomsPage() {
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
+  const { confirm, dialog } = useConfirmDialog();
 
   async function load() {
     try {
@@ -75,7 +77,14 @@ export default function GrowingRoomsPage() {
     setForm(initialForm);
   }
 
-  async function deleteRoom(roomId) {
+  async function deleteRoom(room) {
+    const label = (room.name || "").trim() || "this room";
+    const ok = await confirm({
+      title: "Delete room?",
+      message: `Remove “${label}”? Related growing data may be affected. This cannot be undone.`
+    });
+    if (!ok) return;
+    const roomId = room._id;
     setError("");
     try {
       await apiFetch(`/rooms/${roomId}`, { method: "DELETE" });
@@ -126,6 +135,7 @@ export default function GrowingRoomsPage() {
 
   return (
     <div className="page-stack">
+      {dialog}
       <PageHeader
         eyebrow="Administration"
         title="Growing rooms"
@@ -232,7 +242,7 @@ export default function GrowingRoomsPage() {
                     <button className="btn btn-secondary" type="button" onClick={() => moveToNextStage(room._id)}>
                       Move Stage
                     </button>
-                    <DeleteIconButton onClick={() => deleteRoom(room._id)} />
+                    <DeleteIconButton onClick={() => void deleteRoom(room)} />
                   </div>
                   <div style={{ marginTop: 8 }}>
                     <select

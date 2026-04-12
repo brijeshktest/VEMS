@@ -14,6 +14,7 @@ import stageRoutes from "./routes/stages.js";
 import settingsRoutes from "./routes/settings.js";
 import changeLogRoutes from "./routes/changeLogs.js";
 import tunnelBunkerRoutes from "./routes/tunnelBunker.js";
+import salesRoutes from "./routes/sales.js";
 
 dotenv.config();
 
@@ -38,6 +39,7 @@ api.use("/stages", stageRoutes);
 api.use("/settings", settingsRoutes);
 api.use("/change-logs", changeLogRoutes);
 api.use("/tunnel-bunker", tunnelBunkerRoutes);
+api.use("/sales", salesRoutes);
 
 app.use("/api", api);
 

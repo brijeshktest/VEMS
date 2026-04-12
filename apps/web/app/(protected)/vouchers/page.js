@@ -5,6 +5,8 @@ import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js"
 import PageHeader from "../../../components/PageHeader.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
 import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
+import { PAYMENT_MADE_FROM_CHOICES } from "../../../lib/paymentMadeFrom.js";
 
 const initialForm = {
   vendorId: "",
@@ -70,8 +72,21 @@ export default function VouchersPage() {
   const fileInputRef = useRef(null);
   const [paidAmountManuallySet, setPaidAmountManuallySet] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [paymentMadeByOptions, setPaymentMadeByOptions] = useState([]);
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
+  const defaultColumnFilters = {
+    date: "",
+    voucherNo: "",
+    vendor: "",
+    voucherAmt: "",
+    paidAmt: "",
+    madeFrom: "",
+    docs: "",
+    status: "",
+    createdBy: "",
+    updatedBy: ""
+  };
+  const [columnFilters, setColumnFilters] = useState(defaultColumnFilters);
+  const { confirm, dialog } = useConfirmDialog();
 
   async function load() {
     try {
@@ -94,33 +109,40 @@ export default function VouchersPage() {
     load();
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const q = (form.paymentMadeBy || "").trim();
-    const run = async () => {
-      try {
-        const path =
-          q.length > 0
-            ? `/vouchers/payment-made-by-options?q=${encodeURIComponent(q)}`
-            : "/vouchers/payment-made-by-options";
-        const data = await apiFetch(path);
-        if (!cancelled && Array.isArray(data?.options)) {
-          setPaymentMadeByOptions(data.options);
-        }
-      } catch {
-        if (!cancelled) setPaymentMadeByOptions([]);
-      }
+  const filteredVouchers = useMemo(() => {
+    const inc = (hay, needle) => {
+      const n = (needle || "").trim().toLowerCase();
+      if (!n) return true;
+      return String(hay ?? "")
+        .toLowerCase()
+        .includes(n);
     };
-    if (form.paymentStatus !== "Paid") {
-      setPaymentMadeByOptions([]);
-      return undefined;
-    }
-    const t = setTimeout(run, q.length > 0 ? 220 : 0);
-    return () => {
-      cancelled = true;
-      clearTimeout(t);
-    };
-  }, [form.paymentMadeBy, form.paymentStatus]);
+    return vouchers.filter((voucher) => {
+      const vid = voucher.vendorId?._id ?? voucher.vendorId;
+      const vendor = vendors.find((v) => String(v._id) === String(vid));
+      const vendorName = vendor?.name || "";
+      if (!inc(new Date(voucher.dateOfPurchase).toLocaleDateString(), columnFilters.date)) return false;
+      if (!inc(voucher.voucherNumber || "", columnFilters.voucherNo)) return false;
+      if (!inc(vendorName, columnFilters.vendor)) return false;
+      if (!inc(Number(voucher.finalAmount).toFixed(2), columnFilters.voucherAmt)) return false;
+      if (!inc(Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2), columnFilters.paidAmt)) return false;
+      if (!inc(voucher.paymentMadeBy || "", columnFilters.madeFrom)) return false;
+      const hasDocs = (voucher.attachments?.length || 0) > 0;
+      if (columnFilters.docs === "yes" && !hasDocs) return false;
+      if (columnFilters.docs === "no" && hasDocs) return false;
+      if (columnFilters.status && voucher.paymentStatus !== columnFilters.status) return false;
+      if (!inc(voucher.createdByName || "", columnFilters.createdBy)) return false;
+      if (!inc(voucher.statusUpdatedByName || "", columnFilters.updatedBy)) return false;
+      return true;
+    });
+  }, [vouchers, vendors, columnFilters]);
+
+  const legacyPaymentMadeByOption =
+    editingId &&
+    (form.paymentMadeBy || "").trim() &&
+    !PAYMENT_MADE_FROM_CHOICES.includes((form.paymentMadeBy || "").trim())
+      ? (form.paymentMadeBy || "").trim()
+      : null;
 
   const availableMaterials = useMemo(() => {
     if (!form.vendorId) return materials;
@@ -219,6 +241,13 @@ export default function VouchersPage() {
   async function onSubmit(event) {
     event.preventDefault();
     setError("");
+    if (form.paymentStatus === "Paid") {
+      const p = (form.paymentMadeBy || "").trim();
+      if (!PAYMENT_MADE_FROM_CHOICES.includes(p)) {
+        setError("When status is Paid, choose Payment made from the list.");
+        return;
+      }
+    }
     try {
       const payload = {
         ...form,
@@ -265,8 +294,17 @@ export default function VouchersPage() {
   }
 
   const editingVoucher = editingId ? vouchers.find((v) => v._id === editingId) : null;
-  async function deleteVoucher(voucherId) {
+  async function deleteVoucher(voucher) {
     if (!isAdmin) return;
+    const no = (voucher.voucherNumber || "").trim();
+    const ok = await confirm({
+      title: "Delete voucher?",
+      message: no
+        ? `Permanently delete voucher ${no}? Line items and attachments will be removed.`
+        : "Permanently delete this voucher? Line items and attachments will be removed."
+    });
+    if (!ok) return;
+    const voucherId = voucher._id;
     setError("");
     try {
       await apiFetch(`/vouchers/${voucherId}`, { method: "DELETE" });
@@ -287,7 +325,7 @@ export default function VouchersPage() {
     try {
       const XLSX = await import("xlsx");
       const rows = [];
-      for (const voucher of vouchers) {
+      for (const voucher of filteredVouchers) {
         const vid = voucher.vendorId?._id ?? voucher.vendorId;
         const vendor = vendors.find((v) => String(v._id) === String(vid));
         const base = {
@@ -343,6 +381,7 @@ export default function VouchersPage() {
 
   return (
     <div className="page-stack">
+      {dialog}
       <PageHeader
         eyebrow="Purchasing"
         title="Expense vouchers"
@@ -358,8 +397,15 @@ export default function VouchersPage() {
             <button className="btn" type="button" onClick={openCreateVoucherModal}>
               Create voucher
             </button>
+            <button
+              className="btn btn-secondary"
+              type="button"
+              onClick={() => setColumnFilters({ ...defaultColumnFilters })}
+            >
+              Clear filters
+            </button>
             <ExcelDownloadIconButton
-              disabled={!vouchers.length}
+              disabled={!filteredVouchers.length}
               onClick={() => void downloadVouchersExcel()}
             />
           </div>
@@ -380,9 +426,117 @@ export default function VouchersPage() {
               <th>Status Updated By</th>
               <th>Actions</th>
             </tr>
+            <tr className="table-filter-row">
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.date}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, date: e.target.value }))}
+                  aria-label="Filter by date"
+                />
+              </th>
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.voucherNo}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, voucherNo: e.target.value }))}
+                  aria-label="Filter by voucher number"
+                />
+              </th>
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.vendor}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, vendor: e.target.value }))}
+                  aria-label="Filter by vendor"
+                />
+              </th>
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.voucherAmt}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, voucherAmt: e.target.value }))}
+                  aria-label="Filter by voucher amount"
+                />
+              </th>
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.paidAmt}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, paidAmt: e.target.value }))}
+                  aria-label="Filter by paid amount"
+                />
+              </th>
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.madeFrom}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, madeFrom: e.target.value }))}
+                  aria-label="Filter by payment made from"
+                />
+              </th>
+              <th>
+                <select
+                  className="input table-filter-input"
+                  value={columnFilters.docs}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, docs: e.target.value }))}
+                  aria-label="Filter by attachments"
+                >
+                  <option value="">All</option>
+                  <option value="yes">Has files</option>
+                  <option value="no">No files</option>
+                </select>
+              </th>
+              <th>
+                <select
+                  className="input table-filter-input"
+                  value={columnFilters.status}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, status: e.target.value }))}
+                  aria-label="Filter by status"
+                >
+                  <option value="">All</option>
+                  <option>Paid</option>
+                  <option>Pending</option>
+                  <option>Partially Paid</option>
+                </select>
+              </th>
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.createdBy}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, createdBy: e.target.value }))}
+                  aria-label="Filter by created by"
+                />
+              </th>
+              <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.updatedBy}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, updatedBy: e.target.value }))}
+                  aria-label="Filter by status updated by"
+                />
+              </th>
+              <th aria-hidden />
+            </tr>
           </thead>
           <tbody>
-            {vouchers.map((voucher) => {
+            {filteredVouchers.map((voucher) => {
               const vid = voucher.vendorId?._id ?? voucher.vendorId;
               const vendor = vendors.find((v) => String(v._id) === String(vid));
               return (
@@ -404,7 +558,7 @@ export default function VouchersPage() {
                   <td>
                     <div className="row-actions">
                       <EditIconButton onClick={() => startEdit(voucher)} />
-                      {isAdmin ? <DeleteIconButton onClick={() => deleteVoucher(voucher._id)} /> : null}
+                      {isAdmin ? <DeleteIconButton onClick={() => void deleteVoucher(voucher)} /> : null}
                     </div>
                   </td>
                 </tr>
@@ -672,21 +826,25 @@ export default function VouchersPage() {
               </div>
               <div className="form-span-2">
                 <label htmlFor="voucher-payment-made-from">Payment made from</label>
-                <input
+                <select
                   id="voucher-payment-made-from"
                   className="input"
-                  type="text"
-                  list="voucher-payment-made-from-datalist"
-                  autoComplete="off"
+                  required
                   value={form.paymentMadeBy}
                   onChange={(e) => setForm({ ...form, paymentMadeBy: e.target.value })}
-                  placeholder="Original source of payment"
-                />
-                <datalist id="voucher-payment-made-from-datalist">
-                  {paymentMadeByOptions.map((opt) => (
-                    <option key={opt} value={opt} />
+                >
+                  <option value="">Select who paid</option>
+                  {legacyPaymentMadeByOption ? (
+                    <option value={legacyPaymentMadeByOption}>
+                      {legacyPaymentMadeByOption} (legacy — replace)
+                    </option>
+                  ) : null}
+                  {PAYMENT_MADE_FROM_CHOICES.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
                   ))}
-                </datalist>
+                </select>
               </div>
               <div>
                 <label>Paid by mode</label>

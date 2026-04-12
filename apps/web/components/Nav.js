@@ -194,9 +194,12 @@ export default function Nav() {
         ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/room-ops", label: "Room ops" }]
         : workMode === "tunnel"
           ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" }]
-          : workMode === "admin"
+          : workMode === "sales"
+            ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/sales", label: "Sales" }]
+            : workMode === "admin"
             ? [
                 { href: "/dashboard", label: "Dashboard" },
+                { href: "/sales", label: "Sales" },
                 { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" },
                 { href: "/admin", label: "Admin" },
                 { href: "/admin/rooms", label: "Rooms" },

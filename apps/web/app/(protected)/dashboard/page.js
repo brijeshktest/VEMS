@@ -94,6 +94,7 @@ export default function DashboardPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [workMode, setWorkMode] = useState("");
   const [error, setError] = useState("");
+  const [salesSummary, setSalesSummary] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -114,6 +115,17 @@ export default function DashboardPage() {
         if (selectedMode === "admin" && !admin) {
           router.replace("/work-mode");
           return;
+        }
+
+        if (selectedMode === "sales") {
+          const canSales =
+            permissionsData.permissions === "all" ||
+            permissionsData.permissions?.sales?.view ||
+            permissionsData.permissions?.sales?.edit;
+          if (!canSales) {
+            router.replace("/work-mode");
+            return;
+          }
         }
 
         if (selectedMode === "expense" || selectedMode === "admin") {
@@ -144,6 +156,23 @@ export default function DashboardPage() {
         if (selectedMode === "tunnel") {
           const tunnelAlerts = await apiFetch("/tunnel-bunker/alerts");
           setTunnelPrompts(tunnelAlerts?.dueItems || []);
+        }
+
+        if (selectedMode === "sales" || selectedMode === "admin") {
+          const canSales =
+            permissionsData.permissions === "all" ||
+            permissionsData.permissions?.sales?.view ||
+            permissionsData.permissions?.sales?.edit;
+          if (canSales) {
+            try {
+              const sm = await apiFetch("/sales/summary");
+              setSalesSummary(sm);
+            } catch {
+              setSalesSummary(null);
+            }
+          } else {
+            setSalesSummary(null);
+          }
         }
       } catch (err) {
         setError(err.message);
@@ -196,7 +225,9 @@ export default function DashboardPage() {
               ? "Tunnel and bunker compost movement alerts and quick actions."
               : workMode === "admin"
               ? "Administrative overview with operations and financial visibility."
-              : "Spend, tax, and voucher activity at a glance."
+              : workMode === "sales"
+                ? "Mushroom and compost sales totals and quick access to records."
+                : "Spend, tax, and voucher activity at a glance."
         }
       />
 
@@ -242,7 +273,7 @@ export default function DashboardPage() {
       ) : null}
 
       {(workMode === "expense" || workMode === "admin") && summary ? (
-        <section className="" aria-label="Key metrics">
+        <section className="saas-section" aria-label="Key metrics">
           <div className="grid grid-3">
             <Link className="stat-link" href="/reports">
               <div className="card stat-card stat-dashlet">
@@ -278,6 +309,38 @@ export default function DashboardPage() {
                   <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
                   <span className="stat-hint">View vouchers →</span>
                 </div>
+              </div>
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
+      {(workMode === "sales" || workMode === "admin") && salesSummary ? (
+        <section className="saas-section" aria-label="Sales metrics">
+          <div className="grid grid-3">
+            <Link className="stat-link" href="/sales">
+              <div className="card stat-card">
+                <span className="stat-label">Total sales value</span>
+                <span className="stat-value">{Number(salesSummary.totalAmount).toFixed(2)}</span>
+                <span className="stat-hint">View sales →</span>
+              </div>
+            </Link>
+            <Link className="stat-link" href="/sales">
+              <div className="card stat-card">
+                <span className="stat-label">Mushroom sales</span>
+                <span className="stat-value">
+                  {Number(salesSummary.byCategory?.mushroom?.totalAmount ?? 0).toFixed(2)}
+                </span>
+                <span className="stat-hint">{salesSummary.byCategory?.mushroom?.count ?? 0} line(s) →</span>
+              </div>
+            </Link>
+            <Link className="stat-link" href="/sales">
+              <div className="card stat-card">
+                <span className="stat-label">Compost sales</span>
+                <span className="stat-value">
+                  {Number(salesSummary.byCategory?.compost?.totalAmount ?? 0).toFixed(2)}
+                </span>
+                <span className="stat-hint">{salesSummary.byCategory?.compost?.count ?? 0} line(s) →</span>
               </div>
             </Link>
           </div>
