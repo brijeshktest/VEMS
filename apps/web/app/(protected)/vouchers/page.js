@@ -95,7 +95,7 @@ export default function VouchersPage() {
     docs: "",
     status: "",
     createdBy: "",
-    updatedBy: ""
+    paidByMode: ""
   };
   const [columnFilters, setColumnFilters] = useState(defaultColumnFilters);
   const { confirm, dialog } = useConfirmDialog();
@@ -242,7 +242,7 @@ export default function VouchersPage() {
       if (columnFilters.docs === "no" && hasDocs) return false;
       if (columnFilters.status && voucher.paymentStatus !== columnFilters.status) return false;
       if (!inc(voucher.createdByName || "", columnFilters.createdBy)) return false;
-      if (!inc(voucher.statusUpdatedByName || "", columnFilters.updatedBy)) return false;
+      if (!inc(voucher.paidByMode || "", columnFilters.paidByMode)) return false;
       return true;
     });
   }, [vouchers, vendors, columnFilters]);
@@ -521,8 +521,8 @@ export default function VouchersPage() {
           "Paid amount": Number(voucher.paidAmount ?? voucher.finalAmount ?? 0),
           Status: voucher.paymentStatus,
           "Payment made from": voucher.paymentMadeBy || "",
-          "Created By": voucher.createdByName || "-",
-          "Status Updated By": voucher.statusUpdatedByName || "-"
+          "Paid by mode": voucher.paidByMode || "-",
+          "Created By": voucher.createdByName || "-"
         };
         const items = voucher.items || [];
         if (!items.length) {
@@ -634,10 +634,10 @@ export default function VouchersPage() {
               <th>Voucher amount</th>
               <th>Paid amount</th>
               <th>Payment made from</th>
+              <th>Paid by mode</th>
               <th>Documents</th>
               <th>Status</th>
               <th>Created By</th>
-              <th>Status Updated By</th>
               <th className="col-actions">Actions</th>
             </tr>
             <tr className="table-filter-row">
@@ -715,6 +715,16 @@ export default function VouchersPage() {
                 />
               </th>
               <th>
+                <input
+                  className="input table-filter-input"
+                  type="text"
+                  placeholder="Filter…"
+                  value={columnFilters.paidByMode}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, paidByMode: e.target.value }))}
+                  aria-label="Filter by paid by mode"
+                />
+              </th>
+              <th>
                 <select
                   className="input table-filter-input"
                   value={columnFilters.docs}
@@ -749,16 +759,6 @@ export default function VouchersPage() {
                   aria-label="Filter by created by"
                 />
               </th>
-              <th>
-                <input
-                  className="input table-filter-input"
-                  type="text"
-                  placeholder="Filter…"
-                  value={columnFilters.updatedBy}
-                  onChange={(e) => setColumnFilters((f) => ({ ...f, updatedBy: e.target.value }))}
-                  aria-label="Filter by status updated by"
-                />
-              </th>
               <th className="col-actions" aria-hidden />
             </tr>
           </thead>
@@ -784,6 +784,7 @@ export default function VouchersPage() {
                   <td>{voucher.finalAmount.toFixed(2)}</td>
                   <td>{Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2)}</td>
                   <td>{voucher.paymentMadeBy?.trim() ? voucher.paymentMadeBy : "—"}</td>
+                  <td>{voucher.paidByMode?.trim() ? voucher.paidByMode : "—"}</td>
                   <td>
                     <AttachmentListCell entity={voucher} kind="voucher" />
                   </td>
@@ -791,7 +792,6 @@ export default function VouchersPage() {
                     <span className={paymentStatusClass(voucher.paymentStatus)}>{voucher.paymentStatus}</span>
                   </td>
                   <td>{voucher.createdByName || "-"}</td>
-                  <td>{voucher.statusUpdatedByName || "-"}</td>
                   <td className="col-actions">
                     <div className="row-actions">
                       <EditIconButton onClick={() => startEdit(voucher)} />
