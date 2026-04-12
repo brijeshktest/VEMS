@@ -37,12 +37,28 @@ const MODULE_LABELS = {
   users: "Users"
 };
 
-const actions = ["view", "create", "edit", "delete"];
+const actions = ["view", "create", "edit", "delete", "bulkUpload", "bulkDelete"];
+
+const ACTION_HEADERS = {
+  view: "View",
+  create: "Create",
+  edit: "Edit",
+  delete: "Delete",
+  bulkUpload: "Bulk upload",
+  bulkDelete: "Bulk delete"
+};
 
 function emptyPermissions() {
   const perms = {};
   modules.forEach((moduleKey) => {
-    perms[moduleKey] = { view: false, create: false, edit: false, delete: false };
+    perms[moduleKey] = {
+      view: false,
+      create: false,
+      edit: false,
+      delete: false,
+      bulkUpload: false,
+      bulkDelete: false
+    };
   });
   return perms;
 }
@@ -52,7 +68,11 @@ function normalizePermissions(input = {}) {
   modules.forEach((moduleKey) => {
     const modulePerms = input[moduleKey] || {};
     actions.forEach((action) => {
-      perms[moduleKey][action] = Boolean(modulePerms[action]);
+      if (moduleKey !== "vouchers" && (action === "bulkUpload" || action === "bulkDelete")) {
+        perms[moduleKey][action] = false;
+      } else {
+        perms[moduleKey][action] = Boolean(modulePerms[action]);
+      }
     });
   });
   return perms;
@@ -406,7 +426,7 @@ export default function AdminPage() {
                   <tr>
                     <th>Module</th>
                     {actions.map((action) => (
-                      <th key={action}>{action}</th>
+                      <th key={action}>{ACTION_HEADERS[action] || action}</th>
                     ))}
                   </tr>
                 </thead>
@@ -414,15 +434,23 @@ export default function AdminPage() {
                   {modules.map((moduleKey) => (
                     <tr key={moduleKey}>
                       <td>{MODULE_LABELS[moduleKey] || moduleKey}</td>
-                      {actions.map((action) => (
-                        <td key={`${moduleKey}-${action}`}>
-                          <input
-                            type="checkbox"
-                            checked={roleForm.permissions[moduleKey]?.[action]}
-                            onChange={(e) => updatePermission(moduleKey, action, e.target.checked)}
-                          />
-                        </td>
-                      ))}
+                      {actions.map((action) => {
+                        const bulkOnly = moduleKey !== "vouchers" && (action === "bulkUpload" || action === "bulkDelete");
+                        return (
+                          <td key={`${moduleKey}-${action}`}>
+                            <input
+                              type="checkbox"
+                              disabled={bulkOnly}
+                              checked={Boolean(roleForm.permissions[moduleKey]?.[action])}
+                              onChange={(e) => {
+                                if (bulkOnly) return;
+                                updatePermission(moduleKey, action, e.target.checked);
+                              }}
+                              title={bulkOnly ? "Only applies to Vouchers" : undefined}
+                            />
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}
                 </tbody>

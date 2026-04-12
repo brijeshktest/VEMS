@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -91,6 +91,8 @@ export default function DashboardPage() {
   const [tunnelPrompts, setTunnelPrompts] = useState([]);
   const [vendorTaxOpen, setVendorTaxOpen] = useState(false);
   const [voucherLatestOpen, setVoucherLatestOpen] = useState(false);
+  const [paymentMadeByAgg, setPaymentMadeByAgg] = useState([]);
+  const [paymentMadeByOpen, setPaymentMadeByOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [workMode, setWorkMode] = useState("");
   const [error, setError] = useState("");
@@ -129,16 +131,18 @@ export default function DashboardPage() {
         }
 
         if (selectedMode === "expense" || selectedMode === "admin") {
-          const [summaryData, vendorData, materialData, taxData] = await Promise.all([
+          const [summaryData, vendorData, materialData, taxData, payerAgg] = await Promise.all([
             apiFetch("/reports/expenses"),
             apiFetch("/reports/vendor-expenses"),
             apiFetch("/reports/material-summary"),
-            apiFetch("/reports/tax-payments")
+            apiFetch("/reports/tax-payments"),
+            apiFetch("/reports/payment-made-from-aggregate").catch(() => [])
           ]);
           setSummary(summaryData);
           setVendors(vendorData.slice(0, 5));
           setMaterials(materialData.slice(0, 5));
           setTax(taxData);
+          setPaymentMadeByAgg(Array.isArray(payerAgg) ? payerAgg : []);
         }
         if (selectedMode === "room" || selectedMode === "admin") {
           if (!allowRoomStages) {
@@ -180,6 +184,14 @@ export default function DashboardPage() {
     }
     load();
   }, [router]);
+
+  const paymentMadeByRows = useMemo(
+    () =>
+      (paymentMadeByAgg || []).filter(
+        (r) => (Number(r.totalPaidAmount) || 0) > 0 || (Number(r.voucherCount) || 0) > 0
+      ),
+    [paymentMadeByAgg]
+  );
 
   async function moveRoom(roomId) {
     try {
@@ -591,6 +603,50 @@ export default function DashboardPage() {
                             <span className="cell-empty">
                               No vouchers in range.
                             </span>
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+
+            <div>
+              <button
+                type="button"
+                className="section-toggle"
+                onClick={() => setPaymentMadeByOpen((o) => !o)}
+                aria-expanded={paymentMadeByOpen}
+              >
+                <span className="section-toggle__title">Payments made by</span>
+                <span className="section-toggle__chevron" aria-hidden>
+                  {paymentMadeByOpen ? "▼" : "▶"}
+                </span>
+              </button>
+              {paymentMadeByOpen ? (
+                <div className="table-wrap">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Payment made from</th>
+                        <th>Vouchers</th>
+                        <th>Total paid</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentMadeByRows.length ? (
+                        paymentMadeByRows.map((row) => (
+                          <tr key={row.paymentMadeBy}>
+                            <td>{row.paymentMadeBy}</td>
+                            <td>{row.voucherCount}</td>
+                            <td>{Number(row.totalPaidAmount).toFixed(2)}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={3}>
+                            <span className="cell-empty">No paid vouchers with a payer recorded.</span>
                           </td>
                         </tr>
                       )}

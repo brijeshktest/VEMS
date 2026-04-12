@@ -1,11 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
-import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
+import {
+  EditIconButton,
+  DeleteIconButton,
+  ExcelDownloadIconButton,
+  ClearFiltersIconButton
+} from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
+import VoucherBulkImport from "../../../components/VoucherBulkImport.js";
 import { PAYMENT_MADE_FROM_CHOICES } from "../../../lib/paymentMadeFrom.js";
 
 const initialForm = {
@@ -72,9 +79,14 @@ export default function VouchersPage() {
   const fileInputRef = useRef(null);
   const [paidAmountManuallySet, setPaidAmountManuallySet] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canBulkUpload, setCanBulkUpload] = useState(false);
+  const [canBulkDelete, setCanBulkDelete] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const selectAllCheckboxRef = useRef(null);
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
   const defaultColumnFilters = {
-    date: "",
+    dateFrom: "",
+    dateTo: "",
     voucherNo: "",
     vendor: "",
     voucherAmt: "",
@@ -88,18 +100,105 @@ export default function VouchersPage() {
   const [columnFilters, setColumnFilters] = useState(defaultColumnFilters);
   const { confirm, dialog } = useConfirmDialog();
 
+  const [dateFilterOpen, setDateFilterOpen] = useState(false);
+  const [dateDraftFrom, setDateDraftFrom] = useState("");
+  const [dateDraftTo, setDateDraftTo] = useState("");
+  const [datePopoverStyle, setDatePopoverStyle] = useState({ top: 0, left: 0, width: 280 });
+  const dateFilterTriggerRef = useRef(null);
+  const dateFilterPanelRef = useRef(null);
+
+  const dateFilterActive = Boolean(columnFilters.dateFrom || columnFilters.dateTo);
+
+  function openDateFilterPopover() {
+    setDateDraftFrom(columnFilters.dateFrom || "");
+    setDateDraftTo(columnFilters.dateTo || "");
+    setDateFilterOpen(true);
+  }
+
+  function applyDateFilter() {
+    setColumnFilters((f) => ({ ...f, dateFrom: dateDraftFrom, dateTo: dateDraftTo }));
+    setDateFilterOpen(false);
+  }
+
+  function clearDateFilterInPopover() {
+    setDateDraftFrom("");
+    setDateDraftTo("");
+    setColumnFilters((f) => ({ ...f, dateFrom: "", dateTo: "" }));
+    setDateFilterOpen(false);
+  }
+
+  useLayoutEffect(() => {
+    if (!dateFilterOpen || typeof window === "undefined") return;
+    function updatePos() {
+      const el = dateFilterTriggerRef.current;
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const width = Math.min(300, Math.max(260, window.innerWidth - 24));
+      let left = rect.left + rect.width / 2 - width / 2;
+      const margin = 10;
+      left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
+      let top = rect.bottom + 8;
+      const estHeight = 220;
+      if (top + estHeight > window.innerHeight - margin) {
+        top = Math.max(margin, rect.top - estHeight - 8);
+      }
+      setDatePopoverStyle({ top, left, width });
+    }
+    updatePos();
+    window.addEventListener("resize", updatePos);
+    window.addEventListener("scroll", updatePos, true);
+    return () => {
+      window.removeEventListener("resize", updatePos);
+      window.removeEventListener("scroll", updatePos, true);
+    };
+  }, [dateFilterOpen]);
+
+  useEffect(() => {
+    if (!dateFilterOpen) return undefined;
+    function onKey(e) {
+      if (e.key === "Escape") setDateFilterOpen(false);
+    }
+    function onPointerDown(e) {
+      const t = e.target;
+      if (dateFilterTriggerRef.current?.contains(t)) return;
+      if (dateFilterPanelRef.current?.contains(t)) return;
+      setDateFilterOpen(false);
+    }
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("pointerdown", onPointerDown, true);
+    };
+  }, [dateFilterOpen]);
+
+  useEffect(() => {
+    if (!dateFilterOpen) return undefined;
+    const t = window.setTimeout(() => {
+      const first = dateFilterPanelRef.current?.querySelector('input[type="date"]');
+      first?.focus?.();
+    }, 0);
+    return () => window.clearTimeout(t);
+  }, [dateFilterOpen]);
+
   async function load() {
     try {
-      const [voucherData, vendorData, materialData, meData] = await Promise.all([
+      const [voucherData, vendorData, materialData, meData, permData] = await Promise.all([
         apiFetch("/vouchers"),
         apiFetch("/vendors"),
         apiFetch("/materials"),
-        apiFetch("/auth/me")
+        apiFetch("/auth/me"),
+        apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
       ]);
       setVouchers(voucherData);
       setVendors(vendorData);
       setMaterials(materialData);
-      setIsAdmin(meData?.user?.role === "admin");
+      const admin = meData?.user?.role === "admin";
+      setIsAdmin(admin);
+      const p = permData.permissions;
+      const all = p === "all";
+      setCanBulkUpload(admin || all || Boolean(p?.vouchers?.bulkUpload));
+      setCanBulkDelete(admin || all || Boolean(p?.vouchers?.bulkDelete));
     } catch (err) {
       setError(err.message);
     }
@@ -117,11 +216,22 @@ export default function VouchersPage() {
         .toLowerCase()
         .includes(n);
     };
+    const purchaseDateKey = (d) => {
+      const x = new Date(d);
+      if (Number.isNaN(x.getTime())) return "";
+      const y = x.getFullYear();
+      const m = String(x.getMonth() + 1).padStart(2, "0");
+      const day = String(x.getDate()).padStart(2, "0");
+      return `${y}-${m}-${day}`;
+    };
     return vouchers.filter((voucher) => {
       const vid = voucher.vendorId?._id ?? voucher.vendorId;
       const vendor = vendors.find((v) => String(v._id) === String(vid));
       const vendorName = vendor?.name || "";
-      if (!inc(new Date(voucher.dateOfPurchase).toLocaleDateString(), columnFilters.date)) return false;
+      const pKey = purchaseDateKey(voucher.dateOfPurchase);
+      if ((columnFilters.dateFrom || columnFilters.dateTo) && !pKey) return false;
+      if (columnFilters.dateFrom && pKey < columnFilters.dateFrom) return false;
+      if (columnFilters.dateTo && pKey > columnFilters.dateTo) return false;
       if (!inc(voucher.voucherNumber || "", columnFilters.voucherNo)) return false;
       if (!inc(vendorName, columnFilters.vendor)) return false;
       if (!inc(Number(voucher.finalAmount).toFixed(2), columnFilters.voucherAmt)) return false;
@@ -136,6 +246,35 @@ export default function VouchersPage() {
       return true;
     });
   }, [vouchers, vendors, columnFilters]);
+
+  const filteredIdsKey = useMemo(
+    () => filteredVouchers.map((v) => String(v._id)).join(","),
+    [filteredVouchers]
+  );
+
+  useEffect(() => {
+    const allowed = new Set(filteredIdsKey.split(",").filter(Boolean));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id);
+        else changed = true;
+      }
+      if (!changed && next.size === prev.size) return prev;
+      return next;
+    });
+  }, [filteredIdsKey]);
+
+  useEffect(() => {
+    const el = selectAllCheckboxRef.current;
+    if (!el || !canBulkDelete) return;
+    const ids = filteredIdsKey.split(",").filter(Boolean);
+    const n = ids.length;
+    const sel = ids.filter((id) => selectedIds.has(id)).length;
+    el.indeterminate = n > 0 && sel > 0 && sel < n;
+    el.checked = n > 0 && sel === n;
+  }, [canBulkDelete, selectedIds, filteredIdsKey]);
 
   const legacyPaymentMadeByOption =
     editingId &&
@@ -317,6 +456,51 @@ export default function VouchersPage() {
     }
   }
 
+  function toggleSelectAll() {
+    const ids = filteredVouchers.map((v) => String(v._id));
+    if (!ids.length) return;
+    setSelectedIds((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  function toggleSelectOne(id) {
+    const sid = String(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelected() {
+    const ids = [...selectedIds];
+    if (!ids.length || !canBulkDelete) return;
+    const ok = await confirm({
+      title: "Delete selected vouchers?",
+      message:
+        ids.length === 1
+          ? "Permanently delete this voucher? Line items and attachments will be removed."
+          : `Permanently delete ${ids.length} vouchers? Line items and attachments will be removed.`
+    });
+    if (!ok) return;
+    setError("");
+    try {
+      await apiFetch("/vouchers/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids })
+      });
+      setSelectedIds(new Set());
+      if (editingId && ids.includes(String(editingId))) cancelEdit();
+      await load();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   const visibleVoucherAttachments =
     (editingVoucher?.attachments || []).filter((a) => !removedAttachmentIds.includes(a._id)) || [];
 
@@ -397,13 +581,33 @@ export default function VouchersPage() {
             <button className="btn" type="button" onClick={openCreateVoucherModal}>
               Create voucher
             </button>
-            <button
-              className="btn btn-secondary"
-              type="button"
+            <ClearFiltersIconButton
               onClick={() => setColumnFilters({ ...defaultColumnFilters })}
-            >
-              Clear filters
-            </button>
+              title="Clear all column filters"
+            />
+            {canBulkDelete ? (
+              <DeleteIconButton
+                disabled={!selectedIds.size}
+                onClick={() => void bulkDeleteSelected()}
+                title={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected voucher${selectedIds.size === 1 ? "" : "s"}`
+                    : "Select vouchers to delete"
+                }
+                aria-label={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected voucher${selectedIds.size === 1 ? "" : "s"}`
+                    : "Delete selected (choose vouchers first)"
+                }
+              />
+            ) : null}
+            <VoucherBulkImport
+              vendors={vendors}
+              materials={materials}
+              onImported={load}
+              setError={setError}
+              canBulkUpload={canBulkUpload}
+            />
             <ExcelDownloadIconButton
               disabled={!filteredVouchers.length}
               onClick={() => void downloadVouchersExcel()}
@@ -411,9 +615,19 @@ export default function VouchersPage() {
           </div>
         </div>
         <div className="table-wrap">
-          <table className="table">
+          <table className="table table--voucher-filters">
           <thead>
             <tr>
+              {canBulkDelete ? (
+                <th className="col-select" scope="col">
+                  <input
+                    ref={selectAllCheckboxRef}
+                    type="checkbox"
+                    onChange={toggleSelectAll}
+                    aria-label="Select all visible vouchers"
+                  />
+                </th>
+              ) : null}
               <th>Date</th>
               <th>Voucher no.</th>
               <th>Vendor</th>
@@ -424,18 +638,31 @@ export default function VouchersPage() {
               <th>Status</th>
               <th>Created By</th>
               <th>Status Updated By</th>
-              <th>Actions</th>
+              <th className="col-actions">Actions</th>
             </tr>
             <tr className="table-filter-row">
-              <th>
-                <input
-                  className="input table-filter-input"
-                  type="text"
-                  placeholder="Filter…"
-                  value={columnFilters.date}
-                  onChange={(e) => setColumnFilters((f) => ({ ...f, date: e.target.value }))}
-                  aria-label="Filter by date"
-                />
+              {canBulkDelete ? <th className="col-select" aria-hidden /> : null}
+              <th className="th-date-filter-cell">
+                <div className="th-date-filter-cell__inner">
+                  <button
+                    ref={dateFilterTriggerRef}
+                    type="button"
+                    className={`btn btn-secondary btn-icon btn-icon--table-date-filter${dateFilterActive ? " is-active" : ""}`}
+                    aria-expanded={dateFilterOpen}
+                    aria-haspopup="dialog"
+                    aria-controls={dateFilterOpen ? "voucher-date-filter-popover" : undefined}
+                    aria-label="Filter by purchase date range"
+                    title="Filter by purchase date range"
+                    onClick={() => (dateFilterOpen ? setDateFilterOpen(false) : openDateFilterPopover())}
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" aria-hidden>
+                      <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.75" />
+                      <path d="M3 10h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" />
+                      <circle cx="17" cy="8" r="3.5" fill="var(--surface-elevated)" stroke="currentColor" strokeWidth="1.25" />
+                      <path d="M16 8h2" stroke="currentColor" strokeWidth="1.25" strokeLinecap="round" />
+                    </svg>
+                  </button>
+                </div>
               </th>
               <th>
                 <input
@@ -532,7 +759,7 @@ export default function VouchersPage() {
                   aria-label="Filter by status updated by"
                 />
               </th>
-              <th aria-hidden />
+              <th className="col-actions" aria-hidden />
             </tr>
           </thead>
           <tbody>
@@ -541,7 +768,17 @@ export default function VouchersPage() {
               const vendor = vendors.find((v) => String(v._id) === String(vid));
               return (
                 <tr key={voucher._id}>
-                  <td>{new Date(voucher.dateOfPurchase).toLocaleDateString()}</td>
+                  {canBulkDelete ? (
+                    <td className="col-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(String(voucher._id))}
+                        onChange={() => toggleSelectOne(voucher._id)}
+                        aria-label={`Select voucher ${(voucher.voucherNumber || "").trim() || String(voucher._id)}`}
+                      />
+                    </td>
+                  ) : null}
+                  <td className="td-date">{new Date(voucher.dateOfPurchase).toLocaleDateString()}</td>
                   <td>{voucher.voucherNumber || "-"}</td>
                   <td>{vendor?.name || "Unknown"}</td>
                   <td>{voucher.finalAmount.toFixed(2)}</td>
@@ -555,7 +792,7 @@ export default function VouchersPage() {
                   </td>
                   <td>{voucher.createdByName || "-"}</td>
                   <td>{voucher.statusUpdatedByName || "-"}</td>
-                  <td>
+                  <td className="col-actions">
                     <div className="row-actions">
                       <EditIconButton onClick={() => startEdit(voucher)} />
                       {isAdmin ? <DeleteIconButton onClick={() => void deleteVoucher(voucher)} /> : null}
@@ -942,6 +1179,63 @@ export default function VouchersPage() {
           </div>
         </div>
       ) : null}
+
+      {dateFilterOpen && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              id="voucher-date-filter-popover"
+              ref={dateFilterPanelRef}
+              className="date-filter-popover"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="date-filter-popover-title"
+              style={{
+                position: "fixed",
+                top: datePopoverStyle.top,
+                left: datePopoverStyle.left,
+                width: datePopoverStyle.width,
+                zIndex: 12600
+              }}
+            >
+              <h4 id="date-filter-popover-title" className="date-filter-popover__title">
+                Purchase date range
+              </h4>
+              <p className="date-filter-popover__hint">Leave a field empty for no bound on that side.</p>
+              <div className="date-filter-popover__fields">
+                <label className="date-filter-popover__field">
+                  <span className="date-filter-popover__label">From</span>
+                  <input
+                    className="input"
+                    type="date"
+                    value={dateDraftFrom}
+                    onChange={(e) => setDateDraftFrom(e.target.value)}
+                  />
+                </label>
+                <label className="date-filter-popover__field">
+                  <span className="date-filter-popover__label">To</span>
+                  <input
+                    className="input"
+                    type="date"
+                    value={dateDraftTo}
+                    onChange={(e) => setDateDraftTo(e.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="date-filter-popover__actions">
+                <button type="button" className="btn btn-secondary" onClick={() => setDateFilterOpen(false)}>
+                  Cancel
+                </button>
+                <button type="button" className="btn" onClick={applyDateFilter}>
+                  Apply
+                </button>
+              </div>
+              <button type="button" className="date-filter-popover__clear link-btn" onClick={clearDateFilterInPopover}>
+                Clear date range
+              </button>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

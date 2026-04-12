@@ -1583,6 +1583,138 @@ select.input {
   padding: 6px 8px;
 }
 
+/* Vouchers: date filter icon in filter row (popover) */
+.th-date-filter-cell {
+  width: 1%;
+  vertical-align: middle;
+  text-align: center;
+  padding: 4px 6px !important;
+  background: #f7f6f3 !important;
+}
+
+.th-date-filter-cell__inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.85rem;
+}
+
+.btn-icon--table-date-filter {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+}
+
+.btn-icon--table-date-filter.is-active {
+  border-color: var(--primary-container);
+  color: var(--primary-pressed);
+  background: rgba(114, 76, 31, 0.1);
+}
+
+@media (max-width: 768px) {
+  .btn-icon--table-date-filter {
+    width: 2.5rem;
+    height: 2.5rem;
+    min-width: 2.5rem;
+    min-height: 2.5rem;
+  }
+
+  .th-date-filter-cell__inner {
+    min-height: 2.5rem;
+  }
+}
+
+.table td.td-date {
+  white-space: nowrap;
+  width: 1%;
+}
+
+.date-filter-popover {
+  box-sizing: border-box;
+  padding: 14px 16px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--surface-elevated);
+  box-shadow: var(--card-shadow), 0 18px 50px rgba(15, 23, 42, 0.2);
+  max-width: calc(100vw - 20px);
+}
+
+.date-filter-popover__title {
+  margin: 0 0 6px;
+  font-size: 1rem;
+  font-weight: 800;
+  font-family: var(--font-display), "Manrope", var(--font-sans), system-ui, sans-serif;
+  color: var(--ink);
+}
+
+.date-filter-popover__hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.date-filter-popover__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.date-filter-popover__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.date-filter-popover__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.date-filter-popover__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 14px;
+}
+
+.date-filter-popover__clear {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 6px 0 0;
+  text-align: center;
+  font-size: 13px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.date-filter-popover__clear:hover {
+  color: var(--danger);
+}
+
+/* Vouchers table: single compact filter row */
+.table.table--voucher-filters thead .table-filter-row th {
+  padding: 4px 5px;
+  vertical-align: middle;
+}
+
+.table.table--voucher-filters .table-filter-input {
+  padding: 3px 6px;
+  font-size: 11px;
+  line-height: 1.25;
+  min-height: 1.75rem;
+}
+
+.table.table--voucher-filters .table-filter-input[type="date"] {
+  min-height: 1.75rem;
+}
+
 .highlight-row {
   background: var(--danger-soft) !important;
 }
@@ -1808,6 +1940,26 @@ select.input {
   align-items: center;
 }
 
+.table .row-actions {
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.table td.col-actions,
+.table th.col-actions {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.table td.col-select,
+.table th.col-select {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+  text-align: center;
+}
+
 /* Table row Edit / Delete as compact icon buttons */
 .btn-icon {
   display: inline-flex;
@@ -1833,6 +1985,16 @@ select.input {
   border-color: rgba(185, 28, 28, 0.45);
   color: var(--danger);
   background: var(--danger-soft);
+}
+
+.btn-icon--clear-filters:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--surface-muted);
+}
+
+.btn-icon--bulk-excel:hover:not(:disabled) {
+  color: #166534;
+  background: rgba(34, 197, 94, 0.12);
 }
 
 .btn-icon--excel:hover:not(:disabled) {
@@ -1939,15 +2101,21 @@ select.input {
 }
 
 .card-header-row--voucher-toolbar {
-  align-items: flex-start;
+  align-items: center;
 }
 
 .voucher-table-toolbar-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 8px;
   align-items: center;
   justify-content: flex-end;
+}
+
+@media (min-width: 720px) {
+  .voucher-table-toolbar-actions {
+    flex-wrap: nowrap;
+  }
 }
 
 /* Global delete / destructive confirm (above form modals) */
@@ -1987,6 +2155,10 @@ select.input {
   color: var(--muted);
 }
 
+.confirm-dialog-message--solo {
+  margin-bottom: 0;
+}
+
 .confirm-dialog-actions {
   display: flex;
   flex-wrap: wrap;
@@ -2006,6 +2178,88 @@ select.input {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   background: rgba(26, 28, 26, 0.48);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.voucher-modal-dialog--bulk {
+  width: min(720px, 100%);
+  max-height: min(92dvh, 880px);
+}
+
+.bulk-map-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.bulk-map-row {
+  display: grid;
+  grid-template-columns: minmax(9rem, 1fr) minmax(11rem, 1.35fr);
+  gap: 10px 14px;
+  align-items: center;
+}
+
+@media (max-width: 640px) {
+  .bulk-map-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.bulk-map-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.bulk-map-select-wrap {
+  min-width: 0;
+}
+
+.bulk-dup-list {
+  margin: 0 0 16px;
+  padding-left: 1.25rem;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+.bulk-dup-fieldset {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-low);
+}
+
+.bulk-dup-legend {
+  padding: 0 6px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.bulk-dup-radio {
+  display: block;
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.voucher-modal-actions--padded {
+  padding: 14px 18px 18px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .voucher-modal-dialog {

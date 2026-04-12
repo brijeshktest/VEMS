@@ -38,14 +38,51 @@ export async function resolvePermissions(roleIds = []) {
   const merged = {};
   for (const role of roles) {
     for (const [moduleKey, perms] of role.permissions.entries()) {
-      merged[moduleKey] = merged[moduleKey] || { create: false, edit: false, view: false, delete: false };
+      merged[moduleKey] = merged[moduleKey] || {
+        create: false,
+        edit: false,
+        view: false,
+        delete: false,
+        bulkUpload: false,
+        bulkDelete: false
+      };
       merged[moduleKey].create = merged[moduleKey].create || Boolean(perms.create);
       merged[moduleKey].edit = merged[moduleKey].edit || Boolean(perms.edit);
       merged[moduleKey].view = merged[moduleKey].view || Boolean(perms.view);
       merged[moduleKey].delete = merged[moduleKey].delete || Boolean(perms.delete);
+      merged[moduleKey].bulkUpload = merged[moduleKey].bulkUpload || Boolean(perms.bulkUpload);
+      merged[moduleKey].bulkDelete = merged[moduleKey].bulkDelete || Boolean(perms.bulkDelete);
     }
   }
   return merged;
+}
+
+export async function requireVoucherBulkUpload(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.vouchers?.bulkUpload) {
+    return next();
+  }
+  return res.status(403).json({ error: "Bulk upload permission required" });
+}
+
+export async function requireVoucherBulkDelete(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.vouchers?.bulkDelete) {
+    return next();
+  }
+  return res.status(403).json({ error: "Bulk delete permission required" });
 }
 
 export function requirePermission(moduleKey, action) {

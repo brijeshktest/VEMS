@@ -5,7 +5,9 @@ const PermissionSchema = new mongoose.Schema(
     create: { type: Boolean, default: false },
     edit: { type: Boolean, default: false },
     view: { type: Boolean, default: false },
-    delete: { type: Boolean, default: false }
+    delete: { type: Boolean, default: false },
+    bulkUpload: { type: Boolean, default: false },
+    bulkDelete: { type: Boolean, default: false }
   },
   { _id: false }
 );
