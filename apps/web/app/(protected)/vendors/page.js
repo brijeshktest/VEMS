@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
-import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
 import {
@@ -51,6 +51,9 @@ export default function VendorsPage() {
   const [pendingFiles, setPendingFiles] = useState([]);
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canBulkDelete, setCanBulkDelete] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const selectAllCheckboxRef = useRef(null);
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
   const fileInputRef = useRef(null);
@@ -76,9 +79,88 @@ export default function VendorsPage() {
 
   async function load() {
     try {
-      const [data, me] = await Promise.all([apiFetch("/vendors"), apiFetch("/auth/me")]);
+      const [data, me, permData] = await Promise.all([
+        apiFetch("/vendors"),
+        apiFetch("/auth/me"),
+        apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
+      ]);
       setVendors(data);
-      setIsAdmin(me?.user?.role === "admin");
+      const admin = me?.user?.role === "admin";
+      setIsAdmin(admin);
+      const p = permData.permissions;
+      const all = p === "all";
+      setCanBulkDelete(admin || all || Boolean(p?.vendors?.bulkDelete));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  const vendorIdsKey = useMemo(() => vendors.map((v) => String(v._id)).join(","), [vendors]);
+
+  useEffect(() => {
+    const allowed = new Set(vendorIdsKey.split(",").filter(Boolean));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id);
+        else changed = true;
+      }
+      if (!changed && next.size === prev.size) return prev;
+      return next;
+    });
+  }, [vendorIdsKey]);
+
+  useLayoutEffect(() => {
+    const el = selectAllCheckboxRef.current;
+    if (!el || !canBulkDelete) return;
+    const ids = vendorIdsKey.split(",").filter(Boolean);
+    const n = ids.length;
+    const sel = ids.filter((id) => selectedIds.has(id)).length;
+    el.indeterminate = n > 0 && sel > 0 && sel < n;
+    el.checked = n > 0 && sel === n;
+  }, [canBulkDelete, selectedIds, vendorIdsKey]);
+
+  function toggleSelectAllVendors() {
+    const ids = vendors.map((v) => String(v._id));
+    if (!ids.length) return;
+    setSelectedIds((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  function toggleSelectVendor(id) {
+    const sid = String(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedVendors() {
+    const ids = [...selectedIds];
+    if (!ids.length || !canBulkDelete) return;
+    const ok = await confirm({
+      title: "Delete selected vendors?",
+      message:
+        ids.length === 1
+          ? "Permanently delete this vendor? Related files and catalog links will be removed where safe. Vendors referenced by vouchers cannot be deleted."
+          : `Permanently delete ${ids.length} vendors? Related files and catalog links will be removed where safe. Any vendor referenced by vouchers will be skipped.`
+    });
+    if (!ok) return;
+    setError("");
+    try {
+      await apiFetch("/vendors/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids })
+      });
+      setSelectedIds(new Set());
+      if (editingId && ids.includes(String(editingId))) cancelEdit();
+      await load();
     } catch (err) {
       setError(err.message);
     }
@@ -209,6 +291,53 @@ export default function VendorsPage() {
     new Set(vendors.map((vendor) => (vendor.vendorType || "").trim()).filter(Boolean))
   ).sort();
 
+  function materialNamesForVendorExport(vendor, materialsList) {
+    const raw = vendor.materialsSupplied || [];
+    return raw
+      .map((mid) => {
+        const id = mid && typeof mid === "object" && "_id" in mid ? mid._id : mid;
+        const m = materialsList.find((x) => String(x._id) === String(id));
+        return m?.name || String(id || "");
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+
+  async function downloadVendorsExcel() {
+    setError("");
+    try {
+      const XLSX = await import("xlsx");
+      const materialsList = await apiFetch("/materials").catch(() => []);
+      const rows = vendors.map((vendor) => ({
+        Name: vendor.name || "",
+        "Vendor type": vendor.vendorType || "",
+        GSTIN: vendor.gstin || "",
+        Address: vendor.address || "",
+        "Contact person": vendor.contactPerson || "",
+        "Contact number": vendor.contactNumber || "",
+        Email: vendor.email || "",
+        PAN: vendor.pan || "",
+        Aadhaar: vendor.aadhaar || "",
+        Status: vendor.status || "",
+        "Attachment count": vendor.attachments?.length || 0,
+        "Attachment file names": (vendor.attachments || [])
+          .map((a) => a.originalName || a.storedName || "")
+          .filter(Boolean)
+          .join("; "),
+        "Linked materials": materialNamesForVendorExport(vendor, materialsList),
+        "Created at": vendor.createdAt ? new Date(vendor.createdAt).toISOString().slice(0, 10) : "",
+        "Updated at": vendor.updatedAt ? new Date(vendor.updatedAt).toISOString().slice(0, 10) : ""
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Vendors");
+      const filename = `vendors-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      setError(err.message || "Could not generate Excel file");
+    }
+  }
+
   return (
     <div className="page-stack">
       {dialog}
@@ -227,12 +356,42 @@ export default function VendorsPage() {
             <button className="btn" type="button" onClick={openAddVendorModal}>
               Add vendor
             </button>
+            {canBulkDelete ? (
+              <DeleteIconButton
+                disabled={!selectedIds.size}
+                onClick={() => void bulkDeleteSelectedVendors()}
+                title={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected vendor${selectedIds.size === 1 ? "" : "s"}`
+                    : "Select vendors to delete"
+                }
+                aria-label={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected vendor${selectedIds.size === 1 ? "" : "s"}`
+                    : "Delete selected (choose vendors first)"
+                }
+              />
+            ) : null}
+            <ExcelDownloadIconButton
+              disabled={!vendors.length}
+              onClick={() => void downloadVendorsExcel()}
+            />
           </div>
         </div>
         <div className="table-wrap">
           <table className="table">
             <thead>
               <tr>
+                {canBulkDelete ? (
+                  <th className="col-select" scope="col">
+                    <input
+                      ref={selectAllCheckboxRef}
+                      type="checkbox"
+                      onChange={toggleSelectAllVendors}
+                      aria-label="Select all vendors"
+                    />
+                  </th>
+                ) : null}
                 <th>Name</th>
                 <th>Contact</th>
                 <th>Documents</th>
@@ -243,6 +402,16 @@ export default function VendorsPage() {
             <tbody>
               {vendors.map((vendor) => (
                 <tr key={vendor._id}>
+                  {canBulkDelete ? (
+                    <td className="col-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(String(vendor._id))}
+                        onChange={() => toggleSelectVendor(vendor._id)}
+                        aria-label={`Select vendor ${(vendor.name || "").trim() || String(vendor._id)}`}
+                      />
+                    </td>
+                  ) : null}
                   <td>{vendor.name}</td>
                   <td>
                     {vendor.contactPerson || "-"} ({vendor.contactNumber || "-"})

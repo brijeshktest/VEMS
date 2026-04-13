@@ -2,7 +2,8 @@ import express from "express";
 import fs from "node:fs/promises";
 import path from "node:path";
 import AppSettings from "../models/AppSettings.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireAuth, requireAdmin, requirePermission } from "../middleware/auth.js";
+import { validateOptionalGstin } from "../utils/indianValidators.js";
 import {
   multerTmpUpload,
   persistMulterFiles,
@@ -42,6 +43,83 @@ async function getOrCreateSettings() {
   }
   return doc;
 }
+
+const LETTERHEAD_NAME_MAX = 160;
+const LETTERHEAD_LINE_MAX = 200;
+const LETTERHEAD_MAX_LINES = 12;
+
+/** Authenticated: letterhead for sales invoice PDFs (any user with sales view, or admin). */
+router.get("/invoice-letterhead", requireAuth, requirePermission("sales", "view"), async (_req, res) => {
+  const doc = await getOrCreateSettings();
+  const lean = doc.toObject();
+  const lines = Array.isArray(lean.companyAddressLines)
+    ? lean.companyAddressLines.map((s) => String(s || "").trim()).filter(Boolean)
+    : [];
+  const legal = String(lean.companyLegalName || "").trim();
+  const hasLogo = Boolean(lean.logoStoredName);
+  const logoCacheKey = hasLogo && lean.updatedAt ? new Date(lean.updatedAt).getTime() : null;
+  return res.json({
+    legalName: legal || "Shroom Agritech LLP",
+    addressLines: lines,
+    phone: String(lean.companyPhone || "").trim(),
+    gstin: String(lean.companyGstin || "").trim(),
+    website: String(lean.companyWebsite || "").trim(),
+    email: String(lean.companyEmail || "").trim(),
+    hasLogo,
+    logoCacheKey
+  });
+});
+
+router.put("/invoice-letterhead", requireAuth, requireAdmin, async (req, res) => {
+  const body = req.body || {};
+  const legalName = String(body.legalName ?? "").trim();
+  if (!legalName || legalName.length > LETTERHEAD_NAME_MAX) {
+    return res.status(400).json({
+      error: `Legal name is required and must be at most ${LETTERHEAD_NAME_MAX} characters.`
+    });
+  }
+  let addressLines = Array.isArray(body.addressLines) ? body.addressLines : [];
+  if (!addressLines.length && typeof body.addressText === "string") {
+    addressLines = body.addressText.split(/\r?\n/).map((s) => String(s).trim()).filter(Boolean);
+  }
+  addressLines = addressLines
+    .map((s) => String(s || "").trim())
+    .filter(Boolean)
+    .slice(0, LETTERHEAD_MAX_LINES)
+    .map((s) => (s.length > LETTERHEAD_LINE_MAX ? s.slice(0, LETTERHEAD_LINE_MAX) : s));
+  const phone = String(body.phone ?? "").trim().slice(0, 80);
+  const gstinRaw = String(body.gstin ?? "").trim();
+  const gstin = gstinRaw.slice(0, 20);
+  const g = validateOptionalGstin(gstin);
+  if (!g.ok) {
+    return res.status(400).json({ error: g.message });
+  }
+  const website = String(body.website ?? "").trim().slice(0, 200);
+  const email = String(body.email ?? "").trim().slice(0, 120);
+
+  const settings = await getOrCreateSettings();
+  settings.companyLegalName = legalName;
+  settings.companyAddressLines = addressLines;
+  settings.companyPhone = phone;
+  settings.companyGstin = g.value || "";
+  settings.companyWebsite = website;
+  settings.companyEmail = email;
+  await settings.save();
+  const lean = settings.toObject();
+  const hasLogo = Boolean(lean.logoStoredName);
+  const logoCacheKey = hasLogo && lean.updatedAt ? new Date(lean.updatedAt).getTime() : null;
+  const gstinOut = g.value || "";
+  return res.json({
+    legalName: legalName,
+    addressLines,
+    phone,
+    gstin: gstinOut,
+    website,
+    email,
+    hasLogo,
+    logoCacheKey
+  });
+});
 
 /** Public: whether a logo exists (for cache-busting in UI). */
 router.get("/branding", async (_req, res) => {

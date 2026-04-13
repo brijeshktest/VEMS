@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PageHeader from "../../../components/PageHeader.js";
 import { getWorkMode } from "../../../lib/workMode.js";
+import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
 
 function paymentStatusClass(status) {
   if (status === "Paid") return "status-pill status-pill--paid";
@@ -294,7 +295,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="stat-dashlet__body">
                   <span className="stat-label">Total paid amount</span>
-                  <span className="stat-value">{summary ? summary.totalPaidAmount.toFixed(2) : "—"}</span>
+                  <span className="stat-value">{summary ? formatIndianRupee(summary.totalPaidAmount) : "—"}</span>
                   <span className="stat-hint">Open reports →</span>
                 </div>
               </div>
@@ -306,7 +307,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="stat-dashlet__body">
                   <span className="stat-label">Total tax</span>
-                  <span className="stat-value">{summary ? summary.totalTax.toFixed(2) : "—"}</span>
+                  <span className="stat-value">{summary ? formatIndianRupee(summary.totalTax) : "—"}</span>
                   <span className="stat-hint">Open reports →</span>
                 </div>
               </div>
@@ -333,7 +334,7 @@ export default function DashboardPage() {
             <Link className="stat-link" href="/sales">
               <div className="card stat-card">
                 <span className="stat-label">Total sales value</span>
-                <span className="stat-value">{Number(salesSummary.totalAmount).toFixed(2)}</span>
+                <span className="stat-value">{formatIndianRupee(salesSummary.totalAmount)}</span>
                 <span className="stat-hint">View sales →</span>
               </div>
             </Link>
@@ -341,7 +342,7 @@ export default function DashboardPage() {
               <div className="card stat-card">
                 <span className="stat-label">Mushroom sales</span>
                 <span className="stat-value">
-                  {Number(salesSummary.byCategory?.mushroom?.totalAmount ?? 0).toFixed(2)}
+                  {formatIndianRupee(salesSummary.byCategory?.mushroom?.totalAmount ?? 0)}
                 </span>
                 <span className="stat-hint">{salesSummary.byCategory?.mushroom?.count ?? 0} line(s) →</span>
               </div>
@@ -350,7 +351,7 @@ export default function DashboardPage() {
               <div className="card stat-card">
                 <span className="stat-label">Compost sales</span>
                 <span className="stat-value">
-                  {Number(salesSummary.byCategory?.compost?.totalAmount ?? 0).toFixed(2)}
+                  {formatIndianRupee(salesSummary.byCategory?.compost?.totalAmount ?? 0)}
                 </span>
                 <span className="stat-hint">{salesSummary.byCategory?.compost?.count ?? 0} line(s) →</span>
               </div>
@@ -450,7 +451,7 @@ export default function DashboardPage() {
               {vendors.map((row) => (
                 <tr key={row._id}>
                   <td>{row.vendor?.name}</td>
-                  <td>{row.totalPaidAmount.toFixed(2)}</td>
+                  <td>{formatIndianRupee(row.totalPaidAmount)}</td>
                 </tr>
               ))}
             </tbody>
@@ -476,7 +477,7 @@ export default function DashboardPage() {
                     {row.totalQuantity}
                     {row.material?.unit ? ` ${row.material.unit}` : ""}
                   </td>
-                  <td>{row.totalSpend.toFixed(2)}</td>
+                  <td>{formatIndianRupee(row.totalSpend)}</td>
                 </tr>
               ))}
             </tbody>
@@ -493,15 +494,15 @@ export default function DashboardPage() {
           <div className="panel-inset panel-inset--strong section-stack">
             <div className="grid grid-2">
               <div>
-                <p className="tag">Paid amount: {tax.tax.totalPaidAmount.toFixed(2)}</p>
-                <p className="tag">Tax: {tax.tax.totalTax.toFixed(2)}</p>
+                <p className="tag">Paid amount: {formatIndianRupee(tax.tax.totalPaidAmount)}</p>
+                <p className="tag">Tax: {formatIndianRupee(tax.tax.totalTax)}</p>
               </div>
               <div>
                 <h4 className="panel-title">Payment status</h4>
                 <ul className="inline-note">
                   {(tax.paymentStatus || []).map((row) => (
                     <li key={row._id ?? "unknown"}>
-                      {row._id}: {row.totalPaidAmount.toFixed(2)} paid ({row.count} vouchers)
+                      {row._id}: {formatIndianRupee(row.totalPaidAmount)} paid ({row.count} vouchers)
                     </li>
                   ))}
                 </ul>
@@ -537,8 +538,8 @@ export default function DashboardPage() {
                           <tr key={String(row._id)}>
                             <td>{row.vendor?.name || "—"}</td>
                             <td>{row.voucherCount}</td>
-                            <td>{row.totalTax.toFixed(2)}</td>
-                            <td>{row.totalPaidAmount.toFixed(2)}</td>
+                            <td>{formatIndianRupee(row.totalTax)}</td>
+                            <td>{formatIndianRupee(row.totalPaidAmount)}</td>
                           </tr>
                         ))
                       ) : (
@@ -589,8 +590,8 @@ export default function DashboardPage() {
                             <td>{new Date(row.dateOfPurchase).toLocaleDateString()}</td>
                             <td>{row.voucherNumber || "-"}</td>
                             <td>{row.vendorName || "—"}</td>
-                            <td>{row.paidAmount.toFixed(2)}</td>
-                            <td>{row.taxAmount.toFixed(2)}</td>
+                            <td>{formatIndianRupee(row.paidAmount)}</td>
+                            <td>{formatIndianRupee(row.taxAmount)}</td>
                             <td>
                               <span className={paymentStatusClass(row.paymentStatus)}>{row.paymentStatus}</span>
                             </td>
@@ -640,7 +641,7 @@ export default function DashboardPage() {
                           <tr key={row.paymentMadeBy}>
                             <td>{row.paymentMadeBy}</td>
                             <td>{row.voucherCount}</td>
-                            <td>{Number(row.totalPaidAmount).toFixed(2)}</td>
+                            <td>{formatIndianRupee(row.totalPaidAmount)}</td>
                           </tr>
                         ))
                       ) : (

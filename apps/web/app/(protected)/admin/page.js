@@ -6,6 +6,7 @@ import { apiFetch, apiFetchForm, API_URL } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
+import { validateOptionalGstin } from "../../../lib/indianValidators.js";
 
 const modules = [
   "dashboard",
@@ -68,7 +69,9 @@ function normalizePermissions(input = {}) {
   modules.forEach((moduleKey) => {
     const modulePerms = input[moduleKey] || {};
     actions.forEach((action) => {
-      if (moduleKey !== "vouchers" && (action === "bulkUpload" || action === "bulkDelete")) {
+      if (moduleKey !== "vouchers" && action === "bulkUpload") {
+        perms[moduleKey][action] = false;
+      } else if (!["vouchers", "vendors", "materials"].includes(moduleKey) && action === "bulkDelete") {
         perms[moduleKey][action] = false;
       } else {
         perms[moduleKey][action] = Boolean(modulePerms[action]);
@@ -93,6 +96,15 @@ export default function AdminPage() {
   const [editingUserId, setEditingUserId] = useState(null);
   const logoInputRef = useRef(null);
   const [brandingTs, setBrandingTs] = useState(null);
+  const [letterheadForm, setLetterheadForm] = useState({
+    legalName: "",
+    addressText: "",
+    phone: "",
+    gstin: "",
+    website: "",
+    email: ""
+  });
+  const [letterheadMessage, setLetterheadMessage] = useState("");
   const { confirm, dialog } = useConfirmDialog();
 
   const roleLookup = useMemo(() => {
@@ -159,6 +171,66 @@ export default function AdminPage() {
     refreshBranding();
   }, []);
 
+  async function loadInvoiceLetterhead() {
+    try {
+      const d = await apiFetch("/settings/invoice-letterhead");
+      setLetterheadForm({
+        legalName: d.legalName || "",
+        addressText: (d.addressLines || []).join("\n"),
+        phone: d.phone || "",
+        gstin: d.gstin || "",
+        website: d.website || "",
+        email: d.email || ""
+      });
+      setLetterheadMessage("");
+    } catch {
+      setLetterheadMessage("");
+    }
+  }
+
+  useEffect(() => {
+    void loadInvoiceLetterhead();
+  }, []);
+
+  async function saveInvoiceLetterhead(event) {
+    event.preventDefault();
+    setError("");
+    setLetterheadMessage("");
+    const legalName = letterheadForm.legalName.trim();
+    if (!legalName) {
+      setError("Legal / company name is required for the invoice letterhead.");
+      return;
+    }
+    const g = validateOptionalGstin(letterheadForm.gstin);
+    if (!g.ok) {
+      setError(g.message);
+      return;
+    }
+    try {
+      await apiFetch("/settings/invoice-letterhead", {
+        method: "PUT",
+        body: JSON.stringify({
+          legalName,
+          addressLines: letterheadForm.addressText
+            .split(/\n/)
+            .map((s) => s.trim())
+            .filter(Boolean),
+          phone: letterheadForm.phone.trim(),
+          gstin: letterheadForm.gstin.trim(),
+          website: letterheadForm.website.trim(),
+          email: letterheadForm.email.trim()
+        })
+      });
+      await loadInvoiceLetterhead();
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vems-letterhead-updated"));
+      }
+      setLetterheadMessage("Invoice letterhead saved. Sales PDFs will use these details.");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function uploadLogo(event) {
     event.preventDefault();
     const file = logoInputRef.current?.files?.[0];
@@ -175,6 +247,7 @@ export default function AdminPage() {
       await refreshBranding();
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("vems-branding-updated"));
+        window.dispatchEvent(new Event("vems-letterhead-updated"));
       }
     } catch (err) {
       setError(err.message);
@@ -194,6 +267,7 @@ export default function AdminPage() {
       setBrandingTs(null);
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("vems-branding-updated"));
+        window.dispatchEvent(new Event("vems-letterhead-updated"));
       }
     } catch (err) {
       setError(err.message);
@@ -363,7 +437,7 @@ export default function AdminPage() {
       <div className="card">
         <h3 className="panel-title">Organization logo</h3>
         <p className="page-lead" style={{ marginBottom: 16 }}>
-          Upload a square or wide logo (PNG, JPEG, SVG, or WebP, max 2&nbsp;MB). It appears in the application header for all users.
+          Upload a square or wide logo (PNG, JPEG, SVG, or WebP, max 2&nbsp;MB). It appears in the application header and on sales invoice PDFs when letterhead is configured.
         </p>
         {brandingTs ? (
           <div style={{ marginBottom: 16 }}>
@@ -394,6 +468,98 @@ export default function AdminPage() {
               <button className="btn btn-secondary" type="button" onClick={() => void removeLogo()}>
                 Remove logo
               </button>
+            ) : null}
+          </div>
+        </form>
+      </div>
+
+      <div className="card">
+        <h3 className="panel-title">Sales invoice letterhead</h3>
+        <p className="page-lead" style={{ marginBottom: 16 }}>
+          These details appear at the top of downloaded sales invoice PDFs for users who can access Sales management. Use one line per address row.
+        </p>
+        <form className="grid" onSubmit={saveInvoiceLetterhead}>
+          <div>
+            <label htmlFor="letterhead-legal">Legal / company name</label>
+            <input
+              id="letterhead-legal"
+              className="input"
+              value={letterheadForm.legalName}
+              onChange={(e) => setLetterheadForm((p) => ({ ...p, legalName: e.target.value }))}
+              required
+              maxLength={160}
+              autoComplete="organization"
+            />
+          </div>
+          <div>
+            <label htmlFor="letterhead-address">Address (one line per row)</label>
+            <textarea
+              id="letterhead-address"
+              className="input"
+              rows={4}
+              value={letterheadForm.addressText}
+              onChange={(e) => setLetterheadForm((p) => ({ ...p, addressText: e.target.value }))}
+              placeholder={"Registered office\nCity, State — PIN\nIndia"}
+            />
+          </div>
+          <div className="grid grid-2">
+            <div>
+              <label htmlFor="letterhead-phone">Phone</label>
+              <input
+                id="letterhead-phone"
+                className="input"
+                value={letterheadForm.phone}
+                onChange={(e) => setLetterheadForm((p) => ({ ...p, phone: e.target.value }))}
+                maxLength={80}
+                autoComplete="tel"
+              />
+            </div>
+            <div>
+              <label htmlFor="letterhead-gstin">Company GSTIN</label>
+              <input
+                id="letterhead-gstin"
+                className="input"
+                value={letterheadForm.gstin}
+                onChange={(e) => setLetterheadForm((p) => ({ ...p, gstin: e.target.value.toUpperCase() }))}
+                maxLength={15}
+                placeholder="15 characters if applicable"
+              />
+            </div>
+          </div>
+          <div className="grid grid-2">
+            <div>
+              <label htmlFor="letterhead-web">Website</label>
+              <input
+                id="letterhead-web"
+                className="input"
+                value={letterheadForm.website}
+                onChange={(e) => setLetterheadForm((p) => ({ ...p, website: e.target.value }))}
+                maxLength={200}
+                autoComplete="url"
+                placeholder="https://"
+              />
+            </div>
+            <div>
+              <label htmlFor="letterhead-email">Email</label>
+              <input
+                id="letterhead-email"
+                className="input"
+                type="email"
+                value={letterheadForm.email}
+                onChange={(e) => setLetterheadForm((p) => ({ ...p, email: e.target.value }))}
+                maxLength={120}
+                autoComplete="email"
+              />
+            </div>
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
+            <button className="btn" type="submit">
+              Save letterhead
+            </button>
+            {letterheadMessage ? (
+              <span className="text-sm" style={{ color: "var(--muted)" }}>
+                {letterheadMessage}
+              </span>
             ) : null}
           </div>
         </form>
@@ -435,18 +601,26 @@ export default function AdminPage() {
                     <tr key={moduleKey}>
                       <td>{MODULE_LABELS[moduleKey] || moduleKey}</td>
                       {actions.map((action) => {
-                        const bulkOnly = moduleKey !== "vouchers" && (action === "bulkUpload" || action === "bulkDelete");
+                        const bulkUploadDisabled = moduleKey !== "vouchers" && action === "bulkUpload";
+                        const bulkDeleteDisabled =
+                          !["vouchers", "vendors", "materials"].includes(moduleKey) && action === "bulkDelete";
+                        const disabled = bulkUploadDisabled || bulkDeleteDisabled;
+                        const title = bulkUploadDisabled
+                          ? "Bulk upload applies only to vouchers"
+                          : bulkDeleteDisabled
+                            ? "Bulk delete applies to vouchers, vendors, and materials"
+                            : undefined;
                         return (
                           <td key={`${moduleKey}-${action}`}>
                             <input
                               type="checkbox"
-                              disabled={bulkOnly}
+                              disabled={disabled}
                               checked={Boolean(roleForm.permissions[moduleKey]?.[action])}
                               onChange={(e) => {
-                                if (bulkOnly) return;
+                                if (disabled) return;
                                 updatePermission(moduleKey, action, e.target.checked);
                               }}
-                              title={bulkOnly ? "Only applies to Vouchers" : undefined}
+                              title={title}
                             />
                           </td>
                         );

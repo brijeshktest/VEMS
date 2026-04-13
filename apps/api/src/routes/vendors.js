@@ -1,7 +1,9 @@
 import express from "express";
 import fs from "node:fs/promises";
 import Vendor from "../models/Vendor.js";
-import { requireAuth, requirePermission } from "../middleware/auth.js";
+import Material from "../models/Material.js";
+import Voucher from "../models/Voucher.js";
+import { requireAuth, requirePermission, requireVendorBulkDelete } from "../middleware/auth.js";
 import { requireFields } from "../utils/validators.js";
 import { validateVendorContactPayload } from "../utils/indianValidators.js";
 import {
@@ -104,9 +106,57 @@ function parseRemovedAttachmentIds(req) {
   return [];
 }
 
+async function deleteVendorById(user, idStr) {
+  const vendor = await Vendor.findById(idStr);
+  if (!vendor) {
+    return { ok: false, error: "Vendor not found" };
+  }
+  const vid = vendor._id;
+  const voucherCount = await Voucher.countDocuments({ vendorId: vid });
+  if (voucherCount > 0) {
+    return { ok: false, error: `Cannot delete: ${voucherCount} voucher(s) reference this vendor` };
+  }
+  const before = vendor.toObject();
+  const idString = vid.toString();
+  await vendor.deleteOne();
+  await deleteEntityUploadFolder("vendors", idString);
+  await Material.updateMany({ vendorIds: vid }, { $pull: { vendorIds: vid } });
+  await logChange({
+    entityType: "vendor",
+    entityId: idString,
+    action: "delete",
+    user,
+    before,
+    after: null
+  });
+  return { ok: true };
+}
+
 router.get("/", requireAuth, requirePermission("vendors", "view"), async (req, res) => {
   const vendors = await Vendor.find().sort({ name: 1 });
   return res.json(vendors);
+});
+
+router.post("/bulk-delete", requireAuth, requireVendorBulkDelete, async (req, res) => {
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "ids must be a non-empty array" });
+  }
+  if (ids.length > 200) {
+    return res.status(400).json({ error: "Maximum 200 vendors per bulk delete" });
+  }
+  const results = [];
+  for (const raw of ids) {
+    const idStr = String(raw || "").trim();
+    if (!idStr) {
+      results.push({ id: raw, ok: false, error: "Empty id" });
+      continue;
+    }
+    const r = await deleteVendorById(req.user, idStr);
+    results.push({ id: idStr, ok: r.ok, error: r.error });
+  }
+  const deleted = results.filter((x) => x.ok).length;
+  return res.json({ results, deleted, failed: results.length - deleted });
 });
 
 router.get(
@@ -274,22 +324,10 @@ router.put("/:id", requireAuth, requirePermission("vendors", "edit"), conditiona
 });
 
 router.delete("/:id", requireAuth, requirePermission("vendors", "delete"), async (req, res) => {
-  const vendor = await Vendor.findById(req.params.id);
-  if (!vendor) {
-    return res.status(404).json({ error: "Vendor not found" });
+  const r = await deleteVendorById(req.user, req.params.id);
+  if (!r.ok) {
+    return res.status(r.error === "Vendor not found" ? 404 : 400).json({ error: r.error });
   }
-  const idStr = vendor._id.toString();
-  const before = vendor.toObject();
-  await vendor.deleteOne();
-  await deleteEntityUploadFolder("vendors", idStr);
-  await logChange({
-    entityType: "vendor",
-    entityId: idStr,
-    action: "delete",
-    user: req.user,
-    before,
-    after: null
-  });
   return res.json({ ok: true });
 });
 

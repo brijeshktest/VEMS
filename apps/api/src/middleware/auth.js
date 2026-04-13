@@ -85,6 +85,34 @@ export async function requireVoucherBulkDelete(req, res, next) {
   return res.status(403).json({ error: "Bulk delete permission required" });
 }
 
+export async function requireVendorBulkDelete(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.vendors?.bulkDelete) {
+    return next();
+  }
+  return res.status(403).json({ error: "Vendor bulk delete permission required" });
+}
+
+export async function requireMaterialBulkDelete(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.materials?.bulkDelete) {
+    return next();
+  }
+  return res.status(403).json({ error: "Material bulk delete permission required" });
+}
+
 export function requirePermission(moduleKey, action) {
   return async (req, res, next) => {
     if (!req.user) {

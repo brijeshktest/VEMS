@@ -5,6 +5,13 @@ const AppSettingsSchema = new mongoose.Schema(
   {
     logoStoredName: { type: String, default: "" },
     logoMimeType: { type: String, default: "" },
+    /** Sales invoice PDF letterhead (admin-maintained). */
+    companyLegalName: { type: String, default: "" },
+    companyAddressLines: { type: [String], default: [] },
+    companyPhone: { type: String, default: "" },
+    companyGstin: { type: String, default: "" },
+    companyWebsite: { type: String, default: "" },
+    companyEmail: { type: String, default: "" },
     bunkerCount: { type: Number, default: 3 },
     tunnelCount: { type: Number, default: 2 },
     bunkerIntervalDays: { type: Number, default: 2 },

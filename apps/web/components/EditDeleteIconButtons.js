@@ -97,6 +97,42 @@ export function ExcelDownloadIconButton({
   );
 }
 
+/** Document with arrow — download PDF invoice. */
+function IconPdfDocument({ className }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+      <path d="M14 2v6h6M12 18v-6m0 0l-2.5 2.5M12 12l2.5 2.5" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function PdfDownloadIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "Download PDF",
+  title = "Download PDF"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconPdfDocument />
+    </button>
+  );
+}
+
 function IconFilterClear({ className }) {
   return (
     <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>

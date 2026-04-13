@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
-import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { EditIconButton, DeleteIconButton, PdfDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import {
   validateOptionalGstin,
   validateOptionalPan,
   validateOptionalAadhaar
 } from "../../../lib/indianValidators.js";
+import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
+import { downloadSaleInvoicePdf } from "../../../lib/saleInvoicePdf.js";
 
 const PAYMENT_MODES = ["Cash", "UPI", "Bank transfer", "Cheque", "Card", "Other"];
 
@@ -68,6 +70,14 @@ export default function SalesPage() {
       setIsAdmin(meData?.user?.role === "admin");
     } catch (err) {
       setError(err.message);
+    }
+  }
+
+  async function loadLetterhead() {
+    try {
+      return await apiFetch("/settings/invoice-letterhead");
+    } catch {
+      return null;
     }
   }
 
@@ -162,19 +172,29 @@ export default function SalesPage() {
     };
 
     try {
+      const wasCreate = !editingId;
+      let saved;
       if (editingId) {
-        await apiFetch(`/sales/${editingId}`, {
+        saved = await apiFetch(`/sales/${editingId}`, {
           method: "PUT",
           body: JSON.stringify(payload)
         });
       } else {
-        await apiFetch("/sales", {
+        saved = await apiFetch("/sales", {
           method: "POST",
           body: JSON.stringify(payload)
         });
       }
       cancelEdit();
       await load();
+      if (wasCreate) {
+        try {
+          const lh = await loadLetterhead();
+          await downloadSaleInvoicePdf(saved, lh);
+        } catch (pdfErr) {
+          setError(pdfErr?.message || "Invoice saved, but PDF download failed.");
+        }
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -270,10 +290,24 @@ export default function SalesPage() {
                     {row.quantity}
                     {row.unit ? ` ${row.unit}` : ""}
                   </td>
-                  <td>{Number(row.totalAmount).toFixed(2)}</td>
+                  <td>{formatIndianRupee(row.totalAmount)}</td>
                   <td>{row.paymentMode?.trim() ? row.paymentMode : "—"}</td>
                   <td>
                     <div className="row-actions">
+                      <PdfDownloadIconButton
+                        title="Download invoice PDF"
+                        aria-label="Download invoice PDF"
+                        onClick={() =>
+                          void (async () => {
+                            try {
+                              const lh = await loadLetterhead();
+                              await downloadSaleInvoicePdf(row, lh);
+                            } catch (pdfErr) {
+                              setError(pdfErr?.message || "PDF download failed.");
+                            }
+                          })()
+                        }
+                      />
                       <EditIconButton onClick={() => startEdit(row)} />
                       {isAdmin ? <DeleteIconButton onClick={() => void deleteSale(row)} /> : null}
                     </div>

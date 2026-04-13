@@ -16,7 +16,7 @@ function normalizePermissions(input = {}) {
       view: Boolean(perms.view),
       delete: Boolean(perms.delete),
       bulkUpload: moduleKey === "vouchers" ? Boolean(perms.bulkUpload) : false,
-      bulkDelete: moduleKey === "vouchers" ? Boolean(perms.bulkDelete) : false
+      bulkDelete: ["vouchers", "vendors", "materials"].includes(moduleKey) ? Boolean(perms.bulkDelete) : false
     };
   }
   return normalized;

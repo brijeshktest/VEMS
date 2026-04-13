@@ -14,6 +14,7 @@ import {
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import VoucherBulkImport from "../../../components/VoucherBulkImport.js";
 import { PAYMENT_MADE_FROM_CHOICES } from "../../../lib/paymentMadeFrom.js";
+import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
 
 const initialForm = {
   vendorId: "",
@@ -66,6 +67,41 @@ function paymentStatusClass(status) {
   return "status-pill status-pill--pending";
 }
 
+/** Native tooltip: voucher payment comments + each line (material + line comment). */
+function voucherRowHoverTitle(voucher, materialsList) {
+  const parts = [];
+  const pc = (voucher.paymentComments || "").trim();
+  if (pc) parts.push(`Voucher: ${pc}`);
+  for (const item of voucher.items || []) {
+    const mid = item.materialId?._id ?? item.materialId;
+    const m = materialsList.find((x) => String(x._id) === String(mid));
+    const mn = m?.name || "Item";
+    const ic = (item.comment || "").trim();
+    parts.push(ic ? `${mn}: ${ic}` : mn);
+  }
+  return parts.join("\n");
+}
+
+function voucherMaterialsCellLabel(voucher, materialsList) {
+  const names = (voucher.items || []).map((item) => {
+    const mid = item.materialId?._id ?? item.materialId;
+    const m = materialsList.find((x) => String(x._id) === String(mid));
+    return m?.name || "—";
+  });
+  return names.length ? names.join("; ") : "—";
+}
+
+function voucherMaterialNamesForFilter(voucher, materialsList) {
+  return (voucher.items || [])
+    .map((item) => {
+      const mid = item.materialId?._id ?? item.materialId;
+      const m = materialsList.find((x) => String(x._id) === String(mid));
+      return m?.name || "";
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
 export default function VouchersPage() {
   const [vouchers, setVouchers] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -89,7 +125,7 @@ export default function VouchersPage() {
     dateTo: "",
     voucherNo: "",
     vendor: "",
-    voucherAmt: "",
+    material: "",
     paidAmt: "",
     madeFrom: "",
     docs: "",
@@ -234,7 +270,7 @@ export default function VouchersPage() {
       if (columnFilters.dateTo && pKey > columnFilters.dateTo) return false;
       if (!inc(voucher.voucherNumber || "", columnFilters.voucherNo)) return false;
       if (!inc(vendorName, columnFilters.vendor)) return false;
-      if (!inc(Number(voucher.finalAmount).toFixed(2), columnFilters.voucherAmt)) return false;
+      if (!inc(voucherMaterialNamesForFilter(voucher, materials), columnFilters.material)) return false;
       if (!inc(Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2), columnFilters.paidAmt)) return false;
       if (!inc(voucher.paymentMadeBy || "", columnFilters.madeFrom)) return false;
       const hasDocs = (voucher.attachments?.length || 0) > 0;
@@ -245,7 +281,17 @@ export default function VouchersPage() {
       if (!inc(voucher.paidByMode || "", columnFilters.paidByMode)) return false;
       return true;
     });
-  }, [vouchers, vendors, columnFilters]);
+  }, [vouchers, vendors, materials, columnFilters]);
+
+  const filteredListTotals = useMemo(() => {
+    let voucherSum = 0;
+    let paidSum = 0;
+    for (const v of filteredVouchers) {
+      voucherSum += Number(v.finalAmount) || 0;
+      paidSum += Number(v.paidAmount ?? v.finalAmount ?? 0) || 0;
+    }
+    return { voucherSum, paidSum };
+  }, [filteredVouchers]);
 
   const filteredIdsKey = useMemo(
     () => filteredVouchers.map((v) => String(v._id)).join(","),
@@ -512,17 +558,39 @@ export default function VouchersPage() {
       for (const voucher of filteredVouchers) {
         const vid = voucher.vendorId?._id ?? voucher.vendorId;
         const vendor = vendors.find((v) => String(v._id) === String(vid));
+        const payDate = voucher.paymentDate
+          ? new Date(voucher.paymentDate).toLocaleDateString()
+          : "";
+        const statusUpdatedAt = voucher.statusUpdatedAt
+          ? new Date(voucher.statusUpdatedAt).toLocaleString()
+          : "";
+        const attNames = (voucher.attachments || [])
+          .map((a) => a.originalName || a.storedName || "")
+          .filter(Boolean)
+          .join("; ");
         const base = {
           Date: new Date(voucher.dateOfPurchase).toLocaleDateString(),
           "Voucher no.": voucher.voucherNumber || "",
           Vendor: vendor?.name || "Unknown",
-          "Payment method": voucher.paymentMethod || "",
+          "Materials (all lines)": voucherMaterialsCellLabel(voucher, materials),
+          "Sub total": Number(voucher.subTotal ?? 0),
+          "Tax %": Number(voucher.taxPercent ?? 0),
+          "Tax amount": Number(voucher.taxAmount ?? 0),
+          "Discount type": voucher.discountType || "none",
+          "Discount value": Number(voucher.discountValue ?? 0),
           "Voucher amount": Number(voucher.finalAmount),
           "Paid amount": Number(voucher.paidAmount ?? voucher.finalAmount ?? 0),
-          Status: voucher.paymentStatus,
+          "Payment method": voucher.paymentMethod || "",
+          "Payment status": voucher.paymentStatus,
+          "Payment date": payDate,
           "Payment made from": voucher.paymentMadeBy || "",
-          "Paid by mode": voucher.paidByMode || "-",
-          "Created By": voucher.createdByName || "-"
+          "Paid by mode": voucher.paidByMode || "",
+          "Payment comments": voucher.paymentComments || "",
+          "Created By": voucher.createdByName || "-",
+          "Status Updated By": voucher.statusUpdatedByName || "-",
+          "Status Updated At": statusUpdatedAt || "-",
+          "Attachment count": voucher.attachments?.length || 0,
+          "Attachment names": attNames
         };
         const items = voucher.items || [];
         if (!items.length) {
@@ -614,6 +682,18 @@ export default function VouchersPage() {
             />
           </div>
         </div>
+        <div className="voucher-table-totals" aria-live="polite">
+          <span>
+            Total voucher amount: <strong>{formatIndianRupee(filteredListTotals.voucherSum)}</strong>
+          </span>
+          <span>
+            Total paid: <strong>{formatIndianRupee(filteredListTotals.paidSum)}</strong>
+          </span>
+          <span className="voucher-table-totals__count">
+            {filteredVouchers.length} voucher{filteredVouchers.length === 1 ? "" : "s"}
+            {vouchers.length !== filteredVouchers.length ? ` (of ${vouchers.length})` : ""}
+          </span>
+        </div>
         <div className="table-wrap">
           <table className="table table--voucher-filters">
           <thead>
@@ -631,7 +711,7 @@ export default function VouchersPage() {
               <th>Date</th>
               <th>Voucher no.</th>
               <th>Vendor</th>
-              <th>Voucher amount</th>
+              <th>Material</th>
               <th>Paid amount</th>
               <th>Payment made from</th>
               <th>Paid by mode</th>
@@ -689,9 +769,9 @@ export default function VouchersPage() {
                   className="input table-filter-input"
                   type="text"
                   placeholder="Filter…"
-                  value={columnFilters.voucherAmt}
-                  onChange={(e) => setColumnFilters((f) => ({ ...f, voucherAmt: e.target.value }))}
-                  aria-label="Filter by voucher amount"
+                  value={columnFilters.material}
+                  onChange={(e) => setColumnFilters((f) => ({ ...f, material: e.target.value }))}
+                  aria-label="Filter by material"
                 />
               </th>
               <th>
@@ -766,8 +846,14 @@ export default function VouchersPage() {
             {filteredVouchers.map((voucher) => {
               const vid = voucher.vendorId?._id ?? voucher.vendorId;
               const vendor = vendors.find((v) => String(v._id) === String(vid));
+              const hoverTitle = voucherRowHoverTitle(voucher, materials);
+              const matLabel = voucherMaterialsCellLabel(voucher, materials);
               return (
-                <tr key={voucher._id}>
+                <tr
+                  key={voucher._id}
+                  title={hoverTitle || undefined}
+                  className={hoverTitle ? "table-row--has-hover-title" : undefined}
+                >
                   {canBulkDelete ? (
                     <td className="col-select">
                       <input
@@ -781,8 +867,10 @@ export default function VouchersPage() {
                   <td className="td-date">{new Date(voucher.dateOfPurchase).toLocaleDateString()}</td>
                   <td>{voucher.voucherNumber || "-"}</td>
                   <td>{vendor?.name || "Unknown"}</td>
-                  <td>{voucher.finalAmount.toFixed(2)}</td>
-                  <td>{Number(voucher.paidAmount ?? voucher.finalAmount ?? 0).toFixed(2)}</td>
+                  <td className="td-voucher-materials" title={matLabel !== "—" ? matLabel : undefined}>
+                    {matLabel}
+                  </td>
+                  <td>{formatIndianRupee(voucher.paidAmount ?? voucher.finalAmount ?? 0)}</td>
                   <td>{voucher.paymentMadeBy?.trim() ? voucher.paymentMadeBy : "—"}</td>
                   <td>{voucher.paidByMode?.trim() ? voucher.paidByMode : "—"}</td>
                   <td>
@@ -1113,16 +1201,16 @@ export default function VouchersPage() {
 
           <div className="panel-inset panel-inset--strong totals-list">
             <p className="totals-item">
-              <strong>Subtotal:</strong> {totals.subTotal.toFixed(2)}
+              <strong>Subtotal:</strong> {formatIndianRupee(totals.subTotal)}
             </p>
             <p className="totals-item">
-              <strong>Tax:</strong> {totals.taxAmount.toFixed(2)}
+              <strong>Tax:</strong> {formatIndianRupee(totals.taxAmount)}
             </p>
             <p className="totals-item--strong">
-              <strong>Final amount:</strong> {totals.finalAmount.toFixed(2)}
+              <strong>Final amount:</strong> {formatIndianRupee(totals.finalAmount)}
             </p>
             <p className="totals-item">
-              <strong>Paid amount:</strong> {Number(form.paidAmount || 0).toFixed(2)}
+              <strong>Paid amount:</strong> {formatIndianRupee(form.paidAmount || 0)}
             </p>
           </div>
 

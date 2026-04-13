@@ -136,12 +136,55 @@ async function ensureBulkImportMaterialForVendor(vendorId) {
   return m._id;
 }
 
+function escapeRegexForVendorName(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * Excel bulk import: create or resolve vendor by name and align line-item materials to that vendor.
+ * Strips `importVendorName` from the returned payload.
+ */
+async function resolveImportVendorPayload(payload) {
+  const raw = payload.importVendorName;
+  if (raw === undefined || raw === null || !String(raw).trim()) {
+    const { importVendorName: _drop, ...rest } = payload;
+    return rest;
+  }
+  const importName = String(raw).trim();
+  let vendor = await Vendor.findOne({
+    name: new RegExp(`^${escapeRegexForVendorName(importName)}$`, "i")
+  });
+  if (!vendor) {
+    vendor = await Vendor.create({
+      name: importName,
+      vendorType: "Vendor",
+      status: "Active"
+    });
+  }
+  const resolvedVendorId = vendor._id;
+  const out = { ...payload, vendorId: resolvedVendorId };
+  const items = Array.isArray(payload.items) ? [...payload.items] : [];
+  const phMatId = await ensureBulkImportMaterialForVendor(resolvedVendorId);
+  const vidStr = String(resolvedVendorId);
+  out.items = await Promise.all(
+    items.map(async (item) => {
+      const mat = await Material.findById(item.materialId);
+      const ok = mat && (mat.vendorIds || []).map(String).includes(vidStr);
+      if (ok) return item;
+      return { ...item, materialId: phMatId };
+    })
+  );
+  delete out.importVendorName;
+  return out;
+}
+
 /**
  * Create voucher (no attachments). Throws Error with user-facing message on validation failure.
  * @param {{ name?: string }} user
  * @param {object} payload
  */
 async function createVoucherCore(user, payload) {
+  payload = await resolveImportVendorPayload(payload);
   const missing = requireFields(payload, ["vendorId", "items", "dateOfPurchase", "paymentMethod", "paymentStatus"]);
   if (missing.length) {
     throw new Error(`Missing fields: ${missing.join(", ")}`);

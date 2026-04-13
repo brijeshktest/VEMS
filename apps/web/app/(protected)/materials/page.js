@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
-import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 
 const initialForm = {
@@ -21,6 +21,9 @@ export default function MaterialsPage() {
   const [editingId, setEditingId] = useState(null);
   const [error, setError] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
+  const [canBulkDelete, setCanBulkDelete] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const selectAllCheckboxRef = useRef(null);
   const [materialModalOpen, setMaterialModalOpen] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
   const categoryOptions = Array.from(
@@ -29,14 +32,90 @@ export default function MaterialsPage() {
 
   async function load() {
     try {
-      const [materialData, vendorData, meData] = await Promise.all([
+      const [materialData, vendorData, meData, permData] = await Promise.all([
         apiFetch("/materials"),
         apiFetch("/vendors"),
-        apiFetch("/auth/me")
+        apiFetch("/auth/me"),
+        apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
       ]);
       setMaterials(materialData);
       setVendors(vendorData);
-      setIsAdmin(meData?.user?.role === "admin");
+      const admin = meData?.user?.role === "admin";
+      setIsAdmin(admin);
+      const p = permData.permissions;
+      const all = p === "all";
+      setCanBulkDelete(admin || all || Boolean(p?.materials?.bulkDelete));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  const materialIdsKey = useMemo(() => materials.map((m) => String(m._id)).join(","), [materials]);
+
+  useEffect(() => {
+    const allowed = new Set(materialIdsKey.split(",").filter(Boolean));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id);
+        else changed = true;
+      }
+      if (!changed && next.size === prev.size) return prev;
+      return next;
+    });
+  }, [materialIdsKey]);
+
+  useLayoutEffect(() => {
+    const el = selectAllCheckboxRef.current;
+    if (!el || !canBulkDelete) return;
+    const ids = materialIdsKey.split(",").filter(Boolean);
+    const n = ids.length;
+    const sel = ids.filter((id) => selectedIds.has(id)).length;
+    el.indeterminate = n > 0 && sel > 0 && sel < n;
+    el.checked = n > 0 && sel === n;
+  }, [canBulkDelete, selectedIds, materialIdsKey]);
+
+  function toggleSelectAllMaterials() {
+    const ids = materials.map((m) => String(m._id));
+    if (!ids.length) return;
+    setSelectedIds((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  function toggleSelectMaterial(id) {
+    const sid = String(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedMaterials() {
+    const ids = [...selectedIds];
+    if (!ids.length || !canBulkDelete) return;
+    const ok = await confirm({
+      title: "Delete selected materials?",
+      message:
+        ids.length === 1
+          ? "Permanently delete this material? Vendor catalog links will be updated. Materials used on vouchers cannot be deleted."
+          : `Permanently delete ${ids.length} materials? Vendor catalog links will be updated. Any material used on a voucher will be skipped.`
+    });
+    if (!ok) return;
+    setError("");
+    try {
+      await apiFetch("/materials/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids })
+      });
+      setSelectedIds(new Set());
+      if (editingId && ids.includes(String(editingId))) cancelEdit();
+      await load();
     } catch (err) {
       setError(err.message);
     }
@@ -122,6 +201,41 @@ export default function MaterialsPage() {
     setMaterialModalOpen(true);
   }
 
+  function vendorNamesForMaterialExport(material) {
+    return (material.vendorIds || [])
+      .map((id) => {
+        const vid = id && typeof id === "object" && "_id" in id ? id._id : id;
+        const v = vendors.find((x) => String(x._id) === String(vid));
+        return v?.name || String(vid || "");
+      })
+      .filter(Boolean)
+      .join("; ");
+  }
+
+  async function downloadMaterialsExcel() {
+    setError("");
+    try {
+      const XLSX = await import("xlsx");
+      const rows = materials.map((m) => ({
+        Name: m.name || "",
+        Category: m.category || "",
+        Unit: m.unit || "",
+        Description: m.description || "",
+        "Vendor count": m.vendorIds?.length || 0,
+        Vendors: vendorNamesForMaterialExport(m),
+        "Created at": m.createdAt ? new Date(m.createdAt).toISOString().slice(0, 10) : "",
+        "Updated at": m.updatedAt ? new Date(m.updatedAt).toISOString().slice(0, 10) : ""
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Materials");
+      const filename = `materials-${new Date().toISOString().slice(0, 10)}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    } catch (err) {
+      setError(err.message || "Could not generate Excel file");
+    }
+  }
+
   async function deleteMaterial(material) {
     if (!isAdmin) return;
     const label = (material.name || "").trim() || "this material";
@@ -161,12 +275,42 @@ export default function MaterialsPage() {
             <button className="btn" type="button" onClick={openAddMaterialModal}>
               Add material
             </button>
+            {canBulkDelete ? (
+              <DeleteIconButton
+                disabled={!selectedIds.size}
+                onClick={() => void bulkDeleteSelectedMaterials()}
+                title={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected material${selectedIds.size === 1 ? "" : "s"}`
+                    : "Select materials to delete"
+                }
+                aria-label={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected material${selectedIds.size === 1 ? "" : "s"}`
+                    : "Delete selected (choose materials first)"
+                }
+              />
+            ) : null}
+            <ExcelDownloadIconButton
+              disabled={!materials.length}
+              onClick={() => void downloadMaterialsExcel()}
+            />
           </div>
         </div>
         <div className="table-wrap">
           <table className="table">
           <thead>
             <tr>
+              {canBulkDelete ? (
+                <th className="col-select" scope="col">
+                  <input
+                    ref={selectAllCheckboxRef}
+                    type="checkbox"
+                    onChange={toggleSelectAllMaterials}
+                    aria-label="Select all materials"
+                  />
+                </th>
+              ) : null}
               <th>Name</th>
               <th>Category</th>
               <th>Unit</th>
@@ -178,6 +322,16 @@ export default function MaterialsPage() {
           <tbody>
             {materials.map((material) => (
               <tr key={material._id}>
+                {canBulkDelete ? (
+                  <td className="col-select">
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(String(material._id))}
+                      onChange={() => toggleSelectMaterial(material._id)}
+                      aria-label={`Select material ${(material.name || "").trim() || String(material._id)}`}
+                    />
+                  </td>
+                ) : null}
                 <td>{material.name}</td>
                 <td>{material.category || "-"}</td>
                 <td>{material.unit || "-"}</td>

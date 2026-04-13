@@ -228,9 +228,14 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
     for (const row of rows) {
       const vendorName = mapping.vendorName ? normalizeText(row[mapping.vendorName]) : "";
       let vendorId = defaultVendorId;
+      let importVendorName = "";
       if (vendorName) {
         const vhit = vendors.find((v) => (v.name || "").trim().toLowerCase() === vendorName.toLowerCase());
-        if (vhit) vendorId = String(vhit._id);
+        if (vhit) {
+          vendorId = String(vhit._id);
+        } else {
+          importVendorName = vendorName;
+        }
       }
       const phMatId = materialByVendorId[vendorId] || materialByVendorId[defaultVendorId];
       const matName = mapping.materialName ? normalizeText(row[mapping.materialName]) : "";
@@ -293,7 +298,8 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
         paymentDate: paymentDate || undefined,
         paymentMadeBy,
         paidByMode,
-        paymentComments
+        paymentComments,
+        ...(importVendorName ? { importVendorName } : {})
       };
       if (mapping.voucherAmount && normalizeText(row[mapping.voucherAmount])) {
         const v = parseNumber(row[mapping.voucherAmount], NaN);
