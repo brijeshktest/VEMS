@@ -39,11 +39,16 @@ export default function AuthGate({ children }) {
         router.replace("/dashboard");
         return;
       }
+      if (mode === "contributions" && pathname !== "/dashboard" && pathname !== "/contributions") {
+        router.replace("/dashboard");
+        return;
+      }
       if (
         mode === "admin" &&
         pathname !== "/dashboard" &&
         pathname !== "/tunnel-bunker-ops" &&
         pathname !== "/sales" &&
+        pathname !== "/contributions" &&
         !(pathname === "/admin" || pathname.startsWith("/admin/"))
       ) {
         router.replace("/dashboard");

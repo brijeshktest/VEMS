@@ -98,6 +98,7 @@ export default function DashboardPage() {
   const [workMode, setWorkMode] = useState("");
   const [error, setError] = useState("");
   const [salesSummary, setSalesSummary] = useState(null);
+  const [contributionSummary, setContributionSummary] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -126,6 +127,17 @@ export default function DashboardPage() {
             permissionsData.permissions?.sales?.view ||
             permissionsData.permissions?.sales?.edit;
           if (!canSales) {
+            router.replace("/work-mode");
+            return;
+          }
+        }
+
+        if (selectedMode === "contributions") {
+          const canContr =
+            permissionsData.permissions === "all" ||
+            permissionsData.permissions?.contributions?.view ||
+            permissionsData.permissions?.contributions?.edit;
+          if (!canContr) {
             router.replace("/work-mode");
             return;
           }
@@ -177,6 +189,23 @@ export default function DashboardPage() {
             }
           } else {
             setSalesSummary(null);
+          }
+        }
+
+        if (selectedMode === "contributions" || selectedMode === "admin") {
+          const canContr =
+            permissionsData.permissions === "all" ||
+            permissionsData.permissions?.contributions?.view ||
+            permissionsData.permissions?.contributions?.edit;
+          if (canContr) {
+            try {
+              const cm = await apiFetch("/contributions/summary");
+              setContributionSummary(cm);
+            } catch {
+              setContributionSummary(null);
+            }
+          } else {
+            setContributionSummary(null);
           }
         }
       } catch (err) {
@@ -240,7 +269,9 @@ export default function DashboardPage() {
               ? "Administrative overview with operations and financial visibility."
               : workMode === "sales"
                 ? "Mushroom and compost sales totals and quick access to records."
-                : "Spend, tax, and voucher activity at a glance."
+                : workMode === "contributions"
+                  ? "Partner contributions: each record shows amount, primary recipient, and transfer mode."
+                  : "Spend, tax, and voucher activity at a glance."
         }
       />
 
@@ -354,6 +385,38 @@ export default function DashboardPage() {
                   {formatIndianRupee(salesSummary.byCategory?.compost?.totalAmount ?? 0)}
                 </span>
                 <span className="stat-hint">{salesSummary.byCategory?.compost?.count ?? 0} line(s) →</span>
+              </div>
+            </Link>
+          </div>
+        </section>
+      ) : null}
+
+      {(workMode === "contributions" || workMode === "admin") && contributionSummary ? (
+        <section className="saas-section" aria-label="Contribution metrics">
+          <div className="grid grid-3">
+            <Link className="stat-link" href="/contributions">
+              <div className="card stat-card">
+                <span className="stat-label">Total Routed to Bank</span>
+                <span className="stat-value">{formatIndianRupee(contributionSummary.totalContributions)}</span>
+                <span className="stat-hint">{contributionSummary.entryCount} record(s) →</span>
+              </div>
+            </Link>
+            <Link className="stat-link" href="/contributions">
+              <div className="card stat-card">
+                <span className="stat-label">{"Sunil's Contribution (Sunil + contributors)"}</span>
+                <span className="stat-value">
+                  {formatIndianRupee(contributionSummary.receivedByPrimary?.Sunil?.totalAmount ?? 0)}
+                </span>
+                <span className="stat-hint">{contributionSummary.receivedByPrimary?.Sunil?.count ?? 0} row(s) →</span>
+              </div>
+            </Link>
+            <Link className="stat-link" href="/contributions">
+              <div className="card stat-card">
+                <span className="stat-label">{"Shailendra's contribution"}</span>
+                <span className="stat-value">
+                  {formatIndianRupee(contributionSummary.receivedByPrimary?.Shailendra?.totalAmount ?? 0)}
+                </span>
+                <span className="stat-hint">{contributionSummary.receivedByPrimary?.Shailendra?.count ?? 0} row(s) →</span>
               </div>
             </Link>
           </div>

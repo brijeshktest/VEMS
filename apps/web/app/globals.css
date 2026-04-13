@@ -40,6 +40,8 @@
   --mode-admin-border-hover: #453873;
   --mode-sales-border: #b45309;
   --mode-sales-border-hover: #92400e;
+  --mode-contributions-border: #0d9488;
+  --mode-contributions-border-hover: #0f766e;
 
   --danger-soft: rgba(220, 38, 38, 0.1);
   --danger: #dc2626;
@@ -1246,6 +1248,10 @@ a.brand {
   border-left-color: var(--mode-sales-border);
 }
 
+.mode-card--contributions {
+  border-left-color: var(--mode-contributions-border);
+}
+
 .mode-card:disabled {
   cursor: not-allowed;
   border-left-color: var(--border-strong);
@@ -1323,6 +1329,10 @@ a.brand {
 
 .mode-card--sales:hover:not(:disabled) {
   border-left-color: var(--mode-sales-border-hover);
+}
+
+.mode-card--contributions:hover:not(:disabled) {
+  border-left-color: var(--mode-contributions-border-hover);
 }
 
 .stat-label {

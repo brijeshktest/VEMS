@@ -12,6 +12,7 @@ export default function WorkModePage() {
   const [allowRoomOps, setAllowRoomOps] = useState(false);
   const [allowTunnelOps, setAllowTunnelOps] = useState(false);
   const [allowSales, setAllowSales] = useState(false);
+  const [allowContributions, setAllowContributions] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -24,6 +25,7 @@ export default function WorkModePage() {
           setAllowRoomOps(true);
           setAllowTunnelOps(true);
           setAllowSales(true);
+          setAllowContributions(true);
           return;
         }
         const canRoomStages = Boolean(permData.permissions?.roomStages?.view || permData.permissions?.roomStages?.edit);
@@ -32,9 +34,13 @@ export default function WorkModePage() {
         );
         const canTunnelOps = Boolean(permData.permissions?.tunnelBunkerOps?.view || permData.permissions?.tunnelBunkerOps?.edit);
         const canSales = Boolean(permData.permissions?.sales?.view || permData.permissions?.sales?.edit);
+        const canContributions = Boolean(
+          permData.permissions?.contributions?.view || permData.permissions?.contributions?.edit
+        );
         setAllowRoomOps(canRoomStages || canRoomActivities);
         setAllowTunnelOps(canTunnelOps);
         setAllowSales(canSales);
+        setAllowContributions(canContributions);
       } catch (err) {
         setError(err.message);
       }
@@ -57,7 +63,7 @@ export default function WorkModePage() {
 
       {error ? <div className="alert alert-error">{error}</div> : null}
 
-      <div className="grid grid-3">
+      <div className="grid grid-3" style={{ alignItems: "stretch" }}>
         <button
           className="card stat-card mode-card mode-card--expense"
           type="button"
@@ -76,6 +82,16 @@ export default function WorkModePage() {
           <span className="stat-label">Mode</span>
           <span className="stat-value" style={{ fontSize: 22 }}>Sales management</span>
           <span className="stat-hint">Sales invoices for mushrooms and compost</span>
+        </button>
+        <button
+          className="card stat-card mode-card mode-card--contributions"
+          type="button"
+          disabled={!allowContributions}
+          onClick={() => chooseMode("contributions")}
+        >
+          <span className="stat-label">Mode</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Contribution management</span>
+          <span className="stat-hint">Track contributions: primary recipient and transfer mode on every record</span>
         </button>
         <button
           className="card stat-card mode-card mode-card--room"

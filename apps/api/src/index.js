@@ -15,6 +15,7 @@ import settingsRoutes from "./routes/settings.js";
 import changeLogRoutes from "./routes/changeLogs.js";
 import tunnelBunkerRoutes from "./routes/tunnelBunker.js";
 import salesRoutes from "./routes/sales.js";
+import contributionsRoutes from "./routes/contributions.js";
 
 dotenv.config();
 
@@ -40,6 +41,7 @@ api.use("/settings", settingsRoutes);
 api.use("/change-logs", changeLogRoutes);
 api.use("/tunnel-bunker", tunnelBunkerRoutes);
 api.use("/sales", salesRoutes);
+api.use("/contributions", contributionsRoutes);
 
 app.use("/api", api);
 

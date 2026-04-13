@@ -19,6 +19,7 @@ const modules = [
   "roomActivities",
   "tunnelBunkerOps",
   "sales",
+  "contributions",
   "roles",
   "users"
 ];
@@ -34,6 +35,7 @@ const MODULE_LABELS = {
   roomActivities: "Room activities",
   tunnelBunkerOps: "Tunnel & bunker ops",
   sales: "Sales management",
+  contributions: "Contribution management",
   roles: "Roles",
   users: "Users"
 };
