@@ -11,6 +11,7 @@ import {
   validateOptionalAadhaar
 } from "../../../lib/indianValidators.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
+import IndianAmountField from "../../../components/IndianAmountField.js";
 import { downloadSaleInvoicePdf } from "../../../lib/saleInvoicePdf.js";
 
 const PAYMENT_MODES = ["Cash", "UPI", "Bank transfer", "Cheque", "Card", "Other"];
@@ -26,9 +27,9 @@ const initialForm = {
   buyerContact: "",
   productCategory: "mushroom",
   productName: "",
-  quantity: "",
+  quantity: null,
   unit: "kg",
-  totalAmount: "",
+  totalAmount: null,
   notes: ""
 };
 
@@ -143,13 +144,13 @@ export default function SalesPage() {
       return;
     }
 
-    const quantity = Number(form.quantity);
-    const totalAmount = Number(form.totalAmount);
-    if (!Number.isFinite(quantity) || quantity < 0) {
+    const quantity = form.quantity;
+    const totalAmount = form.totalAmount;
+    if (quantity == null || !Number.isFinite(quantity) || quantity < 0) {
       setError("Quantity must be a valid non-negative number.");
       return;
     }
-    if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+    if (totalAmount == null || !Number.isFinite(totalAmount) || totalAmount < 0) {
       setError("Total amount must be a valid non-negative number.");
       return;
     }
@@ -214,9 +215,9 @@ export default function SalesPage() {
       buyerContact: row.buyerContact || "",
       productCategory: row.productCategory || "mushroom",
       productName: row.productName || "",
-      quantity: String(row.quantity ?? ""),
+      quantity: Number(row.quantity ?? 0) || null,
       unit: row.unit || "kg",
-      totalAmount: String(row.totalAmount ?? ""),
+      totalAmount: Number(row.totalAmount ?? 0),
       notes: row.notes || ""
     });
     setModalOpen(true);
@@ -501,12 +502,12 @@ export default function SalesPage() {
                 </div>
                 <div>
                   <label htmlFor="sale-qty">Quantity</label>
-                  <input
+                  <IndianAmountField
                     id="sale-qty"
                     className="input"
-                    inputMode="decimal"
                     value={form.quantity}
-                    onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+                    onChange={(n) => setForm({ ...form, quantity: n })}
+                    placeholder="e.g. 1,250.5"
                     required
                   />
                 </div>
@@ -522,12 +523,12 @@ export default function SalesPage() {
                 </div>
                 <div>
                   <label htmlFor="sale-amount">Total amount (invoice)</label>
-                  <input
+                  <IndianAmountField
                     id="sale-amount"
                     className="input"
-                    inputMode="decimal"
                     value={form.totalAmount}
-                    onChange={(e) => setForm({ ...form, totalAmount: e.target.value })}
+                    onChange={(n) => setForm({ ...form, totalAmount: n })}
+                    placeholder="e.g. 1,00,000"
                     required
                   />
                 </div>

@@ -56,6 +56,7 @@ async function runContributionsMigration() {
 
   await ContributionEntry.updateMany(
     {
+      member: { $nin: PRIMARY_ACCOUNT_HOLDERS },
       $or: [
         { toPrimaryHolder: { $exists: false } },
         { toPrimaryHolder: null },
@@ -72,6 +73,16 @@ async function runContributionsMigration() {
       }
     ]
   );
+  await ContributionEntry.updateMany(
+    {
+      member: { $in: PRIMARY_ACCOUNT_HOLDERS },
+      $or: [{ transferMode: { $exists: false } }, { transferMode: null }]
+    },
+    [{ $set: { transferMode: { $ifNull: ["$transferMode", "Legacy_unspecified"] } } }]
+  );
+  await ContributionEntry.updateMany({ member: { $in: PRIMARY_ACCOUNT_HOLDERS } }, [
+    { $set: { toPrimaryHolder: null } }
+  ]);
 }
 
 function parseDate(raw, fieldName) {
@@ -221,7 +232,9 @@ router.get("/entries", requireAuth, requirePermission("contributions", "view"), 
   if (req.query.member && CONTRIBUTION_MEMBERS.includes(req.query.member)) {
     q.member = req.query.member;
   }
-  if (req.query.toPrimaryHolder && PRIMARY_ACCOUNT_HOLDERS.includes(req.query.toPrimaryHolder)) {
+  if (req.query.toPrimaryHolder === "__none__") {
+    q.$or = [{ toPrimaryHolder: null }, { toPrimaryHolder: { $exists: false } }];
+  } else if (req.query.toPrimaryHolder && PRIMARY_ACCOUNT_HOLDERS.includes(req.query.toPrimaryHolder)) {
     q.toPrimaryHolder = req.query.toPrimaryHolder;
   }
   if (req.query.transferMode && typeof req.query.transferMode === "string") {
@@ -245,23 +258,28 @@ router.get("/entries", requireAuth, requirePermission("contributions", "view"), 
 });
 
 router.post("/entries", requireAuth, requirePermission("contributions", "create"), async (req, res) => {
-  const missing = requireFields(req.body, [
-    "member",
-    "amount",
-    "contributedAt",
-    "toPrimaryHolder",
-    "transferMode"
-  ]);
+  const missing = requireFields(req.body, ["member", "amount", "contributedAt", "transferMode"]);
   if (missing.length) {
     return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
   }
   if (!CONTRIBUTION_MEMBERS.includes(req.body.member)) {
     return res.status(400).json({ error: `member must be one of: ${CONTRIBUTION_MEMBERS.join(", ")}` });
   }
-  if (!PRIMARY_ACCOUNT_HOLDERS.includes(req.body.toPrimaryHolder)) {
-    return res.status(400).json({
-      error: `toPrimaryHolder must be one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}`
-    });
+  let toPrimaryHolder = null;
+  if (!isPrimaryHolder(req.body.member)) {
+    const h = req.body.toPrimaryHolder;
+    if (h == null || h === "" || (typeof h === "string" && !h.trim())) {
+      return res.status(400).json({
+        error: `toPrimaryHolder is required (one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}) for this contributor.`
+      });
+    }
+    const trimmed = String(h).trim();
+    if (!PRIMARY_ACCOUNT_HOLDERS.includes(trimmed)) {
+      return res.status(400).json({
+        error: `toPrimaryHolder must be one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}`
+      });
+    }
+    toPrimaryHolder = trimmed;
   }
   const tm = parseTransferMode(req.body.transferMode, { allowInternal: false });
   if (!tm.ok) return res.status(400).json({ error: tm.error });
@@ -274,7 +292,7 @@ router.post("/entries", requireAuth, requirePermission("contributions", "create"
     member: req.body.member,
     amount: amt.value,
     contributedAt: dt.value,
-    toPrimaryHolder: req.body.toPrimaryHolder,
+    toPrimaryHolder,
     transferMode: tm.value,
     notes
   });
@@ -303,14 +321,6 @@ router.put("/entries/:entryId", requireAuth, requirePermission("contributions", 
     if (!dt.ok) return res.status(400).json({ error: dt.error });
     doc.contributedAt = dt.value;
   }
-  if (req.body.toPrimaryHolder !== undefined) {
-    if (!PRIMARY_ACCOUNT_HOLDERS.includes(req.body.toPrimaryHolder)) {
-      return res.status(400).json({
-        error: `toPrimaryHolder must be one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}`
-      });
-    }
-    doc.toPrimaryHolder = req.body.toPrimaryHolder;
-  }
   if (req.body.transferMode !== undefined) {
     const tm = parseTransferMode(req.body.transferMode, { allowInternal: true });
     if (!tm.ok) return res.status(400).json({ error: tm.error });
@@ -318,6 +328,30 @@ router.put("/entries/:entryId", requireAuth, requirePermission("contributions", 
   }
   if (req.body.notes !== undefined) {
     doc.notes = typeof req.body.notes === "string" ? req.body.notes.trim().slice(0, 2000) : "";
+  }
+  if (isPrimaryHolder(doc.member)) {
+    doc.toPrimaryHolder = null;
+  } else if (req.body.toPrimaryHolder !== undefined) {
+    const h = req.body.toPrimaryHolder;
+    if (h == null || h === "" || (typeof h === "string" && !h.trim())) {
+      return res.status(400).json({
+        error: `toPrimaryHolder is required (one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}) for this contributor.`
+      });
+    }
+    const trimmed = String(h).trim();
+    if (!PRIMARY_ACCOUNT_HOLDERS.includes(trimmed)) {
+      return res.status(400).json({
+        error: `toPrimaryHolder must be one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}`
+      });
+    }
+    doc.toPrimaryHolder = trimmed;
+  }
+  if (!isPrimaryHolder(doc.member)) {
+    if (!doc.toPrimaryHolder || !PRIMARY_ACCOUNT_HOLDERS.includes(doc.toPrimaryHolder)) {
+      return res.status(400).json({
+        error: `toPrimaryHolder is required (one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}) for this contributor.`
+      });
+    }
   }
   await doc.save();
   return res.json(doc);

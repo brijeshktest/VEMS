@@ -5,8 +5,10 @@ import { apiFetch } from "../../../lib/api.js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PageHeader from "../../../components/PageHeader.js";
+import { ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { getWorkMode } from "../../../lib/workMode.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
+import { downloadPerPersonContributionSummaryXlsx } from "../../../lib/exportContributionsExcel.js";
 
 function paymentStatusClass(status) {
   if (status === "Paid") return "status-pill status-pill--paid";
@@ -419,6 +421,67 @@ export default function DashboardPage() {
                 <span className="stat-hint">{contributionSummary.receivedByPrimary?.Shailendra?.count ?? 0} row(s) →</span>
               </div>
             </Link>
+          </div>
+
+          <div className="card" style={{ marginTop: 20 }}>
+            <div className="card-header-row card-header-row--voucher-toolbar">
+              <h3 className="panel-title">Per-person summary</h3>
+              <div className="voucher-table-toolbar-actions">
+                <ExcelDownloadIconButton
+                  disabled={!contributionSummary?.members?.length}
+                  onClick={() => downloadPerPersonContributionSummaryXlsx(contributionSummary)}
+                  title="Download per-person summary as Excel"
+                  aria-label="Download per-person summary as Excel"
+                />
+              </div>
+            </div>
+            <p className="page-lead" style={{ marginBottom: 16 }}>
+              <strong>Sunil</strong> and <strong>Shailendra</strong> are the primary account holders on paper.{" "}
+              <strong>Direct expense</strong> uses paid vouchers with <em>Payment made from</em> (same basis as the expense
+              payment summary). Use <Link href="/contributions">Contribution management</Link> to add or edit contribution
+              records.
+            </p>
+            <div className="table-wrap">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Individual</th>
+                    <th>Role</th>
+                    <th>Bank Contribution</th>
+                    <th>Direct expense</th>
+                    <th>Total contribution</th>
+                    <th>Routed to Sunil</th>
+                    <th>Routed to bank (from Primary)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {contributionSummary.members.map((m) => (
+                    <tr key={m.name}>
+                      <td>{m.name}</td>
+                      <td>{m.isPrimaryHolder ? "Primary account" : "Contributor"}</td>
+                      <td>{formatIndianRupee(m.contributionTotal)}</td>
+                      <td>{formatIndianRupee(m.expenseContributionTotal ?? 0)}</td>
+                      <td>{formatIndianRupee(m.totalContribution ?? m.contributionTotal)}</td>
+                      <td>{formatIndianRupee(m.routedToSunil)}</td>
+                      <td>
+                        {m.receivedOnPaperTotal != null
+                          ? `${formatIndianRupee(m.receivedOnPaperTotal)} (${m.receivedOnPaperCount ?? 0} rows)`
+                          : "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="page-lead" style={{ marginTop: 16, fontSize: 13 }}>
+              Bank contribution module (routed to bank): {formatIndianRupee(contributionSummary.totalContributions)} ·{" "}
+              {contributionSummary.entryCount} record(s). Direct expense (voucher paid totals by person):{" "}
+              {formatIndianRupee(contributionSummary.totalExpenseContribution ?? 0)}. Combined:{" "}
+              {formatIndianRupee(
+                contributionSummary.totalContributionCombined ?? contributionSummary.totalContributions
+              )}
+              .
+            </p>
           </div>
         </section>
       ) : null}

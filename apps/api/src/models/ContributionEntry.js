@@ -10,8 +10,21 @@ const ContributionEntrySchema = new mongoose.Schema(
     member: { type: String, required: true, enum: CONTRIBUTION_MEMBERS },
     amount: { type: Number, required: true, min: 0 },
     contributedAt: { type: Date, required: true },
-    /** Which primary holder's account (on paper) received this contribution. */
-    toPrimaryHolder: { type: String, required: true, enum: PRIMARY_ACCOUNT_HOLDERS },
+    /**
+     * Which primary holder's account (on paper) received this contribution.
+     * Omitted / null when the contributor is a primary holder (not applicable).
+     */
+    toPrimaryHolder: {
+      type: String,
+      required: false,
+      default: null,
+      validate: {
+        validator(v) {
+          if (v == null || v === "") return true;
+          return PRIMARY_ACCOUNT_HOLDERS.includes(v);
+        }
+      }
+    },
     /** Channel used (UPI, bank, cash, etc.). */
     transferMode: { type: String, required: true, enum: CONTRIBUTION_ALL_TRANSFER_MODES },
     notes: { type: String, trim: true, default: "" }

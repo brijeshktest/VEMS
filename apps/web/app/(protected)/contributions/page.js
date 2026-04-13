@@ -3,28 +3,27 @@
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
-import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
+import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
-
-const TABS = [
-  { id: "overview", label: "Overview" },
-  { id: "entries", label: "Contributions" }
-];
+import IndianAmountField from "../../../components/IndianAmountField.js";
+import { downloadContributionEntriesXlsx } from "../../../lib/exportContributionsExcel.js";
 
 const initialEntryForm = {
   member: "Rahul",
-  amount: "",
+  amount: null,
   contributedAt: new Date().toISOString().slice(0, 10),
   toPrimaryHolder: "Sunil",
   transferMode: "UPI",
   notes: ""
 };
 
+function isPrimaryMember(member) {
+  return member === "Sunil" || member === "Shailendra";
+}
+
 export default function ContributionsPage() {
-  const [tab, setTab] = useState("overview");
   const [meta, setMeta] = useState(null);
-  const [summary, setSummary] = useState(null);
   const [entries, setEntries] = useState([]);
   const [error, setError] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
@@ -36,12 +35,8 @@ export default function ContributionsPage() {
   const [entryModal, setEntryModal] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [entryForm, setEntryForm] = useState(initialEntryForm);
+  const [exportingExcel, setExportingExcel] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
-
-  const loadSummary = useCallback(async () => {
-    const s = await apiFetch("/contributions/summary");
-    setSummary(s);
-  }, []);
 
   const loadMeta = useCallback(async () => {
     const m = await apiFetch("/contributions/meta");
@@ -65,7 +60,7 @@ export default function ContributionsPage() {
     try {
       const meData = await apiFetch("/auth/me");
       setIsAdmin(meData?.user?.role === "admin");
-      await Promise.all([loadMeta(), loadSummary(), loadEntries()]);
+      await Promise.all([loadMeta(), loadEntries()]);
     } catch (err) {
       setError(err.message);
     }
@@ -74,10 +69,6 @@ export default function ContributionsPage() {
   useEffect(() => {
     loadAll();
   }, []);
-
-  useEffect(() => {
-    if (tab === "entries") void loadEntries().catch((e) => setError(e.message));
-  }, [tab, loadEntries]);
 
   function openCreateEntry() {
     setEditingEntryId(null);
@@ -92,20 +83,27 @@ export default function ContributionsPage() {
     setEditingEntryId(row._id);
     setEntryForm({
       member: row.member,
-      amount: String(row.amount ?? ""),
+      amount: Number(row.amount ?? 0),
       contributedAt: row.contributedAt ? new Date(row.contributedAt).toISOString().slice(0, 10) : "",
-      toPrimaryHolder: row.toPrimaryHolder || "Sunil",
+      toPrimaryHolder: isPrimaryMember(row.member) ? "" : row.toPrimaryHolder || "Sunil",
       transferMode: row.transferMode || "UPI",
       notes: row.notes || ""
     });
     setEntryModal(true);
   }
 
+  function onMemberFieldChange(member) {
+    setEntryForm((prev) => {
+      const toPrimaryHolder = isPrimaryMember(member) ? "" : isPrimaryMember(prev.member) ? "Sunil" : prev.toPrimaryHolder;
+      return { ...prev, member, toPrimaryHolder };
+    });
+  }
+
   async function saveEntry(e) {
     e.preventDefault();
     setError("");
-    const amount = Number(entryForm.amount);
-    if (!Number.isFinite(amount) || amount < 0) {
+    const amount = entryForm.amount;
+    if (amount == null || !Number.isFinite(amount) || amount < 0) {
       setError("Amount must be a valid non-negative number.");
       return;
     }
@@ -113,10 +111,14 @@ export default function ContributionsPage() {
       member: entryForm.member,
       amount,
       contributedAt: entryForm.contributedAt,
-      toPrimaryHolder: entryForm.toPrimaryHolder,
       transferMode: entryForm.transferMode,
       notes: entryForm.notes.trim()
     };
+    if (!isPrimaryMember(entryForm.member)) {
+      payload.toPrimaryHolder = entryForm.toPrimaryHolder;
+    } else {
+      payload.toPrimaryHolder = null;
+    }
     try {
       if (editingEntryId) {
         await apiFetch(`/contributions/entries/${editingEntryId}`, {
@@ -130,23 +132,38 @@ export default function ContributionsPage() {
         });
       }
       setEntryModal(false);
-      await loadSummary();
       await loadEntries();
     } catch (err) {
       setError(err.message);
     }
   }
 
+  async function handleDownloadEntriesExcel() {
+    setError("");
+    setExportingExcel(true);
+    try {
+      const all = await apiFetch("/contributions/entries");
+      downloadContributionEntriesXlsx(all);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setExportingExcel(false);
+    }
+  }
+
   async function deleteEntry(row) {
     if (!isAdmin) return;
+    const recv =
+      row.toPrimaryHolder != null && row.toPrimaryHolder !== ""
+        ? ` → ${row.toPrimaryHolder}`
+        : " (received by N/A)";
     const ok = await confirm({
       title: "Delete contribution record?",
-      message: `${row.member} → ${row.toPrimaryHolder} ${formatIndianRupee(row.amount)} via ${row.transferMode} on ${row.contributedAt ? new Date(row.contributedAt).toLocaleDateString() : "—"}?`
+      message: `${row.member}${recv} ${formatIndianRupee(row.amount)} via ${row.transferMode} on ${row.contributedAt ? new Date(row.contributedAt).toLocaleDateString() : "—"}?`
     });
     if (!ok) return;
     try {
       await apiFetch(`/contributions/entries/${row._id}`, { method: "DELETE" });
-      await loadSummary();
       await loadEntries();
     } catch (err) {
       setError(err.message);
@@ -177,191 +194,125 @@ export default function ContributionsPage() {
       <PageHeader
         eyebrow="Internal"
         title="Contribution management"
-        description="Each contribution is one record: who paid, how much, when, which primary account (Sunil or Shailendra) received it on paper, and the transfer mode (UPI, bank, cash, etc.). Access is set in Admin → Roles (Contribution management)."
+        description="Add and filter contribution records (who paid, amount, date, primary recipient when applicable, transfer mode). Per-person summary with expense totals is on the Dashboard when Contribution management or Admin mode is selected."
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
 
-      <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card">
         <div className="card-header-row card-header-row--voucher-toolbar">
-          <h3 className="panel-title">Views</h3>
-          <div className="voucher-table-toolbar-actions" style={{ flexWrap: "wrap", gap: 8 }}>
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                className={tab === t.id ? "btn" : "btn btn-secondary"}
-                onClick={() => setTab(t.id)}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {tab === "overview" && !summary ? (
-        <div className="card">
-          <p className="page-lead">Loading summary…</p>
-        </div>
-      ) : null}
-
-      {tab === "overview" && summary ? (
-        <div className="card">
-          <h3 className="panel-title">Per-person summary</h3>
-          <p className="page-lead" style={{ marginBottom: 16 }}>
-            <strong>Sunil</strong> and <strong>Shailendra</strong> are the primary account holders on paper. Every row in the
-            log states which holder received that amount and through which mode. <strong>Expense contribution</strong> matches
-            the expense dashboard: paid vouchers, <em>Payment made from</em>, total paid (same scope as the payment summary).
-          </p>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Individual</th>
-                  <th>Role</th>
-                  <th>Contribution</th>
-                  <th>Expense contribution</th>
-                  <th>Total contribution</th>
-                  <th>Routed to Sunil</th>
-                  <th>Routed to bank (from Primary)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {summary.members.map((m) => (
-                  <tr key={m.name}>
-                    <td>{m.name}</td>
-                    <td>{m.isPrimaryHolder ? "Primary account" : "Contributor"}</td>
-                    <td>{formatIndianRupee(m.contributionTotal)}</td>
-                    <td>{formatIndianRupee(m.expenseContributionTotal ?? 0)}</td>
-                    <td>{formatIndianRupee(m.totalContribution ?? m.contributionTotal)}</td>
-                    <td>{formatIndianRupee(m.routedToSunil)}</td>
-                    <td>
-                      {m.receivedOnPaperTotal != null
-                        ? `${formatIndianRupee(m.receivedOnPaperTotal)} (${m.receivedOnPaperCount ?? 0} rows)`
-                        : "—"}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="page-lead" style={{ marginTop: 16, fontSize: 13 }}>
-            Contribution module (routed to bank): {formatIndianRupee(summary.totalContributions)} · {summary.entryCount}{" "}
-            record(s). Expense (voucher paid totals by person):{" "}
-            {formatIndianRupee(summary.totalExpenseContribution ?? 0)}. Combined:{" "}
-            {formatIndianRupee(summary.totalContributionCombined ?? summary.totalContributions)}.
-          </p>
-        </div>
-      ) : null}
-
-      {tab === "entries" ? (
-        <div className="card">
-          <div className="card-header-row card-header-row--voucher-toolbar">
-            <h3 className="panel-title">Contribution log</h3>
+          <h3 className="panel-title">All Account Contributions</h3>
+          <div className="voucher-table-toolbar-actions" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button className="btn" type="button" onClick={openCreateEntry}>
               Add contribution
             </button>
-          </div>
-          <div className="grid grid-3" style={{ marginBottom: 16, gap: 12 }}>
-            <div>
-              <label htmlFor="flt-entry-member">Contributor</label>
-              <select
-                id="flt-entry-member"
-                className="input"
-                value={filterMember}
-                onChange={(e) => setFilterMember(e.target.value)}
-              >
-                <option value="">All</option>
-                {memberNames.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="flt-to-holder">Received by (primary)</label>
-              <select
-                id="flt-to-holder"
-                className="input"
-                value={filterToHolder}
-                onChange={(e) => setFilterToHolder(e.target.value)}
-              >
-                <option value="">All</option>
-                {primaryHolders.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="flt-mode">Mode</label>
-              <select id="flt-mode" className="input" value={filterMode} onChange={(e) => setFilterMode(e.target.value)}>
-                <option value="">All</option>
-                {transferModes.map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label htmlFor="flt-from">From date</label>
-              <input
-                id="flt-from"
-                className="input"
-                type="date"
-                value={filterFrom}
-                onChange={(e) => setFilterFrom(e.target.value)}
-              />
-            </div>
-            <div>
-              <label htmlFor="flt-to">To date</label>
-              <input id="flt-to" className="input" type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
-            </div>
-          </div>
-          <div style={{ marginBottom: 12 }}>
-            <button className="btn btn-secondary" type="button" onClick={() => void loadEntries()}>
-              Apply filters
-            </button>
-          </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Contributor</th>
-                  <th>Amount</th>
-                  <th>Received by</th>
-                  <th>Mode</th>
-                  <th>Notes</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((row) => (
-                  <tr key={row._id}>
-                    <td>{row.contributedAt ? new Date(row.contributedAt).toLocaleDateString() : "—"}</td>
-                    <td>{row.member}</td>
-                    <td>{formatIndianRupee(row.amount)}</td>
-                    <td>{row.toPrimaryHolder || "—"}</td>
-                    <td>{row.transferMode || "—"}</td>
-                    <td>{row.notes?.trim() ? row.notes : "—"}</td>
-                    <td>
-                      <div className="row-actions">
-                        <EditIconButton onClick={() => startEditEntry(row)} />
-                        {isAdmin ? <DeleteIconButton onClick={() => void deleteEntry(row)} /> : null}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <ExcelDownloadIconButton
+              disabled={exportingExcel}
+              onClick={() => void handleDownloadEntriesExcel()}
+              title={exportingExcel ? "Preparing…" : "Download all account contributions as Excel"}
+              aria-label={exportingExcel ? "Preparing Excel export" : "Download all account contributions as Excel"}
+            />
           </div>
         </div>
-      ) : null}
+        <div className="grid grid-3" style={{ marginBottom: 16, gap: 12 }}>
+          <div>
+            <label htmlFor="flt-entry-member">Contributor</label>
+            <select
+              id="flt-entry-member"
+              className="input"
+              value={filterMember}
+              onChange={(e) => setFilterMember(e.target.value)}
+            >
+              <option value="">All</option>
+              {memberNames.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="flt-to-holder">Received by (primary)</label>
+            <select
+              id="flt-to-holder"
+              className="input"
+              value={filterToHolder}
+              onChange={(e) => setFilterToHolder(e.target.value)}
+            >
+              <option value="">All</option>
+              <option value="__none__">Not applicable</option>
+              {primaryHolders.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="flt-mode">Mode</label>
+            <select id="flt-mode" className="input" value={filterMode} onChange={(e) => setFilterMode(e.target.value)}>
+              <option value="">All</option>
+              {transferModes.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="flt-from">From date</label>
+            <input
+              id="flt-from"
+              className="input"
+              type="date"
+              value={filterFrom}
+              onChange={(e) => setFilterFrom(e.target.value)}
+            />
+          </div>
+          <div>
+            <label htmlFor="flt-to">To date</label>
+            <input id="flt-to" className="input" type="date" value={filterTo} onChange={(e) => setFilterTo(e.target.value)} />
+          </div>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <button className="btn btn-secondary" type="button" onClick={() => void loadEntries()}>
+            Apply filters
+          </button>
+        </div>
+        <div className="table-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Contributor</th>
+                <th>Amount</th>
+                <th>Received by</th>
+                <th>Mode</th>
+                <th>Notes</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((row) => (
+                <tr key={row._id}>
+                  <td>{row.contributedAt ? new Date(row.contributedAt).toLocaleDateString() : "—"}</td>
+                  <td>{row.member}</td>
+                  <td>{formatIndianRupee(row.amount)}</td>
+                  <td>{row.toPrimaryHolder != null && row.toPrimaryHolder !== "" ? row.toPrimaryHolder : "—"}</td>
+                  <td>{row.transferMode || "—"}</td>
+                  <td>{row.notes?.trim() ? row.notes : "—"}</td>
+                  <td>
+                    <div className="row-actions">
+                      <EditIconButton onClick={() => startEditEntry(row)} />
+                      {isAdmin ? <DeleteIconButton onClick={() => void deleteEntry(row)} /> : null}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {entryModal ? (
         <div
@@ -380,8 +331,15 @@ export default function ContributionsPage() {
             </div>
             <div className="voucher-modal-body">
               <p className="page-lead" style={{ marginBottom: 12, fontSize: 13 }}>
-                Record where this amount was credited on paper: choose <strong>Sunil</strong> or <strong>Shailendra</strong> and
-                the channel used (UPI, bank transfer, cash, etc.).
+                For contributors who are not primary account holders, choose which primary account (on paper) received the
+                amount and the transfer mode (UPI, bank transfer, cash, etc.).
+                {isPrimaryMember(entryForm.member) ? (
+                  <>
+                    {" "}
+                    As a <strong>primary account holder</strong>, <strong>Received by (primary account)</strong> does not
+                    apply and is left blank.
+                  </>
+                ) : null}
               </p>
               <form className="grid section-stack voucher-modal-form" onSubmit={saveEntry}>
                 <div>
@@ -390,7 +348,7 @@ export default function ContributionsPage() {
                     id="ce-member"
                     className="input"
                     value={entryForm.member}
-                    onChange={(e) => setEntryForm({ ...entryForm, member: e.target.value })}
+                    onChange={(e) => onMemberFieldChange(e.target.value)}
                     required
                   >
                     {memberNames.map((n) => (
@@ -402,14 +360,12 @@ export default function ContributionsPage() {
                 </div>
                 <div>
                   <label htmlFor="ce-amount">Amount (Rs)</label>
-                  <input
+                  <IndianAmountField
                     id="ce-amount"
                     className="input"
-                    type="number"
-                    min={0}
-                    step="0.01"
                     value={entryForm.amount}
-                    onChange={(e) => setEntryForm({ ...entryForm, amount: e.target.value })}
+                    onChange={(n) => setEntryForm({ ...entryForm, amount: n })}
+                    placeholder="e.g. 1,00,000"
                     required
                   />
                 </div>
@@ -426,19 +382,32 @@ export default function ContributionsPage() {
                 </div>
                 <div>
                   <label htmlFor="ce-holder">Received by (primary account)</label>
-                  <select
-                    id="ce-holder"
-                    className="input"
-                    value={entryForm.toPrimaryHolder}
-                    onChange={(e) => setEntryForm({ ...entryForm, toPrimaryHolder: e.target.value })}
-                    required
-                  >
-                    {primaryHolders.map((n) => (
-                      <option key={n} value={n}>
-                        {n}
-                      </option>
-                    ))}
-                  </select>
+                  {isPrimaryMember(entryForm.member) ? (
+                    <input
+                      id="ce-holder"
+                      className="input"
+                      type="text"
+                      value=""
+                      disabled
+                      readOnly
+                      placeholder="Not applicable"
+                      aria-label="Received by (primary account), not applicable for primary contributors"
+                    />
+                  ) : (
+                    <select
+                      id="ce-holder"
+                      className="input"
+                      value={entryForm.toPrimaryHolder}
+                      onChange={(e) => setEntryForm({ ...entryForm, toPrimaryHolder: e.target.value })}
+                      required
+                    >
+                      {primaryHolders.map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
                 <div>
                   <label htmlFor="ce-mode">Transfer mode</label>

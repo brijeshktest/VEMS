@@ -15,6 +15,7 @@ import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import VoucherBulkImport from "../../../components/VoucherBulkImport.js";
 import { PAYMENT_MADE_FROM_CHOICES } from "../../../lib/paymentMadeFrom.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
+import IndianAmountField from "../../../components/IndianAmountField.js";
 
 const initialForm = {
   vendorId: "",
@@ -997,13 +998,10 @@ export default function VouchersPage() {
                 <div>
                   <label>Quantity</label>
                   <div className="line-item-qty">
-                    <input
+                    <IndianAmountField
                       className="input"
-                      type="number"
-                      min="0"
-                      step="0.01"
                       value={item.quantity}
-                      onChange={(e) => updateItem(index, "quantity", Number(e.target.value))}
+                      onChange={(n) => updateItem(index, "quantity", n == null ? 0 : n)}
                       onMouseDown={numericFieldMouseDown}
                       onFocus={numericFieldFocus}
                       required
@@ -1015,13 +1013,10 @@ export default function VouchersPage() {
                 </div>
                 <div>
                   <label>Price per unit</label>
-                  <input
+                  <IndianAmountField
                     className="input"
-                    type="number"
-                    min="0"
-                    step="0.01"
                     value={item.pricePerUnit}
-                    onChange={(e) => updateItem(index, "pricePerUnit", Number(e.target.value))}
+                    onChange={(n) => updateItem(index, "pricePerUnit", n == null ? 0 : n)}
                     onMouseDown={numericFieldMouseDown}
                     onFocus={numericFieldFocus}
                     required
@@ -1060,13 +1055,10 @@ export default function VouchersPage() {
           <div className="grid grid-4">
             <div>
               <label>Tax %</label>
-              <input
+              <IndianAmountField
                 className="input"
-                type="number"
-                min="0"
-                step="0.01"
                 value={form.taxPercent}
-                onChange={(e) => setForm({ ...form, taxPercent: Number(e.target.value) })}
+                onChange={(n) => setForm({ ...form, taxPercent: n == null ? 0 : n })}
                 onMouseDown={numericFieldMouseDown}
                 onFocus={numericFieldFocus}
               />
@@ -1085,28 +1077,22 @@ export default function VouchersPage() {
             </div>
             <div>
               <label>Discount value</label>
-              <input
+              <IndianAmountField
                 className="input"
-                type="number"
-                min="0"
-                step="0.01"
                 value={form.discountValue}
-                onChange={(e) => setForm({ ...form, discountValue: Number(e.target.value) })}
+                onChange={(n) => setForm({ ...form, discountValue: n == null ? 0 : n })}
                 onMouseDown={numericFieldMouseDown}
                 onFocus={numericFieldFocus}
               />
             </div>
             <div>
               <label>Paid amount</label>
-              <input
+              <IndianAmountField
                 className="input"
-                type="number"
-                min="0"
-                step="0.01"
                 value={form.paidAmount}
-                onChange={(e) => {
+                onChange={(n) => {
                   setPaidAmountManuallySet(true);
-                  setForm({ ...form, paidAmount: Number(e.target.value) });
+                  setForm({ ...form, paidAmount: n == null ? 0 : n });
                 }}
                 onMouseDown={numericFieldMouseDown}
                 onFocus={numericFieldFocus}
