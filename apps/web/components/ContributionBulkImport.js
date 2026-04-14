@@ -2,29 +2,17 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../lib/api.js";
-import { PAYMENT_MADE_FROM_CHOICES } from "../lib/paymentMadeFrom.js";
 import { parseFlexibleDateToYmd } from "../lib/parseExcelDate.js";
+import { BulkExcelUploadIconButton } from "./VoucherBulkImport.js";
 
-/** Logical Excel columns → voucher form (one line item per row). */
-export const VOUCHER_BULK_FIELD_DEFS = [
-  { key: "vendorName", label: "Vendor (name)" },
-  { key: "voucherNumber", label: "Voucher number" },
-  { key: "dateOfPurchase", label: "Date of purchase" },
-  { key: "materialName", label: "Material (name)" },
-  { key: "quantity", label: "Quantity" },
-  { key: "pricePerUnit", label: "Price per unit" },
-  { key: "lineComment", label: "Line comment" },
-  { key: "taxPercent", label: "Tax %" },
-  { key: "discountType", label: "Discount type (none / percent / flat)" },
-  { key: "discountValue", label: "Discount value" },
-  { key: "voucherAmount", label: "Voucher amount" },
-  { key: "paidAmount", label: "Paid amount" },
-  { key: "paymentMethod", label: "Payment method" },
-  { key: "paymentStatus", label: "Payment status" },
-  { key: "paymentDate", label: "Payment date" },
-  { key: "paymentMadeBy", label: "Payment made from" },
-  { key: "paidByMode", label: "Paid by mode" },
-  { key: "paymentComments", label: "Payment comments" }
+/** Logical Excel columns → contribution entry (one row per record). */
+export const CONTRIBUTION_BULK_FIELD_DEFS = [
+  { key: "member", label: "Contributor (name)" },
+  { key: "amount", label: "Amount" },
+  { key: "contributedAt", label: "Contribution date" },
+  { key: "toPrimaryHolder", label: "Received by (primary)" },
+  { key: "transferMode", label: "Transfer mode" },
+  { key: "notes", label: "Notes" }
 ];
 
 function colKey(i) {
@@ -72,30 +60,18 @@ function guessDefaultMapping(headers) {
     const idx = lower.findIndex((h) => tests.some((t) => h === t || h.includes(t)));
     if (idx >= 0) m[key] = colKey(idx);
   };
-  pick("vendorName", ["vendor", "supplier", "party"]);
-  pick("voucherNumber", ["voucher", "voucher no", "voucher number", "invoice"]);
-  pick("dateOfPurchase", ["date", "purchase date", "bill date"]);
-  pick("materialName", ["material", "item", "product"]);
-  pick("quantity", ["qty", "quantity"]);
-  pick("pricePerUnit", ["price", "rate", "price per"]);
-  pick("lineComment", ["comment", "line comment", "remarks"]);
-  pick("taxPercent", ["tax", "tax%", "gst"]);
-  pick("discountType", ["discount type"]);
-  pick("discountValue", ["discount"]);
-  pick("voucherAmount", ["voucher amount", "voucher amt", "voucher total", "invoice total", "gross amount", "bill amount"]);
-  pick("paidAmount", ["paid amount", "amount paid", "paid"]);
-  pick("paymentMethod", ["payment method", "pay mode"]);
-  pick("paymentStatus", ["status", "payment status"]);
-  pick("paymentDate", ["payment date"]);
-  pick("paymentMadeBy", ["payment made", "paid from", "payer"]);
-  pick("paidByMode", ["paid by"]);
-  pick("paymentComments", ["payment comment"]);
+  pick("member", ["contributor", "member", "name", "person", "paid by"]);
+  pick("amount", ["amount", "value", "sum", "rupees"]);
+  pick("contributedAt", ["date", "contribution", "contributed"]);
+  pick("toPrimaryHolder", ["received", "primary", "holder", "to sunil", "recipient"]);
+  pick("transferMode", ["transfer", "mode", "payment", "upi", "method"]);
+  pick("notes", ["note", "remark", "comment"]);
   return m;
 }
 
 function rowFingerprint(row, mapping) {
   const parts = [];
-  for (const { key } of VOUCHER_BULK_FIELD_DEFS) {
+  for (const { key } of CONTRIBUTION_BULK_FIELD_DEFS) {
     const ck = mapping[key];
     if (!ck) continue;
     parts.push(`${key}:${normalizeText(row[ck]).toLowerCase()}`);
@@ -110,35 +86,35 @@ function isRowEmpty(row, headersLen) {
   return true;
 }
 
-export function BulkExcelUploadIconButton({ onClick, disabled, title = "Bulk upload from Excel" }) {
-  return (
-    <button
-      type="button"
-      className="btn btn-secondary btn-icon btn-icon--bulk-excel"
-      onClick={onClick}
-      disabled={disabled}
-      aria-label={title}
-      title={title}
-    >
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden>
-        <rect x="4" y="2" width="16" height="20" rx="2" fill="#217346" />
-        <path d="M7 7h10M7 10h10M7 13h6" stroke="#fff" strokeWidth="1.25" strokeLinecap="round" opacity="0.95" />
-        <path
-          d="M12 17v-5M9 14l3-3 3 3"
-          stroke="#fde68a"
-          strokeWidth="1.75"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    </button>
-  );
+function isPrimaryMemberName(name, primaryNames) {
+  return primaryNames.some((p) => p.toLowerCase() === String(name || "").trim().toLowerCase());
+}
+
+function matchCanonicalMember(raw, memberNames) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  const hit = memberNames.find((n) => n.toLowerCase() === t.toLowerCase());
+  return hit || "";
+}
+
+function matchPrimaryHolder(raw, holders) {
+  const t = String(raw || "").trim();
+  if (!t) return "";
+  const hit = holders.find((n) => n.toLowerCase() === t.toLowerCase());
+  return hit || "";
+}
+
+function matchTransferMode(raw, modes) {
+  const t = String(raw || "").trim();
+  if (!t) return "UPI";
+  const hit = modes.find((m) => m.toLowerCase() === t.toLowerCase());
+  return hit || t;
 }
 
 /**
- * @param {{ vendors: object[], materials: object[], onImported: () => Promise<void> | void, setError: (s: string) => void, canBulkUpload: boolean }}
+ * @param {{ meta: { members?: { name: string }[], primaryAccountHolders?: string[], transferModes?: string[] } | null, onImported: () => Promise<void> | void, setError: (s: string) => void, canBulkUpload: boolean }}
  */
-export default function VoucherBulkImport({ vendors, materials, onImported, setError, canBulkUpload }) {
+export default function ContributionBulkImport({ meta, onImported, setError, canBulkUpload }) {
   const fileRef = useRef(null);
   const [step, setStep] = useState("idle");
   const [headers, setHeaders] = useState([]);
@@ -149,6 +125,20 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
   const [dupChoice, setDupChoice] = useState("first");
   const [importing, setImporting] = useState(false);
   const [importSummary, setImportSummary] = useState(null);
+
+  const memberNames = useMemo(() => (meta?.members || []).map((x) => x.name).filter(Boolean), [meta]);
+  const primaryHolders = meta?.primaryAccountHolders || ["Sunil", "Shailendra"];
+  const transferModes = meta?.transferModes || [
+    "Cash",
+    "UPI",
+    "NEFT",
+    "RTGS",
+    "IMPS",
+    "Bank transfer",
+    "Cheque",
+    "Card",
+    "Other"
+  ];
 
   const headerOptions = useMemo(() => {
     return [{ value: "", label: "— Not mapped —" }].concat(
@@ -211,111 +201,40 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
     }
   };
 
-  const buildPayloads = useCallback(async () => {
-    const ph = await apiFetch("/vouchers/import-placeholders", {
-      method: "POST",
-      body: JSON.stringify({
-        vendorIds: vendors.map((v) => String(v._id))
-      })
-    });
-    const defaultVendorId = String(ph.defaultVendorId);
-    const materialByVendorId = {};
-    for (const [k, v] of Object.entries(ph.materialByVendorId || {})) {
-      materialByVendorId[k] = String(v);
-    }
-
+  const buildPayloads = useCallback(() => {
     const list = [];
     for (const row of rows) {
-      const vendorName = mapping.vendorName ? normalizeText(row[mapping.vendorName]) : "";
-      let vendorId = defaultVendorId;
-      let importVendorName = "";
-      if (vendorName) {
-        const vhit = vendors.find((v) => (v.name || "").trim().toLowerCase() === vendorName.toLowerCase());
-        if (vhit) {
-          vendorId = String(vhit._id);
-        } else {
-          importVendorName = vendorName;
-        }
-      }
-      const phMatId = materialByVendorId[vendorId] || materialByVendorId[defaultVendorId];
-      const matName = mapping.materialName ? normalizeText(row[mapping.materialName]) : "";
-      let materialId = phMatId;
-      if (matName) {
-        const mhit = materials.find(
-          (m) =>
-            (m.name || "").trim().toLowerCase() === matName.toLowerCase() &&
-            (m.vendorIds || []).map(String).includes(vendorId)
-        );
-        if (mhit) materialId = String(mhit._id);
-      }
+      const rawMember = mapping.member ? normalizeText(row[mapping.member]) : "";
+      const member = matchCanonicalMember(rawMember, memberNames);
+      const rawAmt = mapping.amount ? row[mapping.amount] : "";
+      const amount = parseNumber(rawAmt, NaN);
 
-      const qty = mapping.quantity ? parseNumber(row[mapping.quantity], 0) : 0;
-      const pricePerUnit = mapping.pricePerUnit ? parseNumber(row[mapping.pricePerUnit], 0) : 0;
-      const lineComment = mapping.lineComment ? normalizeText(row[mapping.lineComment]) : "";
+      const rawDate = mapping.contributedAt ? row[mapping.contributedAt] : undefined;
+      let contributedAt = parseFlexibleDateToYmd(rawDate);
+      if (!contributedAt) contributedAt = todayYmd();
 
-      const rawPurchase = mapping.dateOfPurchase ? row[mapping.dateOfPurchase] : undefined;
-      let dateOfPurchase = parseFlexibleDateToYmd(rawPurchase);
-      if (!dateOfPurchase) dateOfPurchase = todayYmd();
+      const rawHolder = mapping.toPrimaryHolder ? normalizeText(row[mapping.toPrimaryHolder]) : "";
+      const toPrimaryResolved = matchPrimaryHolder(rawHolder, primaryHolders);
 
-      const taxPercent = mapping.taxPercent ? parseNumber(row[mapping.taxPercent], 0) : 0;
-      let discountType = mapping.discountType ? normalizeText(row[mapping.discountType]).toLowerCase() : "none";
-      if (!["none", "percent", "flat"].includes(discountType)) discountType = "none";
-      const discountValue = mapping.discountValue ? parseNumber(row[mapping.discountValue], 0) : 0;
+      const rawMode = mapping.transferMode ? normalizeText(row[mapping.transferMode]) : "";
+      const transferMode = matchTransferMode(rawMode, transferModes);
 
-      let paymentMethod = mapping.paymentMethod ? normalizeText(row[mapping.paymentMethod]) : "";
-      if (!paymentMethod) paymentMethod = "Cash";
+      const notes = mapping.notes ? normalizeText(row[mapping.notes]) : "";
 
-      let paymentStatus = mapping.paymentStatus ? normalizeText(row[mapping.paymentStatus]) : "Pending";
-      if (!["Paid", "Pending", "Partially Paid"].includes(paymentStatus)) paymentStatus = "Pending";
-
-      let paymentMadeBy = mapping.paymentMadeBy ? normalizeText(row[mapping.paymentMadeBy]) : "";
-      if (paymentStatus === "Paid" && !PAYMENT_MADE_FROM_CHOICES.includes(paymentMadeBy)) {
-        paymentStatus = "Pending";
-        paymentMadeBy = "";
-      }
-
-      let paymentDate = "";
-      if (mapping.paymentDate && paymentStatus === "Paid") {
-        paymentDate = parseFlexibleDateToYmd(row[mapping.paymentDate]);
-      }
-      if (paymentStatus !== "Paid") paymentDate = "";
-
-      const paidByMode = mapping.paidByMode ? normalizeText(row[mapping.paidByMode]) : "";
-      const paymentComments = mapping.paymentComments ? normalizeText(row[mapping.paymentComments]) : "";
-
-      const voucherNumber = mapping.voucherNumber ? normalizeText(row[mapping.voucherNumber]) : "";
-
-      const lineItem = { materialId, quantity: qty, pricePerUnit, comment: lineComment };
-      if (matName) {
-        lineItem.importMaterialName = matName;
-      }
       const payload = {
-        vendorId,
-        voucherNumber,
-        dateOfPurchase,
-        items: [lineItem],
-        taxPercent,
-        discountType,
-        discountValue,
-        paymentMethod,
-        paymentStatus,
-        paymentDate: paymentDate || undefined,
-        paymentMadeBy,
-        paidByMode,
-        paymentComments,
-        ...(importVendorName ? { importVendorName } : {})
+        member: member || rawMember,
+        amount,
+        contributedAt,
+        transferMode,
+        notes
       };
-      if (mapping.voucherAmount && normalizeText(row[mapping.voucherAmount])) {
-        const v = parseNumber(row[mapping.voucherAmount], NaN);
-        if (Number.isFinite(v) && v >= 0) payload.finalAmount = v;
-      }
-      if (mapping.paidAmount && normalizeText(row[mapping.paidAmount])) {
-        payload.paidAmount = parseNumber(row[mapping.paidAmount], 0);
+      if (!isPrimaryMemberName(payload.member, primaryHolders)) {
+        payload.toPrimaryHolder = toPrimaryResolved || rawHolder;
       }
       list.push(payload);
     }
     return list;
-  }, [rows, mapping, vendors, materials]);
+  }, [rows, mapping, memberNames, primaryHolders, transferModes]);
 
   const runBulkImport = useCallback(
     async (payloads, duplicateGroupsLocal, dedupeMode) => {
@@ -333,9 +252,9 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
           }
           toSend = payloads.filter((_, i) => !drop.has(i));
         }
-        const res = await apiFetch("/vouchers/bulk", {
+        const res = await apiFetch("/contributions/bulk", {
           method: "POST",
-          body: JSON.stringify({ vouchers: toSend })
+          body: JSON.stringify({ entries: toSend })
         });
         const failed = (res.results || []).filter((r) => !r.ok);
         setImportSummary({
@@ -379,8 +298,35 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
 
   const onConfirmMapping = async () => {
     setError("");
+    if (!mapping.member) {
+      setError("Map the contributor column before continuing.");
+      return;
+    }
+    if (!mapping.amount) {
+      setError("Map the amount column before continuing.");
+      return;
+    }
     try {
-      const payloads = await buildPayloads();
+      const payloads = buildPayloads();
+      for (let i = 0; i < payloads.length; i++) {
+        const p = payloads[i];
+        if (!memberNames.includes(p.member)) {
+          setError(`Row ${i + 2}: contributor must match a known name (${memberNames.join(", ")}).`);
+          return;
+        }
+        if (!Number.isFinite(p.amount) || p.amount < 0) {
+          setError(`Row ${i + 2}: amount must be a valid non-negative number.`);
+          return;
+        }
+        if (!isPrimaryMemberName(p.member, primaryHolders)) {
+          if (!p.toPrimaryHolder || !primaryHolders.includes(p.toPrimaryHolder)) {
+            setError(
+              `Row ${i + 2}: received by (primary) is required for ${p.member} (${primaryHolders.join(" or ")}).`
+            );
+            return;
+          }
+        }
+      }
       await runDuplicateScan(payloads);
     } catch (err) {
       setError(err.message || "Could not prepare import.");
@@ -407,12 +353,13 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
       <BulkExcelUploadIconButton
         disabled={importing}
         onClick={() => fileRef.current?.click()}
+        title="Bulk upload contributions from Excel"
       />
 
       {step === "importing" ? (
         <div className="voucher-modal-backdrop" role="presentation" aria-busy="true">
           <div className="confirm-dialog-box" role="status">
-            <p className="confirm-dialog-message confirm-dialog-message--solo">Importing vouchers…</p>
+            <p className="confirm-dialog-message confirm-dialog-message--solo">Importing contributions…</p>
           </div>
         </div>
       ) : null}
@@ -429,12 +376,12 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
             className="voucher-modal-dialog voucher-modal-dialog--bulk"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="bulk-map-title"
+            aria-labelledby="contrib-bulk-map-title"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="voucher-modal-header">
-              <h3 id="bulk-map-title" className="voucher-modal-title">
-                Map Excel columns
+              <h3 id="contrib-bulk-map-title" className="voucher-modal-title">
+                Map Excel columns (contributions)
               </h3>
               <button type="button" className="voucher-modal-close" aria-label="Close" onClick={resetFlow}>
                 ×
@@ -442,19 +389,19 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
             </div>
             <div className="voucher-modal-body">
               <p className="page-lead">
-                Match each voucher field to a column from your file ({rows.length} data rows). Unmapped optional fields
-                use safe defaults. Unknown vendors are created from the Excel name. Unknown materials are created for that
-                vendor from the material column; only rows with no material name use a shared placeholder line item.
+                Match each field to a column ({rows.length} data rows). Contributor names must match exactly (case
+                ignored): {memberNames.join(", ")}. For non-primary contributors, map <strong>Received by</strong> (
+                {primaryHolders.join(" or ")}). Default transfer mode when the column is empty: UPI.
               </p>
               <div className="bulk-map-grid">
-                {VOUCHER_BULK_FIELD_DEFS.map((def) => (
+                {CONTRIBUTION_BULK_FIELD_DEFS.map((def) => (
                   <div key={def.key} className="bulk-map-row">
-                    <label className="bulk-map-label" htmlFor={`map-${def.key}`}>
+                    <label className="bulk-map-label" htmlFor={`contrib-map-${def.key}`}>
                       {def.label}
                     </label>
                     <div className="bulk-map-select-wrap">
                       <select
-                        id={`map-${def.key}`}
+                        id={`contrib-map-${def.key}`}
                         className="input"
                         value={mapping[def.key] || ""}
                         onChange={(e) => setMapping((m) => ({ ...m, [def.key]: e.target.value }))}
@@ -469,7 +416,6 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
                   </div>
                 ))}
               </div>
-              {importing ? <p className="page-lead">Preparing…</p> : null}
             </div>
             <div className="voucher-modal-actions voucher-modal-actions--padded">
               <button type="button" className="btn btn-secondary" onClick={resetFlow} disabled={importing}>
@@ -493,11 +439,11 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
             className="voucher-modal-dialog voucher-modal-dialog--bulk"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="bulk-dup-title"
+            aria-labelledby="contrib-bulk-dup-title"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="voucher-modal-header">
-              <h3 id="bulk-dup-title" className="voucher-modal-title">
+              <h3 id="contrib-bulk-dup-title" className="voucher-modal-title">
                 Duplicate rows
               </h3>
               <button type="button" className="voucher-modal-close" aria-label="Close" onClick={() => setStep("mapping")}>
@@ -513,10 +459,7 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
                 {duplicateGroups.slice(0, 20).map((g, i) => (
                   <li key={i}>
                     Excel data rows:{" "}
-                    <strong>
-                      {g.map((idx) => idx + 2).join(", ")}
-                    </strong>{" "}
-                    ({g.length} rows)
+                    <strong>{g.map((idx) => idx + 2).join(", ")}</strong> ({g.length} rows)
                   </li>
                 ))}
               </ul>
@@ -526,7 +469,7 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
                 <label className="bulk-dup-radio">
                   <input
                     type="radio"
-                    name="dupChoice"
+                    name="contribDupChoice"
                     checked={dupChoice === "first"}
                     onChange={() => setDupChoice("first")}
                   />{" "}
@@ -535,11 +478,11 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
                 <label className="bulk-dup-radio">
                   <input
                     type="radio"
-                    name="dupChoice"
+                    name="contribDupChoice"
                     checked={dupChoice === "all"}
                     onChange={() => setDupChoice("all")}
                   />{" "}
-                  Import <strong>every</strong> row (create separate vouchers for identical rows)
+                  Import <strong>every</strong> row
                 </label>
               </fieldset>
             </div>
@@ -565,11 +508,11 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
             className="voucher-modal-dialog voucher-modal-dialog--bulk"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="bulk-done-title"
+            aria-labelledby="contrib-bulk-done-title"
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="voucher-modal-header">
-              <h3 id="bulk-done-title" className="voucher-modal-title">
+              <h3 id="contrib-bulk-done-title" className="voucher-modal-title">
                 Import finished
               </h3>
               <button type="button" className="voucher-modal-close" aria-label="Close" onClick={resetFlow}>
@@ -578,7 +521,8 @@ export default function VoucherBulkImport({ vendors, materials, onImported, setE
             </div>
             <div className="voucher-modal-body">
               <p className="page-lead">
-                Created <strong>{importSummary.imported}</strong> voucher{importSummary.imported === 1 ? "" : "s"}.
+                Created <strong>{importSummary.imported}</strong> contribution
+                {importSummary.imported === 1 ? "" : "s"}.
                 {importSummary.failed ? (
                   <>
                     {" "}

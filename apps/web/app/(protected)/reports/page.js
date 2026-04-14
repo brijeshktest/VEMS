@@ -56,7 +56,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack reports-page">
       <PageHeader
         eyebrow="Analytics"
         title="Reports"
@@ -156,7 +156,10 @@ export default function ReportsPage() {
                   materialData.map((row) => (
                     <tr key={row._id}>
                       <td>{row.material?.name}</td>
-                      <td>{row.totalQuantity}</td>
+                      <td>
+                        {row.totalQuantity}
+                        {row.material?.unit ? ` ${String(row.material.unit).trim()}` : ""}
+                      </td>
                       <td>{formatIndianRupee(row.totalSpend)}</td>
                     </tr>
                   ))

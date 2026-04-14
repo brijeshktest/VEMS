@@ -1,4 +1,5 @@
 import express from "express";
+import mongoose from "mongoose";
 import Voucher from "../models/Voucher.js";
 import Vendor from "../models/Vendor.js";
 import Material from "../models/Material.js";
@@ -115,25 +116,41 @@ async function ensureBulkImportVendor() {
   return v._id;
 }
 
-async function ensureBulkImportMaterialForVendor(vendorId) {
-  const vid = vendorId.toString();
-  let m = await Material.findOne({
-    name: BULK_IMPORT_MATERIAL_NAME,
-    vendorIds: vendorId
-  });
+/** One shared placeholder material (linked to many vendors) — avoids duplicating rows on each bulk import. */
+async function getSharedBulkPlaceholderMaterialDoc() {
+  const defaultVendorId = await ensureBulkImportVendor();
+  let m = await Material.findOne({ name: BULK_IMPORT_MATERIAL_NAME });
   if (!m) {
     m = await Material.create({
       name: BULK_IMPORT_MATERIAL_NAME,
-      vendorIds: [vendorId],
+      vendorIds: [defaultVendorId],
       unit: "unit",
       category: "Import",
-      description: "Placeholder line for bulk-imported vouchers; edit voucher to set real items."
+      description: "Placeholder for voucher lines without a material name in bulk Excel import."
     });
-  } else if (!m.vendorIds.map((id) => id.toString()).includes(vid)) {
-    m.vendorIds.push(vendorId);
-    await m.save();
+    await Vendor.updateOne({ _id: defaultVendorId }, { $addToSet: { materialsSupplied: m._id } });
   }
-  return m._id;
+  return m;
+}
+
+/** Ensures the shared placeholder material is linked to each vendor (catalog + vendorIds on material). */
+async function linkBulkPlaceholderToVendorIds(vendorIdList) {
+  const ph = await getSharedBulkPlaceholderMaterialDoc();
+  const phId = ph._id;
+  let changed = false;
+  for (const raw of vendorIdList) {
+    if (raw == null || raw === "") continue;
+    const idStr = String(raw);
+    if (!mongoose.Types.ObjectId.isValid(idStr)) continue;
+    const vid = new mongoose.Types.ObjectId(idStr);
+    if (!ph.vendorIds.map(String).includes(idStr)) {
+      ph.vendorIds.push(vid);
+      changed = true;
+    }
+    await Vendor.updateOne({ _id: vid }, { $addToSet: { materialsSupplied: phId } });
+  }
+  if (changed) await ph.save();
+  return phId;
 }
 
 function escapeRegexForVendorName(s) {
@@ -164,17 +181,65 @@ async function resolveImportVendorPayload(payload) {
   const resolvedVendorId = vendor._id;
   const out = { ...payload, vendorId: resolvedVendorId };
   const items = Array.isArray(payload.items) ? [...payload.items] : [];
-  const phMatId = await ensureBulkImportMaterialForVendor(resolvedVendorId);
+  const phMatId = await linkBulkPlaceholderToVendorIds([resolvedVendorId]);
   const vidStr = String(resolvedVendorId);
   out.items = await Promise.all(
     items.map(async (item) => {
       const mat = await Material.findById(item.materialId);
       const ok = mat && (mat.vendorIds || []).map(String).includes(vidStr);
       if (ok) return item;
+      const nameHint = item.importMaterialName != null && String(item.importMaterialName).trim();
+      if (nameHint) {
+        return { ...item };
+      }
       return { ...item, materialId: phMatId };
     })
   );
   delete out.importVendorName;
+  return out;
+}
+
+/**
+ * Bulk Excel: resolve `importMaterialName` per line item to an existing or newly created material for the voucher vendor.
+ * Strips `importMaterialName` before persistence.
+ */
+async function ensureMaterialsFromBulkNames(user, vendorId, items) {
+  if (!Array.isArray(items)) return items;
+  const out = [];
+  for (const item of items) {
+    const rawName = item.importMaterialName != null ? String(item.importMaterialName).trim() : "";
+    const { importMaterialName: _drop, ...rest } = item;
+    if (!rawName) {
+      out.push(rest);
+      continue;
+    }
+    let m = await Material.findOne({
+      name: new RegExp(`^${escapeRegexForVendorName(rawName)}$`, "i"),
+      vendorIds: vendorId
+    });
+    if (!m) {
+      m = await Material.create({
+        name: rawName,
+        vendorIds: [vendorId],
+        unit: "",
+        category: "",
+        description: ""
+      });
+      await Vendor.updateMany({ _id: vendorId }, { $addToSet: { materialsSupplied: m._id } });
+      await logChange({
+        entityType: "material",
+        entityId: m._id,
+        action: "create",
+        user,
+        before: null,
+        after: m.toObject()
+      });
+    }
+    out.push({
+      ...rest,
+      materialId: m._id
+    });
+  }
   return out;
 }
 
@@ -185,6 +250,7 @@ async function resolveImportVendorPayload(payload) {
  */
 async function createVoucherCore(user, payload) {
   payload = await resolveImportVendorPayload(payload);
+  payload.items = await ensureMaterialsFromBulkNames(user, payload.vendorId, payload.items || []);
   const missing = requireFields(payload, ["vendorId", "items", "dateOfPurchase", "paymentMethod", "paymentStatus"]);
   if (missing.length) {
     throw new Error(`Missing fields: ${missing.join(", ")}`);
@@ -296,14 +362,15 @@ router.post("/import-placeholders", requireAuth, requireVoucherBulkUpload, async
   const rawIds = req.body?.vendorIds;
   const vendorIds = Array.isArray(rawIds) ? [...new Set(rawIds.map((id) => String(id)).filter(Boolean))] : [];
   const defaultVendorId = await ensureBulkImportVendor();
-  const materialByVendorId = {};
-  materialByVendorId[String(defaultVendorId)] = await ensureBulkImportMaterialForVendor(defaultVendorId);
+  const idSet = new Set([String(defaultVendorId)]);
   for (const id of vendorIds) {
-    try {
-      materialByVendorId[String(id)] = await ensureBulkImportMaterialForVendor(id);
-    } catch {
-      /* invalid vendor id */
-    }
+    if (id && mongoose.Types.ObjectId.isValid(String(id))) idSet.add(String(id));
+  }
+  const toLink = [...idSet].map((s) => new mongoose.Types.ObjectId(s));
+  const phMatId = await linkBulkPlaceholderToVendorIds(toLink);
+  const materialByVendorId = {};
+  for (const vid of toLink) {
+    materialByVendorId[String(vid)] = phMatId;
   }
   return res.json({ defaultVendorId, materialByVendorId });
 });

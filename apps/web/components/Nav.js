@@ -221,6 +221,9 @@ export default function Nav() {
     ? "nav-links nav-links--mobile-drawer" + (mobileNavOpen ? " nav-links--mobile-drawer--open" : "")
     : "nav-links";
 
+  /** Work mode (and any screen with no primary links) has nothing for the mobile drawer — hide it entirely. */
+  const showPrimaryNavLinks = links.length > 0;
+
   function renderUserMenu() {
     return (
       <div className="nav-user-dropdown" role="menu">
@@ -324,22 +327,29 @@ export default function Nav() {
   return (
     <nav className="nav nav--full-bleed w-full min-w-0 max-w-full pt-[env(safe-area-inset-top,0px)]">
       {isAuthenticated ? (
-        <div className="nav-page-inner nav-inner nav-inner--app nav-inner--auth-grail">
+        <div
+          className={
+            "nav-page-inner nav-inner nav-inner--app nav-inner--auth-grail" +
+            (!showPrimaryNavLinks ? " nav-inner--auth-grail--no-nav-links" : "")
+          }
+        >
           {brandLink}
           <div className="nav-cell-controls">
-            <button
-              type="button"
-              className="nav-hamburger"
-              aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
-              aria-expanded={mobileNavOpen}
-              aria-controls="nav-primary-menu"
-              onClick={() => {
-                setMobileNavOpen((o) => !o);
-                setUserMenuOpen(false);
-              }}
-            >
-              {mobileNavOpen ? <IconClose /> : <IconMenu />}
-            </button>
+            {showPrimaryNavLinks ? (
+              <button
+                type="button"
+                className="nav-hamburger"
+                aria-label={mobileNavOpen ? "Close menu" : "Open menu"}
+                aria-expanded={mobileNavOpen}
+                aria-controls="nav-primary-menu"
+                onClick={() => {
+                  setMobileNavOpen((o) => !o);
+                  setUserMenuOpen(false);
+                }}
+              >
+                {mobileNavOpen ? <IconClose /> : <IconMenu />}
+              </button>
+            ) : null}
             <div className="nav-user" ref={userMenuRef}>
               <button
                 type="button"
@@ -357,9 +367,11 @@ export default function Nav() {
               {userMenuOpen ? renderUserMenu() : null}
             </div>
           </div>
-          <div id="nav-primary-menu" className={menuDrawerClass + " nav-cell-links"}>
-            {navLinksBody}
-          </div>
+          {showPrimaryNavLinks ? (
+            <div id="nav-primary-menu" className={menuDrawerClass + " nav-cell-links"}>
+              {navLinksBody}
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="nav-page-inner nav-inner nav-inner--app">

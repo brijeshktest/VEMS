@@ -3,7 +3,12 @@ import fs from "node:fs/promises";
 import Vendor from "../models/Vendor.js";
 import Material from "../models/Material.js";
 import Voucher from "../models/Voucher.js";
-import { requireAuth, requirePermission, requireVendorBulkDelete } from "../middleware/auth.js";
+import {
+  requireAuth,
+  requirePermission,
+  requireVendorBulkDelete,
+  requireVendorBulkUpload
+} from "../middleware/auth.js";
 import { requireFields } from "../utils/validators.js";
 import { validateVendorContactPayload } from "../utils/indianValidators.js";
 import {
@@ -159,6 +164,94 @@ router.post("/bulk-delete", requireAuth, requireVendorBulkDelete, async (req, re
   return res.json({ results, deleted, failed: results.length - deleted });
 });
 
+/**
+ * Create a vendor from plain JSON (no multipart). Shared by POST / and POST /bulk.
+ * @returns {Promise<{ ok: true, vendor: object } | { ok: false, error: string }>}
+ */
+async function createVendorDocument(user, body, files = []) {
+  const missing = requireFields(body, ["name"]);
+  if (missing.length) {
+    await unlinkTmpFiles(files);
+    return { ok: false, error: `Missing fields: ${missing.join(", ")}` };
+  }
+  const contactCheck = validateVendorContactPayload(contactPayloadForCreate(body));
+  if (!contactCheck.ok) {
+    await unlinkTmpFiles(files);
+    return { ok: false, error: contactCheck.message };
+  }
+  const materialsSupplied =
+    body.materialsSupplied !== undefined && Array.isArray(body.materialsSupplied)
+      ? body.materialsSupplied
+      : [];
+  const status = body.status === "Inactive" ? "Inactive" : "Active";
+  let vendor;
+  try {
+    vendor = await Vendor.create({
+      name: body.name,
+      address: body.address ?? "",
+      contactPerson: body.contactPerson ?? "",
+      contactNumber: contactCheck.normalized.contactNumber,
+      email: contactCheck.normalized.email,
+      gstin: contactCheck.normalized.gstin,
+      vendorType: body.vendorType ?? "",
+      pan: contactCheck.normalized.pan,
+      aadhaar: contactCheck.normalized.aadhaar,
+      materialsSupplied,
+      status,
+      attachments: []
+    });
+    if (files.length) {
+      const meta = await persistMulterFiles(files, `vendors/${vendor._id}`);
+      vendor.attachments.push(...meta);
+      await vendor.save();
+    }
+    await logChange({
+      entityType: "vendor",
+      entityId: vendor._id,
+      action: "create",
+      user,
+      before: null,
+      after: vendor.toObject()
+    });
+    return { ok: true, vendor };
+  } catch (e) {
+    await unlinkTmpFiles(files);
+    if (vendor?._id) {
+      await Vendor.deleteOne({ _id: vendor._id });
+      await deleteEntityUploadFolder("vendors", vendor._id.toString());
+    }
+    return { ok: false, error: e.message || "Create failed" };
+  }
+}
+
+router.post("/bulk", requireAuth, requireVendorBulkUpload, async (req, res) => {
+  const vendors = req.body?.vendors;
+  if (!Array.isArray(vendors)) {
+    return res.status(400).json({ error: "Request body must include vendors array" });
+  }
+  if (vendors.length > 400) {
+    return res.status(400).json({ error: "Maximum 400 vendors per bulk import" });
+  }
+  if (vendors.length === 0) {
+    return res.status(400).json({ error: "No vendors to import" });
+  }
+  const results = [];
+  for (let i = 0; i < vendors.length; i++) {
+    const r = await createVendorDocument(req.user, vendors[i], []);
+    if (r.ok) {
+      results.push({ index: i, ok: true, id: String(r.vendor._id) });
+    } else {
+      results.push({ index: i, ok: false, error: r.error });
+    }
+  }
+  const imported = results.filter((x) => x.ok).length;
+  return res.status(201).json({
+    results,
+    imported,
+    failed: results.length - imported
+  });
+});
+
 router.get(
   "/:id/attachments/download/:storedName",
   requireAuth,
@@ -215,55 +308,12 @@ router.get("/:id", requireAuth, requirePermission("vendors", "view"), async (req
 
 router.post("/", requireAuth, requirePermission("vendors", "create"), conditionalVendorFiles, async (req, res) => {
   const body = isMultipartRequest(req) ? normalizeVendorBody(req) : req.body;
-  const missing = requireFields(body, ["name"]);
-  if (missing.length) {
-    await unlinkTmpFiles(req.files);
-    return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
+  const files = req.files || [];
+  const r = await createVendorDocument(req.user, body, files);
+  if (!r.ok) {
+    return res.status(400).json({ error: r.error });
   }
-  const contactCheck = validateVendorContactPayload(contactPayloadForCreate(body));
-  if (!contactCheck.ok) {
-    await unlinkTmpFiles(req.files);
-    return res.status(400).json({ error: contactCheck.message });
-  }
-  let vendor;
-  try {
-    vendor = await Vendor.create({
-      name: body.name,
-      address: body.address,
-      contactPerson: body.contactPerson,
-      contactNumber: contactCheck.normalized.contactNumber,
-      email: contactCheck.normalized.email,
-      gstin: contactCheck.normalized.gstin,
-      vendorType: body.vendorType,
-      pan: contactCheck.normalized.pan,
-      aadhaar: contactCheck.normalized.aadhaar,
-      materialsSupplied: body.materialsSupplied !== undefined ? body.materialsSupplied || [] : [],
-      status: body.status || "Active",
-      attachments: []
-    });
-    const files = req.files || [];
-    if (files.length) {
-      const meta = await persistMulterFiles(files, `vendors/${vendor._id}`);
-      vendor.attachments.push(...meta);
-      await vendor.save();
-    }
-    await logChange({
-      entityType: "vendor",
-      entityId: vendor._id,
-      action: "create",
-      user: req.user,
-      before: null,
-      after: vendor.toObject()
-    });
-    return res.status(201).json(vendor);
-  } catch (e) {
-    await unlinkTmpFiles(req.files);
-    if (vendor?._id) {
-      await Vendor.deleteOne({ _id: vendor._id });
-      await deleteEntityUploadFolder("vendors", vendor._id.toString());
-    }
-    throw e;
-  }
+  return res.status(201).json(r.vendor);
 });
 
 router.put("/:id", requireAuth, requirePermission("vendors", "edit"), conditionalVendorFiles, async (req, res) => {

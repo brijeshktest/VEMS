@@ -69,8 +69,7 @@ export default function WorkModePage() {
           type="button"
           onClick={() => chooseMode("expense")}
         >
-          <span className="stat-label">Mode</span>
-          <span className="stat-value" style={{ fontSize: 22 }}>Expense management</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Expense</span>
           <span className="stat-hint">Vendors, materials, vouchers, and reports</span>
         </button>
         <button
@@ -79,8 +78,7 @@ export default function WorkModePage() {
           disabled={!allowSales}
           onClick={() => chooseMode("sales")}
         >
-          <span className="stat-label">Mode</span>
-          <span className="stat-value" style={{ fontSize: 22 }}>Sales management</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Sales</span>
           <span className="stat-hint">Sales invoices for mushrooms and compost</span>
         </button>
         <button
@@ -89,8 +87,7 @@ export default function WorkModePage() {
           disabled={!allowContributions}
           onClick={() => chooseMode("contributions")}
         >
-          <span className="stat-label">Mode</span>
-          <span className="stat-value" style={{ fontSize: 22 }}>Contribution management</span>
+          <span className="stat-value" style={{ fontSize: 22 }}>Contribution</span>
           <span className="stat-hint">Track contributions: primary recipient and transfer mode on every record</span>
         </button>
         <button
@@ -99,7 +96,6 @@ export default function WorkModePage() {
           disabled={!allowRoomOps}
           onClick={() => chooseMode("room")}
         >
-          <span className="stat-label">Mode</span>
           <span className="stat-value" style={{ fontSize: 22 }}>Room operations</span>
           <span className="stat-hint">Room stage and activity operations summary</span>
         </button>
@@ -109,13 +105,11 @@ export default function WorkModePage() {
           disabled={!allowTunnelOps}
           onClick={() => chooseMode("tunnel")}
         >
-          <span className="stat-label">Mode</span>
           <span className="stat-value" style={{ fontSize: 22 }}>Tunnel &amp; Bunker Ops</span>
           <span className="stat-hint">Bunkers, one tunnel per batch, then growing rooms; movement alerts</span>
         </button>
         {isAdmin ? (
           <button className="card stat-card mode-card mode-card--admin" type="button" onClick={() => chooseMode("admin")}>
-            <span className="stat-label">Mode</span>
             <span className="stat-value" style={{ fontSize: 22 }}>Admin</span>
             <span className="stat-hint">Admin console and related controls</span>
           </button>

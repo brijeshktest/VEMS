@@ -1,6 +1,7 @@
 import express from "express";
 import mongoose from "mongoose";
 import ContributionEntry from "../models/ContributionEntry.js";
+import Voucher from "../models/Voucher.js";
 import {
   CONTRIBUTION_MEMBERS,
   PRIMARY_ACCOUNT_HOLDERS,
@@ -8,7 +9,12 @@ import {
   CONTRIBUTION_TRANSFER_MODES_INTERNAL,
   isPrimaryHolder
 } from "../models/contributionConstants.js";
-import { requireAuth, requirePermission } from "../middleware/auth.js";
+import {
+  requireAuth,
+  requirePermission,
+  requireContributionsBulkUpload,
+  requireContributionsBulkDelete
+} from "../middleware/auth.js";
 import { requireFields } from "../utils/validators.js";
 import { expensePaidTotalsByContributionMember } from "../utils/expensePaidByMemberAgg.js";
 
@@ -97,7 +103,10 @@ function parseDate(raw, fieldName) {
 }
 
 function parseAmount(raw) {
-  const n = Number(raw);
+  if (raw == null || raw === "") {
+    return { ok: false, error: "amount must be a non-negative number" };
+  }
+  const n = typeof raw === "number" ? raw : Number(String(raw).replace(/,/g, "").trim());
   if (!Number.isFinite(n) || n < 0) {
     return { ok: false, error: "amount must be a non-negative number" };
   }
@@ -118,6 +127,53 @@ function parseTransferMode(raw, { allowInternal = false } = {}) {
   return {
     ok: false,
     error: `transferMode must be one of: ${CONTRIBUTION_TRANSFER_MODES.join(", ")}`
+  };
+}
+
+/** Validates a single contribution entry body; used by POST /entries and POST /bulk. */
+function parseContributionEntryPayload(body) {
+  const missing = requireFields(body, ["member", "amount", "contributedAt", "transferMode"]);
+  if (missing.length) {
+    return { ok: false, error: `Missing fields: ${missing.join(", ")}` };
+  }
+  if (!CONTRIBUTION_MEMBERS.includes(body.member)) {
+    return { ok: false, error: `member must be one of: ${CONTRIBUTION_MEMBERS.join(", ")}` };
+  }
+  let toPrimaryHolder = null;
+  if (!isPrimaryHolder(body.member)) {
+    const h = body.toPrimaryHolder;
+    if (h == null || h === "" || (typeof h === "string" && !h.trim())) {
+      return {
+        ok: false,
+        error: `toPrimaryHolder is required (one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}) for this contributor.`
+      };
+    }
+    const trimmed = String(h).trim();
+    if (!PRIMARY_ACCOUNT_HOLDERS.includes(trimmed)) {
+      return {
+        ok: false,
+        error: `toPrimaryHolder must be one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}`
+      };
+    }
+    toPrimaryHolder = trimmed;
+  }
+  const tm = parseTransferMode(body.transferMode, { allowInternal: false });
+  if (!tm.ok) return { ok: false, error: tm.error };
+  const amt = parseAmount(body.amount);
+  if (!amt.ok) return { ok: false, error: amt.error };
+  const dt = parseDate(body.contributedAt, "contributedAt");
+  if (!dt.ok) return { ok: false, error: dt.error };
+  const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 2000) : "";
+  return {
+    ok: true,
+    value: {
+      member: body.member,
+      amount: amt.value,
+      contributedAt: dt.value,
+      toPrimaryHolder,
+      transferMode: tm.value,
+      notes
+    }
   };
 }
 
@@ -142,7 +198,7 @@ router.get("/meta", requireAuth, requirePermission("contributions", "view"), (_r
 });
 
 router.get("/summary", requireAuth, requirePermission("contributions", "view"), async (_req, res) => {
-  const [entryAgg, byMemberAndHolder, entryCount, expensePaidByMember] = await Promise.all([
+  const [entryAgg, byMemberAndHolder, entryCount, expensePaidByMember, companyAccountPaidAgg] = await Promise.all([
     ContributionEntry.aggregate([
       { $group: { _id: "$member", totalAmount: { $sum: "$amount" }, count: { $sum: 1 } } }
     ]),
@@ -156,7 +212,22 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
       }
     ]),
     ContributionEntry.countDocuments(),
-    expensePaidTotalsByContributionMember({})
+    expensePaidTotalsByContributionMember({}),
+    Voucher.aggregate([
+      {
+        $match: {
+          paymentStatus: "Paid",
+          paymentMadeBy: "Company Account"
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
+          voucherCount: { $sum: 1 }
+        }
+      }
+    ])
   ]);
 
   const contributionByMember = {};
@@ -192,6 +263,17 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
     }
   }
 
+  // Primary holders' own contribution rows have toPrimaryHolder null, so they are not in the loop
+  // above. Per-person "routed to bank (from primary)" and dashboard cards should combine:
+  // that primary's own bank-module totals + all amounts explicitly routed to them from others.
+  for (const ph of PRIMARY_ACCOUNT_HOLDERS) {
+    const own = contributionByMember[ph];
+    if (own && receivedByPrimary[ph]) {
+      receivedByPrimary[ph].totalAmount += own.totalAmount ?? 0;
+      receivedByPrimary[ph].count += own.count ?? 0;
+    }
+  }
+
   const members = CONTRIBUTION_MEMBERS.map((name) => {
     const contributionTotal = contributionByMember[name]?.totalAmount ?? 0;
     const expenseContributionTotal = expensePaidByMember[name] ?? 0;
@@ -217,13 +299,21 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
     totalExpenseContribution += expensePaidByMember[name] ?? 0;
   }
 
+  const companyPaidRow = companyAccountPaidAgg[0];
+  const totalExpensePaidFromCompanyAccount = Number(companyPaidRow?.totalPaidAmount) || 0;
+  const companyAccountPaidVoucherCount = Number(companyPaidRow?.voucherCount) || 0;
+  const balanceAvailableInBank = totalContributions - totalExpensePaidFromCompanyAccount;
+
   return res.json({
     members,
     receivedByPrimary,
     totalContributions,
     totalExpenseContribution,
     totalContributionCombined: totalContributions + totalExpenseContribution,
-    entryCount
+    entryCount,
+    totalExpensePaidFromCompanyAccount,
+    companyAccountPaidVoucherCount,
+    balanceAvailableInBank
   });
 });
 
@@ -257,45 +347,75 @@ router.get("/entries", requireAuth, requirePermission("contributions", "view"), 
   return res.json(entries);
 });
 
-router.post("/entries", requireAuth, requirePermission("contributions", "create"), async (req, res) => {
-  const missing = requireFields(req.body, ["member", "amount", "contributedAt", "transferMode"]);
-  if (missing.length) {
-    return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
+router.post("/bulk", requireAuth, requireContributionsBulkUpload, async (req, res) => {
+  const entries = req.body?.entries;
+  if (!Array.isArray(entries)) {
+    return res.status(400).json({ error: "Request body must include entries array" });
   }
-  if (!CONTRIBUTION_MEMBERS.includes(req.body.member)) {
-    return res.status(400).json({ error: `member must be one of: ${CONTRIBUTION_MEMBERS.join(", ")}` });
+  if (entries.length > 500) {
+    return res.status(400).json({ error: "Maximum 500 contribution rows per bulk import" });
   }
-  let toPrimaryHolder = null;
-  if (!isPrimaryHolder(req.body.member)) {
-    const h = req.body.toPrimaryHolder;
-    if (h == null || h === "" || (typeof h === "string" && !h.trim())) {
-      return res.status(400).json({
-        error: `toPrimaryHolder is required (one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}) for this contributor.`
-      });
+  if (entries.length === 0) {
+    return res.status(400).json({ error: "No entries to import" });
+  }
+  const results = [];
+  for (let i = 0; i < entries.length; i++) {
+    const parsed = parseContributionEntryPayload(entries[i]);
+    if (!parsed.ok) {
+      results.push({ index: i, ok: false, error: parsed.error });
+      continue;
     }
-    const trimmed = String(h).trim();
-    if (!PRIMARY_ACCOUNT_HOLDERS.includes(trimmed)) {
-      return res.status(400).json({
-        error: `toPrimaryHolder must be one of: ${PRIMARY_ACCOUNT_HOLDERS.join(", ")}`
-      });
+    try {
+      const doc = await ContributionEntry.create(parsed.value);
+      results.push({ index: i, ok: true, id: String(doc._id) });
+    } catch (e) {
+      results.push({ index: i, ok: false, error: e.message || "Create failed" });
     }
-    toPrimaryHolder = trimmed;
   }
-  const tm = parseTransferMode(req.body.transferMode, { allowInternal: false });
-  if (!tm.ok) return res.status(400).json({ error: tm.error });
-  const amt = parseAmount(req.body.amount);
-  if (!amt.ok) return res.status(400).json({ error: amt.error });
-  const dt = parseDate(req.body.contributedAt, "contributedAt");
-  if (!dt.ok) return res.status(400).json({ error: dt.error });
-  const notes = typeof req.body.notes === "string" ? req.body.notes.trim().slice(0, 2000) : "";
-  const doc = await ContributionEntry.create({
-    member: req.body.member,
-    amount: amt.value,
-    contributedAt: dt.value,
-    toPrimaryHolder,
-    transferMode: tm.value,
-    notes
+  const imported = results.filter((r) => r.ok).length;
+  return res.status(201).json({
+    results,
+    imported,
+    failed: results.length - imported
   });
+});
+
+router.post("/bulk-delete", requireAuth, requireContributionsBulkDelete, async (req, res) => {
+  const ids = req.body?.ids;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: "ids must be a non-empty array" });
+  }
+  if (ids.length > 200) {
+    return res.status(400).json({ error: "Maximum 200 contribution records per bulk delete" });
+  }
+  const results = [];
+  for (const raw of ids) {
+    const idStr = String(raw || "").trim();
+    if (!idStr) {
+      results.push({ id: raw, ok: false, error: "Empty id" });
+      continue;
+    }
+    if (!mongoose.Types.ObjectId.isValid(idStr)) {
+      results.push({ id: idStr, ok: false, error: "Invalid id" });
+      continue;
+    }
+    const doc = await ContributionEntry.findByIdAndDelete(idStr);
+    if (!doc) {
+      results.push({ id: idStr, ok: false, error: "Entry not found" });
+    } else {
+      results.push({ id: idStr, ok: true });
+    }
+  }
+  const deleted = results.filter((x) => x.ok).length;
+  return res.json({ results, deleted, failed: results.length - deleted });
+});
+
+router.post("/entries", requireAuth, requirePermission("contributions", "create"), async (req, res) => {
+  const parsed = parseContributionEntryPayload(req.body);
+  if (!parsed.ok) {
+    return res.status(400).json({ error: parsed.error });
+  }
+  const doc = await ContributionEntry.create(parsed.value);
   return res.status(201).json(doc);
 });
 

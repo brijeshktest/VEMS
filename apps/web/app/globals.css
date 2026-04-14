@@ -146,7 +146,7 @@ a {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: var(--stack-gap);
+  gap: var(--stack-gap); 
   width: 100%;
   max-width: 100%;
   min-width: 0;
@@ -544,8 +544,8 @@ main.main-surface.login-layout-main {
 /* Page header — SaaS title band */
 .page-header {
   margin: 0 0 4px;
-  padding-bottom: clamp(18px, 3vw, 26px);
-  border-bottom: 1px solid var(--border);
+  /* padding-bottom: clamp(18px, 3vw, 26px); */
+  /* border-bottom: 1px solid var(--border); */
 }
 
 .page-header-row {
@@ -593,7 +593,7 @@ main.main-surface.login-layout-main {
   margin: 0;
   font-size: 15px;
   color: var(--muted);
-  max-width: min(62ch, 100%);
+  /* max-width: min(62ch, 100%); */
   line-height: 1.58;
 }
 
@@ -662,6 +662,12 @@ main.main-surface.login-layout-main {
   padding-bottom: 0.5rem;
   width: 100%;
   min-width: 0;
+}
+
+/* Choose work area: no nav links — single header row (no blank hamburger drawer). */
+.nav-inner.nav-inner--app.nav-inner--auth-grail.nav-inner--auth-grail--no-nav-links {
+  grid-template-areas: "brand controls";
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .nav-cell-brand {
@@ -902,6 +908,12 @@ main.main-surface.login-layout-main {
     gap: 12px 20px;
     padding-top: 0.75rem;
     padding-bottom: 0.75rem;
+  }
+
+  .nav-inner.nav-inner--app.nav-inner--auth-grail.nav-inner--auth-grail--no-nav-links {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "brand controls";
+    justify-content: space-between;
   }
 
   .nav-inner--auth-grail .nav-cell-links {
@@ -1920,6 +1932,73 @@ select.input {
 
 .grid-2 {
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+/* Reports page — constrain width, readable tables on narrow screens */
+.reports-page {
+  min-width: 0;
+}
+
+.reports-page .grid {
+  min-width: 0;
+}
+
+.reports-page .card {
+  min-width: 0;
+}
+
+.reports-page .table-wrap {
+  max-width: 100%;
+}
+
+.reports-page .table {
+  width: 100%;
+  min-width: 0;
+}
+
+.reports-page .table th:first-child,
+.reports-page .table td:first-child {
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.reports-page .table th:not(:first-child),
+.reports-page .table td:not(:first-child) {
+  white-space: nowrap;
+  text-align: right;
+  width: 1%;
+}
+
+.reports-page .totals-item {
+  word-break: break-word;
+}
+
+@media (max-width: 640px) {
+  .reports-page .toolbar-card {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .reports-page .toolbar-card .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .reports-page .toolbar-field {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .reports-page .table th,
+  .reports-page .table td {
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .reports-page .panel-title {
+    font-size: 1rem;
+    line-height: 1.35;
+  }
 }
 
 /* Reports toolbar */

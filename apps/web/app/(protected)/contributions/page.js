@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
@@ -8,6 +8,7 @@ import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
 import IndianAmountField from "../../../components/IndianAmountField.js";
 import { downloadContributionEntriesXlsx } from "../../../lib/exportContributionsExcel.js";
+import ContributionBulkImport from "../../../components/ContributionBulkImport.js";
 
 const initialEntryForm = {
   member: "Rahul",
@@ -36,6 +37,10 @@ export default function ContributionsPage() {
   const [editingEntryId, setEditingEntryId] = useState(null);
   const [entryForm, setEntryForm] = useState(initialEntryForm);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [canBulkUpload, setCanBulkUpload] = useState(false);
+  const [canBulkDelete, setCanBulkDelete] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(() => new Set());
+  const selectAllCheckboxRef = useRef(null);
   const { confirm, dialog } = useConfirmDialog();
 
   const loadMeta = useCallback(async () => {
@@ -58,8 +63,16 @@ export default function ContributionsPage() {
   async function loadAll() {
     setError("");
     try {
-      const meData = await apiFetch("/auth/me");
-      setIsAdmin(meData?.user?.role === "admin");
+      const [meData, permData] = await Promise.all([
+        apiFetch("/auth/me"),
+        apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
+      ]);
+      const admin = meData?.user?.role === "admin";
+      setIsAdmin(admin);
+      const p = permData.permissions;
+      const all = p === "all";
+      setCanBulkUpload(admin || all || Boolean(p?.contributions?.bulkUpload));
+      setCanBulkDelete(admin || all || Boolean(p?.contributions?.bulkDelete));
       await Promise.all([loadMeta(), loadEntries()]);
     } catch (err) {
       setError(err.message);
@@ -69,6 +82,80 @@ export default function ContributionsPage() {
   useEffect(() => {
     loadAll();
   }, []);
+
+  const entryIdsKey = useMemo(() => entries.map((e) => String(e._id)).join(","), [entries]);
+
+  useEffect(() => {
+    const allowed = new Set(entryIdsKey.split(",").filter(Boolean));
+    setSelectedIds((prev) => {
+      let changed = false;
+      const next = new Set();
+      for (const id of prev) {
+        if (allowed.has(id)) next.add(id);
+        else changed = true;
+      }
+      if (!changed && next.size === prev.size) return prev;
+      return next;
+    });
+  }, [entryIdsKey]);
+
+  useLayoutEffect(() => {
+    const el = selectAllCheckboxRef.current;
+    if (!el || !canBulkDelete) return;
+    const ids = entryIdsKey.split(",").filter(Boolean);
+    const n = ids.length;
+    const sel = ids.filter((id) => selectedIds.has(id)).length;
+    el.indeterminate = n > 0 && sel > 0 && sel < n;
+    el.checked = n > 0 && sel === n;
+  }, [canBulkDelete, selectedIds, entryIdsKey]);
+
+  function toggleSelectAllContributions() {
+    const ids = entries.map((e) => String(e._id));
+    if (!ids.length) return;
+    setSelectedIds((prev) => {
+      const allSelected = ids.every((id) => prev.has(id));
+      if (allSelected) return new Set();
+      return new Set(ids);
+    });
+  }
+
+  function toggleSelectContribution(id) {
+    const sid = String(id);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(sid)) next.delete(sid);
+      else next.add(sid);
+      return next;
+    });
+  }
+
+  async function bulkDeleteSelectedContributions() {
+    const ids = [...selectedIds];
+    if (!ids.length || !canBulkDelete) return;
+    const ok = await confirm({
+      title: "Delete selected contributions?",
+      message:
+        ids.length === 1
+          ? "Permanently delete this contribution record?"
+          : `Permanently delete ${ids.length} contribution records?`
+    });
+    if (!ok) return;
+    setError("");
+    try {
+      await apiFetch("/contributions/bulk-delete", {
+        method: "POST",
+        body: JSON.stringify({ ids })
+      });
+      setSelectedIds(new Set());
+      if (editingEntryId && ids.includes(String(editingEntryId))) {
+        setEditingEntryId(null);
+        setEntryModal(false);
+      }
+      await loadEntries();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   function openCreateEntry() {
     setEditingEntryId(null);
@@ -206,11 +293,35 @@ export default function ContributionsPage() {
             <button className="btn" type="button" onClick={openCreateEntry}>
               Add contribution
             </button>
+            {canBulkDelete ? (
+              <DeleteIconButton
+                disabled={!selectedIds.size}
+                onClick={() => void bulkDeleteSelectedContributions()}
+                title={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected contribution${selectedIds.size === 1 ? "" : "s"}`
+                    : "Select contributions to delete"
+                }
+                aria-label={
+                  selectedIds.size
+                    ? `Delete ${selectedIds.size} selected contribution${selectedIds.size === 1 ? "" : "s"}`
+                    : "Delete selected (choose contributions first)"
+                }
+              />
+            ) : null}
             <ExcelDownloadIconButton
               disabled={exportingExcel}
               onClick={() => void handleDownloadEntriesExcel()}
               title={exportingExcel ? "Preparing…" : "Download all account contributions as Excel"}
               aria-label={exportingExcel ? "Preparing Excel export" : "Download all account contributions as Excel"}
+            />
+            <ContributionBulkImport
+              meta={meta}
+              canBulkUpload={canBulkUpload}
+              setError={setError}
+              onImported={async () => {
+                await loadEntries();
+              }}
             />
           </div>
         </div>
@@ -283,6 +394,16 @@ export default function ContributionsPage() {
           <table className="table">
             <thead>
               <tr>
+                {canBulkDelete ? (
+                  <th className="col-select" scope="col">
+                    <input
+                      ref={selectAllCheckboxRef}
+                      type="checkbox"
+                      onChange={toggleSelectAllContributions}
+                      aria-label="Select all visible contributions"
+                    />
+                  </th>
+                ) : null}
                 <th>Date</th>
                 <th>Contributor</th>
                 <th>Amount</th>
@@ -295,6 +416,16 @@ export default function ContributionsPage() {
             <tbody>
               {entries.map((row) => (
                 <tr key={row._id}>
+                  {canBulkDelete ? (
+                    <td className="col-select">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(String(row._id))}
+                        onChange={() => toggleSelectContribution(row._id)}
+                        aria-label={`Select contribution ${row.member} ${row.contributedAt ? new Date(row.contributedAt).toLocaleDateString() : ""}`}
+                      />
+                    </td>
+                  ) : null}
                   <td>{row.contributedAt ? new Date(row.contributedAt).toLocaleDateString() : "—"}</td>
                   <td>{row.member}</td>
                   <td>{formatIndianRupee(row.amount)}</td>

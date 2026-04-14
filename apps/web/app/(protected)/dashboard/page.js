@@ -395,7 +395,7 @@ export default function DashboardPage() {
 
       {(workMode === "contributions" || workMode === "admin") && contributionSummary ? (
         <section className="saas-section" aria-label="Contribution metrics">
-          <div className="grid grid-3">
+          <div className="grid grid-4">
             <Link className="stat-link" href="/contributions">
               <div className="card stat-card">
                 <span className="stat-label">Total Routed to Bank</span>
@@ -403,6 +403,19 @@ export default function DashboardPage() {
                 <span className="stat-hint">{contributionSummary.entryCount} record(s) →</span>
               </div>
             </Link>
+            <div className="stat-link" role="group" aria-label="Balance available in bank">
+              <div className="card stat-card">
+                <span className="stat-label">Balance available in bank</span>
+                <span className="stat-value">
+                  {formatIndianRupee(contributionSummary.balanceAvailableInBank ?? 0)}
+                </span>
+                <span className="stat-hint">
+                  Routed total − paid vouchers (Payment made from: Company Account):{" "}
+                  {formatIndianRupee(contributionSummary.totalExpensePaidFromCompanyAccount ?? 0)} ·{" "}
+                  {contributionSummary.companyAccountPaidVoucherCount ?? 0} voucher(s)
+                </span>
+              </div>
+            </div>
             <Link className="stat-link" href="/contributions">
               <div className="card stat-card">
                 <span className="stat-label">{"Sunil's Contribution (Sunil + contributors)"}</span>
@@ -475,8 +488,11 @@ export default function DashboardPage() {
             </div>
             <p className="page-lead" style={{ marginTop: 16, fontSize: 13 }}>
               Bank contribution module (routed to bank): {formatIndianRupee(contributionSummary.totalContributions)} ·{" "}
-              {contributionSummary.entryCount} record(s). Direct expense (voucher paid totals by person):{" "}
-              {formatIndianRupee(contributionSummary.totalExpenseContribution ?? 0)}. Combined:{" "}
+              {contributionSummary.entryCount} record(s). Balance available in bank (routed total minus paid expenses from
+              Company Account): {formatIndianRupee(contributionSummary.balanceAvailableInBank ?? 0)} (
+              {formatIndianRupee(contributionSummary.totalExpensePaidFromCompanyAccount ?? 0)} on{" "}
+              {contributionSummary.companyAccountPaidVoucherCount ?? 0} paid voucher(s)). Direct expense (voucher paid
+              totals by person): {formatIndianRupee(contributionSummary.totalExpenseContribution ?? 0)}. Combined:{" "}
               {formatIndianRupee(
                 contributionSummary.totalContributionCombined ?? contributionSummary.totalContributions
               )}

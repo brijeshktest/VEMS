@@ -5,6 +5,7 @@ import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
+import MaterialBulkImport from "../../../components/MaterialBulkImport.js";
 
 const initialForm = {
   name: "",
@@ -14,6 +15,17 @@ const initialForm = {
   vendorIds: []
 };
 
+/** API may return ObjectId or string; form + checkboxes always use string ids. */
+function normalizeMaterialVendorIds(ids) {
+  return (ids || [])
+    .map((x) => {
+      if (x == null) return "";
+      if (typeof x === "object" && x._id != null) return String(x._id);
+      return String(x);
+    })
+    .filter(Boolean);
+}
+
 export default function MaterialsPage() {
   const [materials, setMaterials] = useState([]);
   const [vendors, setVendors] = useState([]);
@@ -22,12 +34,18 @@ export default function MaterialsPage() {
   const [error, setError] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [canBulkDelete, setCanBulkDelete] = useState(false);
+  const [canBulkUpload, setCanBulkUpload] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const selectAllCheckboxRef = useRef(null);
   const [materialModalOpen, setMaterialModalOpen] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
   const categoryOptions = Array.from(
     new Set(materials.map((material) => (material.category || "").trim()).filter(Boolean))
+  );
+
+  const formVendorIdSet = useMemo(
+    () => new Set(normalizeMaterialVendorIds(form.vendorIds)),
+    [form.vendorIds]
   );
 
   async function load() {
@@ -45,6 +63,7 @@ export default function MaterialsPage() {
       const p = permData.permissions;
       const all = p === "all";
       setCanBulkDelete(admin || all || Boolean(p?.materials?.bulkDelete));
+      setCanBulkUpload(admin || all || Boolean(p?.materials?.bulkUpload));
     } catch (err) {
       setError(err.message);
     }
@@ -180,11 +199,13 @@ export default function MaterialsPage() {
   }
 
   function toggleVendor(id) {
+    const sid = String(id);
     setForm((prev) => {
-      const exists = prev.vendorIds.includes(id);
+      const vids = normalizeMaterialVendorIds(prev.vendorIds);
+      const exists = vids.includes(sid);
       return {
         ...prev,
-        vendorIds: exists ? prev.vendorIds.filter((vid) => vid !== id) : [...prev.vendorIds, id]
+        vendorIds: exists ? vids.filter((vid) => vid !== sid) : [...vids, sid]
       };
     });
   }
@@ -196,7 +217,7 @@ export default function MaterialsPage() {
       category: material.category || "",
       unit: material.unit || "",
       description: material.description || "",
-      vendorIds: material.vendorIds || []
+      vendorIds: normalizeMaterialVendorIds(material.vendorIds)
     });
     setMaterialModalOpen(true);
   }
@@ -221,7 +242,7 @@ export default function MaterialsPage() {
         Category: m.category || "",
         Unit: m.unit || "",
         Description: m.description || "",
-        "Vendor count": m.vendorIds?.length || 0,
+        "Vendor count": normalizeMaterialVendorIds(m.vendorIds).length,
         Vendors: vendorNamesForMaterialExport(m),
         "Created at": m.createdAt ? new Date(m.createdAt).toISOString().slice(0, 10) : "",
         "Updated at": m.updatedAt ? new Date(m.updatedAt).toISOString().slice(0, 10) : ""
@@ -295,7 +316,20 @@ export default function MaterialsPage() {
               disabled={!materials.length}
               onClick={() => void downloadMaterialsExcel()}
             />
+            <MaterialBulkImport
+              vendors={vendors}
+              canBulkUpload={canBulkUpload}
+              setError={setError}
+              onImported={async () => {
+                await load();
+              }}
+            />
           </div>
+        </div>
+        <div className="voucher-table-totals" aria-live="polite">
+          <span className="voucher-table-totals__count">
+            Total materials: <strong>{materials.length}</strong>
+          </span>
         </div>
         <div className="table-wrap">
           <table className="table">
@@ -315,7 +349,7 @@ export default function MaterialsPage() {
               <th>Category</th>
               <th>Unit</th>
               <th>Description</th>
-              <th>Vendor Count</th>
+              <th>Vendor count</th>
               <th>Actions</th>
             </tr>
           </thead>
@@ -336,7 +370,7 @@ export default function MaterialsPage() {
                 <td>{material.category || "-"}</td>
                 <td>{material.unit || "-"}</td>
                 <td>{material.description || "-"}</td>
-                <td>{material.vendorIds?.length || 0}</td>
+                <td>{normalizeMaterialVendorIds(material.vendorIds).length}</td>
                 <td>
                   <div className="row-actions">
                     <EditIconButton onClick={() => startEdit(material)} />
@@ -415,7 +449,7 @@ export default function MaterialsPage() {
                       <label key={vendor._id}>
                         <input
                           type="checkbox"
-                          checked={form.vendorIds.includes(vendor._id)}
+                          checked={formVendorIdSet.has(String(vendor._id))}
                           onChange={() => toggleVendor(vendor._id)}
                         />{" "}
                         {vendor.name}

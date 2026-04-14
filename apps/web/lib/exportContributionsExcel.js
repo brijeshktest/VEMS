@@ -43,11 +43,11 @@ export function downloadPerPersonContributionSummaryXlsx(contributionSummary) {
       ) || 0
     },
     {
-      Field: "Received on paper — Sunil (Rs)",
+      Field: "Sunil — bank routed total own + from contributors (Rs)",
       Value: Number(contributionSummary.receivedByPrimary?.Sunil?.totalAmount) || 0
     },
     {
-      Field: "Received on paper — Shailendra (Rs)",
+      Field: "Shailendra — bank routed total own + from contributors (Rs)",
       Value: Number(contributionSummary.receivedByPrimary?.Shailendra?.totalAmount) || 0
     }
   ];

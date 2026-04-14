@@ -13,6 +13,7 @@ import {
   validateOptionalAadhaar,
   validateOptionalIndianMobile
 } from "../../../lib/indianValidators.js";
+import VendorBulkImport from "../../../components/VendorBulkImport.js";
 
 function collectVendorFieldErrors(f) {
   const errors = {};
@@ -52,6 +53,7 @@ export default function VendorsPage() {
   const [removedAttachmentIds, setRemovedAttachmentIds] = useState([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [canBulkDelete, setCanBulkDelete] = useState(false);
+  const [canBulkUpload, setCanBulkUpload] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const selectAllCheckboxRef = useRef(null);
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
@@ -90,6 +92,7 @@ export default function VendorsPage() {
       const p = permData.permissions;
       const all = p === "all";
       setCanBulkDelete(admin || all || Boolean(p?.vendors?.bulkDelete));
+      setCanBulkUpload(admin || all || Boolean(p?.vendors?.bulkUpload));
     } catch (err) {
       setError(err.message);
     }
@@ -376,7 +379,19 @@ export default function VendorsPage() {
               disabled={!vendors.length}
               onClick={() => void downloadVendorsExcel()}
             />
+            <VendorBulkImport
+              canBulkUpload={canBulkUpload}
+              setError={setError}
+              onImported={async () => {
+                await load();
+              }}
+            />
           </div>
+        </div>
+        <div className="voucher-table-totals" aria-live="polite">
+          <span className="voucher-table-totals__count">
+            Total vendors: <strong>{vendors.length}</strong>
+          </span>
         </div>
         <div className="table-wrap">
           <table className="table">

@@ -71,6 +71,48 @@ export async function requireVoucherBulkUpload(req, res, next) {
   return res.status(403).json({ error: "Bulk upload permission required" });
 }
 
+export async function requireContributionsBulkUpload(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.contributions?.bulkUpload) {
+    return next();
+  }
+  return res.status(403).json({ error: "Contribution bulk upload permission required" });
+}
+
+export async function requireVendorBulkUpload(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.vendors?.bulkUpload) {
+    return next();
+  }
+  return res.status(403).json({ error: "Vendor bulk upload permission required" });
+}
+
+export async function requireMaterialBulkUpload(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.materials?.bulkUpload) {
+    return next();
+  }
+  return res.status(403).json({ error: "Material bulk upload permission required" });
+}
+
 export async function requireVoucherBulkDelete(req, res, next) {
   if (!req.user) {
     return res.status(401).json({ error: "Missing auth token" });
@@ -111,6 +153,20 @@ export async function requireMaterialBulkDelete(req, res, next) {
     return next();
   }
   return res.status(403).json({ error: "Material bulk delete permission required" });
+}
+
+export async function requireContributionsBulkDelete(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({ error: "Missing auth token" });
+  }
+  if (req.user.role === "admin") {
+    return next();
+  }
+  const permissions = await resolvePermissions(req.user.roleIds || []);
+  if (permissions.contributions?.bulkDelete) {
+    return next();
+  }
+  return res.status(403).json({ error: "Contribution bulk delete permission required" });
 }
 
 export function requirePermission(moduleKey, action) {

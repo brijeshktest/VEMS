@@ -71,9 +71,9 @@ function normalizePermissions(input = {}) {
   modules.forEach((moduleKey) => {
     const modulePerms = input[moduleKey] || {};
     actions.forEach((action) => {
-      if (moduleKey !== "vouchers" && action === "bulkUpload") {
+      if (!["vouchers", "contributions", "vendors", "materials"].includes(moduleKey) && action === "bulkUpload") {
         perms[moduleKey][action] = false;
-      } else if (!["vouchers", "vendors", "materials"].includes(moduleKey) && action === "bulkDelete") {
+      } else if (!["vouchers", "vendors", "materials", "contributions"].includes(moduleKey) && action === "bulkDelete") {
         perms[moduleKey][action] = false;
       } else {
         perms[moduleKey][action] = Boolean(modulePerms[action]);
@@ -603,14 +603,17 @@ export default function AdminPage() {
                     <tr key={moduleKey}>
                       <td>{MODULE_LABELS[moduleKey] || moduleKey}</td>
                       {actions.map((action) => {
-                        const bulkUploadDisabled = moduleKey !== "vouchers" && action === "bulkUpload";
+                        const bulkUploadDisabled =
+                          !["vouchers", "contributions", "vendors", "materials"].includes(moduleKey) &&
+                          action === "bulkUpload";
                         const bulkDeleteDisabled =
-                          !["vouchers", "vendors", "materials"].includes(moduleKey) && action === "bulkDelete";
+                          !["vouchers", "vendors", "materials", "contributions"].includes(moduleKey) &&
+                          action === "bulkDelete";
                         const disabled = bulkUploadDisabled || bulkDeleteDisabled;
                         const title = bulkUploadDisabled
-                          ? "Bulk upload applies only to vouchers"
+                          ? "Bulk upload applies to vouchers, vendors, materials, and contribution management"
                           : bulkDeleteDisabled
-                            ? "Bulk delete applies to vouchers, vendors, and materials"
+                            ? "Bulk delete applies to vouchers, vendors, materials, and contribution management"
                             : undefined;
                         return (
                           <td key={`${moduleKey}-${action}`}>
