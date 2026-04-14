@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_URL, apiFetch, getToken, setToken } from "../lib/api.js";
 import { getWorkMode, setWorkMode } from "../lib/workMode.js";
 
@@ -104,29 +104,36 @@ export default function Nav() {
     setWorkModeState(getWorkMode());
   }, [pathname]);
 
-  useEffect(() => {
+  const loadUserProfile = useCallback(async () => {
     if (!isAuthenticated) {
       setUserProfile(null);
       return;
     }
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await apiFetch("/auth/me");
-        if (!cancelled && data?.user) {
-          setUserProfile({
-            name: typeof data.user.name === "string" ? data.user.name : "",
-            email: typeof data.user.email === "string" ? data.user.email : ""
-          });
-        }
-      } catch {
-        if (!cancelled) setUserProfile({ name: "", email: "" });
+    try {
+      const data = await apiFetch("/auth/me");
+      if (data?.user) {
+        setUserProfile({
+          name: typeof data.user.name === "string" ? data.user.name : "",
+          email: typeof data.user.email === "string" ? data.user.email : ""
+        });
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      setUserProfile({ name: "", email: "" });
+    }
   }, [isAuthenticated]);
+
+  useEffect(() => {
+    void loadUserProfile();
+  }, [loadUserProfile]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    function onUserUpdated() {
+      void loadUserProfile();
+    }
+    window.addEventListener("vems-user-updated", onUserUpdated);
+    return () => window.removeEventListener("vems-user-updated", onUserUpdated);
+  }, [loadUserProfile]);
 
   useEffect(() => {
     setMobileNavOpen(false);
@@ -194,6 +201,8 @@ export default function Nav() {
         ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/room-ops", label: "Room ops" }]
         : workMode === "tunnel"
           ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" }]
+          : workMode === "plant"
+            ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/plant-operations", label: "Plant operations" }]
           : workMode === "sales"
             ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/sales", label: "Sales" }]
             : workMode === "contributions"
@@ -204,8 +213,9 @@ export default function Nav() {
                 { href: "/sales", label: "Sales" },
                 { href: "/contributions", label: "Contributions" },
                 { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" },
+                { href: "/plant-operations", label: "Plant operations" },
                 { href: "/admin", label: "Admin" },
-                { href: "/admin/rooms", label: "Rooms" },
+                { href: "/admin/rooms", label: "Resources" },
                 { href: "/admin/stages", label: "Stages" },
                 { href: "/admin/tunnel-bunker", label: "Tunnel settings" }
               ]
@@ -232,6 +242,14 @@ export default function Nav() {
           <div className="nav-user-dropdown-email">{userProfile?.email || "—"}</div>
         </div>
         <div className="nav-user-dropdown-sep" aria-hidden />
+        <Link
+          href="/profile"
+          role="menuitem"
+          className="nav-user-dropdown-item"
+          onClick={() => setUserMenuOpen(false)}
+        >
+          Profile
+        </Link>
         <button
           type="button"
           role="menuitem"

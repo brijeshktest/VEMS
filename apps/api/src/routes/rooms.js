@@ -1,5 +1,5 @@
 import express from "express";
-import GrowingRoom from "../models/GrowingRoom.js";
+import GrowingRoom, { PLANT_RESOURCE_TYPES } from "../models/GrowingRoom.js";
 import Stage from "../models/Stage.js";
 import { requireAuth, requireAdmin, requirePermission, resolvePermissions } from "../middleware/auth.js";
 import { requireFields, ensurePositive } from "../utils/validators.js";
@@ -8,20 +8,40 @@ import { logChange } from "../utils/changeLog.js";
 const router = express.Router();
 
 const SEED_ROOMS = [
-  { name: "Orion", maxBagCapacity: 0, powerBackupSource: "" },
-  { name: "Nova", maxBagCapacity: 0, powerBackupSource: "" },
-  { name: "Cosmos", maxBagCapacity: 0, powerBackupSource: "" },
-  { name: "Nebula", maxBagCapacity: 0, powerBackupSource: "" },
-  { name: "Pulsar", maxBagCapacity: 0, powerBackupSource: "" },
-  { name: "Atlas", maxBagCapacity: 0, powerBackupSource: "" },
-  { name: "Apollo", maxBagCapacity: 0, powerBackupSource: "" },
-  { name: "Zenith", maxBagCapacity: 0, powerBackupSource: "" }
+  { name: "Orion", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
+  { name: "Nova", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
+  { name: "Cosmos", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
+  { name: "Nebula", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
+  { name: "Pulsar", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
+  { name: "Atlas", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
+  { name: "Apollo", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
+  { name: "Zenith", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" }
 ];
+
+function parseOptionalCoordinate(value, fieldName) {
+  if (value === undefined || value === null || value === "") {
+    return { ok: true, value: undefined };
+  }
+  const numberValue = Number(value);
+  if (Number.isNaN(numberValue)) {
+    return { ok: false, message: `${fieldName} must be a number when provided` };
+  }
+  return { ok: true, value: numberValue };
+}
 
 export async function ensureRoomsSeeded() {
   const count = await GrowingRoom.countDocuments();
-  if (count > 0) return;
-  await GrowingRoom.insertMany(SEED_ROOMS);
+  if (count === 0) {
+    await GrowingRoom.insertMany(SEED_ROOMS);
+  }
+  await GrowingRoom.updateMany(
+    { $or: [{ capacityTons: { $exists: false } }, { capacityTons: null }] },
+    [{ $set: { capacityTons: "$maxBagCapacity" } }]
+  );
+  await GrowingRoom.updateMany(
+    { resourceType: { $exists: false } },
+    { $set: { resourceType: "Room", locationInPlant: "" } }
+  );
 }
 
 router.get("/", requireAuth, requireAdmin, async (req, res) => {
@@ -88,19 +108,58 @@ router.get("/status", requireAuth, async (req, res) => {
 });
 
 router.post("/", requireAuth, requireAdmin, async (req, res) => {
-  const missing = requireFields(req.body, ["name", "maxBagCapacity"]);
-  if (missing.length) {
-    return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
+  const {
+    name,
+    resourceType,
+    capacityTons,
+    maxBagCapacity,
+    powerBackupSource,
+    locationInPlant,
+    coordinateX,
+    coordinateY
+  } = req.body || {};
+  const missingName = requireFields({ name }, ["name"]);
+  if (missingName.length) {
+    return res.status(400).json({ error: `Missing fields: ${missingName.join(", ")}` });
   }
-  const maxBagCapacity = ensurePositive(req.body.maxBagCapacity, "maxBagCapacity");
-  if (!maxBagCapacity.ok) {
-    return res.status(400).json({ error: maxBagCapacity.message });
+  const tonsSource =
+    capacityTons !== undefined && capacityTons !== "" ? capacityTons : maxBagCapacity;
+  if (tonsSource === undefined || tonsSource === "") {
+    return res.status(400).json({ error: "Missing fields: capacityTons or maxBagCapacity" });
   }
-  const room = await GrowingRoom.create({
-    name: req.body.name,
-    maxBagCapacity: maxBagCapacity.value,
-    powerBackupSource: req.body.powerBackupSource || ""
-  });
+  const capacityCheck = ensurePositive(tonsSource, "capacityTons");
+  if (!capacityCheck.ok) {
+    return res.status(400).json({ error: capacityCheck.message });
+  }
+  const typeStr = resourceType ? String(resourceType).trim() : "Room";
+  if (!PLANT_RESOURCE_TYPES.includes(typeStr)) {
+    return res.status(400).json({
+      error: `resourceType must be one of: ${PLANT_RESOURCE_TYPES.join(", ")}`
+    });
+  }
+  const xCheck = parseOptionalCoordinate(coordinateX, "coordinateX");
+  if (!xCheck.ok) {
+    return res.status(400).json({ error: xCheck.message });
+  }
+  const yCheck = parseOptionalCoordinate(coordinateY, "coordinateY");
+  if (!yCheck.ok) {
+    return res.status(400).json({ error: yCheck.message });
+  }
+  const createPayload = {
+    name: String(name).trim(),
+    resourceType: typeStr,
+    capacityTons: capacityCheck.value,
+    maxBagCapacity: capacityCheck.value,
+    locationInPlant: locationInPlant ? String(locationInPlant).trim() : "",
+    powerBackupSource: powerBackupSource ? String(powerBackupSource).trim() : ""
+  };
+  if (xCheck.value !== undefined) {
+    createPayload.coordinateX = xCheck.value;
+  }
+  if (yCheck.value !== undefined) {
+    createPayload.coordinateY = yCheck.value;
+  }
+  const room = await GrowingRoom.create(createPayload);
   await logChange({
     entityType: "room",
     entityId: room._id,
@@ -118,15 +177,59 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
     return res.status(404).json({ error: "Room not found" });
   }
   const before = room.toObject();
-  if (req.body.maxBagCapacity !== undefined) {
-    const maxBagCapacity = ensurePositive(req.body.maxBagCapacity, "maxBagCapacity");
-    if (!maxBagCapacity.ok) {
-      return res.status(400).json({ error: maxBagCapacity.message });
+  const body = req.body || {};
+  const tonsSource =
+    body.capacityTons !== undefined && body.capacityTons !== ""
+      ? body.capacityTons
+      : body.maxBagCapacity;
+  if (tonsSource !== undefined) {
+    const capacityCheck = ensurePositive(tonsSource, "capacityTons");
+    if (!capacityCheck.ok) {
+      return res.status(400).json({ error: capacityCheck.message });
     }
-    room.maxBagCapacity = maxBagCapacity.value;
+    room.capacityTons = capacityCheck.value;
+    room.maxBagCapacity = capacityCheck.value;
   }
-  room.name = req.body.name ?? room.name;
-  room.powerBackupSource = req.body.powerBackupSource ?? room.powerBackupSource;
+  if (body.name !== undefined) {
+    room.name = String(body.name).trim();
+  }
+  if (body.resourceType !== undefined) {
+    const typeStr = String(body.resourceType).trim();
+    if (!PLANT_RESOURCE_TYPES.includes(typeStr)) {
+      return res.status(400).json({
+        error: `resourceType must be one of: ${PLANT_RESOURCE_TYPES.join(", ")}`
+      });
+    }
+    room.resourceType = typeStr;
+  }
+  if (body.powerBackupSource !== undefined) {
+    room.powerBackupSource = String(body.powerBackupSource).trim();
+  }
+  if (body.locationInPlant !== undefined) {
+    room.locationInPlant = String(body.locationInPlant).trim();
+  }
+  if ("coordinateX" in body) {
+    const xCheck = parseOptionalCoordinate(body.coordinateX, "coordinateX");
+    if (!xCheck.ok) {
+      return res.status(400).json({ error: xCheck.message });
+    }
+    if (xCheck.value === undefined) {
+      room.set("coordinateX", undefined);
+    } else {
+      room.coordinateX = xCheck.value;
+    }
+  }
+  if ("coordinateY" in body) {
+    const yCheck = parseOptionalCoordinate(body.coordinateY, "coordinateY");
+    if (!yCheck.ok) {
+      return res.status(400).json({ error: yCheck.message });
+    }
+    if (yCheck.value === undefined) {
+      room.set("coordinateY", undefined);
+    } else {
+      room.coordinateY = yCheck.value;
+    }
+  }
   await room.save();
   await logChange({
     entityType: "room",

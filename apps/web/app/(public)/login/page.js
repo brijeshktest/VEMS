@@ -51,6 +51,9 @@ function IconEye({ className }) {
   );
 }
 
+const LS_REMEMBER = "vems_remember_login";
+const LS_SAVED_EMAIL = "vems_login_saved_email";
+
 function IconEyeOff({ className }) {
   return (
     <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -73,12 +76,28 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [seedAvailable, setSeedAvailable] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberPassword, setRememberPassword] = useState(false);
 
   useEffect(() => {
     if (getToken()) {
       router.replace("/work-mode");
     }
   }, [router]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      if (localStorage.getItem(LS_REMEMBER) === "1") {
+        const saved = localStorage.getItem(LS_SAVED_EMAIL);
+        if (saved) {
+          setRememberPassword(true);
+          setForm((f) => ({ ...f, email: saved }));
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     async function checkSeed() {
@@ -99,9 +118,24 @@ export default function LoginPage() {
     try {
       const data = await apiFetch("/auth/login", {
         method: "POST",
-        body: JSON.stringify(form)
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          rememberPassword
+        })
       });
       setToken(data.token);
+      try {
+        if (rememberPassword) {
+          localStorage.setItem(LS_REMEMBER, "1");
+          localStorage.setItem(LS_SAVED_EMAIL, String(form.email || "").trim());
+        } else {
+          localStorage.removeItem(LS_REMEMBER);
+          localStorage.removeItem(LS_SAVED_EMAIL);
+        }
+      } catch {
+        /* ignore */
+      }
       setWorkMode("");
       router.push("/work-mode");
     } catch (err) {
@@ -227,6 +261,16 @@ export default function LoginPage() {
                   {showPassword ? <IconEyeOff /> : <IconEye />}
                 </button>
               </div>
+            </div>
+            <div className="login-page__remember">
+              <label className="login-page__remember-label">
+                <input
+                  type="checkbox"
+                  checked={rememberPassword}
+                  onChange={(e) => setRememberPassword(e.target.checked)}
+                />
+                <span>Remember password</span>
+              </label>
             </div>
             <button type="submit" className="btn mt-5 w-full">
               Continue

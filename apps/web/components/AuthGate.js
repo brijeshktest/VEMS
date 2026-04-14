@@ -22,31 +22,49 @@ export default function AuthGate({ children }) {
         router.replace("/work-mode");
         return;
       }
-      const expensePaths = ["/dashboard", "/vendors", "/materials", "/vouchers", "/reports"];
+      const expensePaths = ["/dashboard", "/vendors", "/materials", "/vouchers", "/reports", "/profile"];
       if (mode === "expense" && !expensePaths.includes(pathname)) {
         router.replace("/dashboard");
         return;
       }
-      if (mode === "room" && pathname !== "/dashboard" && pathname !== "/room-ops") {
+      if (mode === "room" && pathname !== "/dashboard" && pathname !== "/room-ops" && pathname !== "/profile") {
         router.replace("/dashboard");
         return;
       }
-      if (mode === "tunnel" && pathname !== "/dashboard" && pathname !== "/tunnel-bunker-ops") {
+      if (mode === "tunnel" && pathname !== "/dashboard" && pathname !== "/tunnel-bunker-ops" && pathname !== "/profile") {
         router.replace("/dashboard");
         return;
       }
-      if (mode === "sales" && pathname !== "/dashboard" && pathname !== "/sales") {
+      if (
+        mode === "plant" &&
+        pathname !== "/dashboard" &&
+        pathname !== "/profile" &&
+        pathname !== "/plant-operations" &&
+        !pathname.startsWith("/plant-operations/")
+      ) {
         router.replace("/dashboard");
         return;
       }
-      if (mode === "contributions" && pathname !== "/dashboard" && pathname !== "/contributions") {
+      if (mode === "sales" && pathname !== "/dashboard" && pathname !== "/sales" && pathname !== "/profile") {
+        router.replace("/dashboard");
+        return;
+      }
+      if (
+        mode === "contributions" &&
+        pathname !== "/dashboard" &&
+        pathname !== "/contributions" &&
+        pathname !== "/profile"
+      ) {
         router.replace("/dashboard");
         return;
       }
       if (
         mode === "admin" &&
         pathname !== "/dashboard" &&
+        pathname !== "/profile" &&
         pathname !== "/tunnel-bunker-ops" &&
+        pathname !== "/plant-operations" &&
+        !pathname.startsWith("/plant-operations/") &&
         pathname !== "/sales" &&
         pathname !== "/contributions" &&
         !(pathname === "/admin" || pathname.startsWith("/admin/"))

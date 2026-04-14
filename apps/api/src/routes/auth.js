@@ -50,7 +50,7 @@ router.get("/seed-status", async (req, res) => {
 });
 
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
+  const { email, password, rememberPassword, rememberMe } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: "email and password are required" });
   }
@@ -67,10 +67,11 @@ router.post("/login", async (req, res) => {
     return res.status(401).json({ error: "Invalid credentials" });
   }
   const roleIds = (user.roleIds || []).map((id) => id.toString());
+  const remember = Boolean(rememberPassword || rememberMe);
   const token = jwt.sign(
     { id: user._id.toString(), role: user.role, roleIds, email: user.email, name: user.name },
     process.env.JWT_SECRET || "change-me",
-    { expiresIn: "8h" }
+    { expiresIn: remember ? "30d" : "8h" }
   );
   return res.json({ token, role: user.role, roleIds, name: user.name });
 });
@@ -81,6 +82,68 @@ router.get("/me", requireAuth, async (req, res) => {
     return res.status(404).json({ error: "User not found" });
   }
   return res.json({
+    user: {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      roleIds: user.roleIds || []
+    }
+  });
+});
+
+router.patch("/profile", requireAuth, async (req, res) => {
+  const body = req.body || {};
+  if ("email" in body) {
+    return res.status(400).json({ error: "Email cannot be changed." });
+  }
+  const user = await User.findById(req.user.id);
+  if (!user) {
+    return res.status(404).json({ error: "User not found" });
+  }
+
+  let changed = false;
+  if (body.name !== undefined && body.name !== null) {
+    const n = String(body.name).trim();
+    if (!n) {
+      return res.status(400).json({ error: "Name cannot be empty" });
+    }
+    if (n !== user.name) {
+      user.name = n;
+      changed = true;
+    }
+  }
+
+  const newPwd = body.newPassword != null ? String(body.newPassword).trim() : "";
+  if (newPwd.length > 0) {
+    if (newPwd.length < 8) {
+      return res.status(400).json({ error: "New password must be at least 8 characters" });
+    }
+    const current = body.currentPassword != null ? String(body.currentPassword) : "";
+    if (!current) {
+      return res.status(400).json({ error: "Current password is required to set a new password" });
+    }
+    const ok = await bcrypt.compare(current, user.passwordHash);
+    if (!ok) {
+      return res.status(400).json({ error: "Current password is incorrect" });
+    }
+    user.passwordHash = await bcrypt.hash(newPwd, 10);
+    changed = true;
+  }
+
+  if (!changed) {
+    return res.status(400).json({ error: "No changes to save" });
+  }
+
+  await user.save();
+  const roleIds = (user.roleIds || []).map((id) => id.toString());
+  const token = jwt.sign(
+    { id: user._id.toString(), role: user.role, roleIds, email: user.email, name: user.name },
+    process.env.JWT_SECRET || "change-me",
+    { expiresIn: "8h" }
+  );
+  return res.json({
+    token,
     user: {
       id: user._id,
       name: user.name,

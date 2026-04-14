@@ -9,6 +9,12 @@ import { ExcelDownloadIconButton } from "../../../components/EditDeleteIconButto
 import { getWorkMode } from "../../../lib/workMode.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
 import { downloadPerPersonContributionSummaryXlsx } from "../../../lib/exportContributionsExcel.js";
+import {
+  compostStagePillClass,
+  compostStageDisplayLabel,
+  compostEstimatedReadyIso,
+  formatShortDate
+} from "../../../lib/compostUi.js";
 
 function paymentStatusClass(status) {
   if (status === "Paid") return "status-pill status-pill--paid";
@@ -101,6 +107,8 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [salesSummary, setSalesSummary] = useState(null);
   const [contributionSummary, setContributionSummary] = useState(null);
+  const [compostBatches, setCompostBatches] = useState([]);
+  const [canPlantOps, setCanPlantOps] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -118,6 +126,12 @@ export default function DashboardPage() {
           permissionsData.permissions?.roomStages?.view;
         const admin = permissionsData.permissions === "all";
         setIsAdmin(admin);
+        const canPlant =
+          permissionsData.permissions === "all" ||
+          permissionsData.permissions?.plantOperations?.view ||
+          permissionsData.permissions?.plantOperations?.edit ||
+          permissionsData.permissions?.plantOperations?.create;
+        setCanPlantOps(canPlant);
         if (selectedMode === "admin" && !admin) {
           router.replace("/work-mode");
           return;
@@ -140,6 +154,13 @@ export default function DashboardPage() {
             permissionsData.permissions?.contributions?.view ||
             permissionsData.permissions?.contributions?.edit;
           if (!canContr) {
+            router.replace("/work-mode");
+            return;
+          }
+        }
+
+        if (selectedMode === "plant") {
+          if (!canPlant) {
             router.replace("/work-mode");
             return;
           }
@@ -210,6 +231,17 @@ export default function DashboardPage() {
             setContributionSummary(null);
           }
         }
+
+        if (selectedMode === "plant" || (selectedMode === "admin" && canPlant)) {
+          try {
+            const cb = await apiFetch("/plant-ops/compost-batches");
+            setCompostBatches(Array.isArray(cb) ? cb : []);
+          } catch {
+            setCompostBatches([]);
+          }
+        } else {
+          setCompostBatches([]);
+        }
       } catch (err) {
         setError(err.message);
       }
@@ -267,7 +299,9 @@ export default function DashboardPage() {
             ? "Room operations summary and stage movement status."
             : workMode === "tunnel"
               ? "Tunnel and bunker compost movement alerts and quick actions."
-              : workMode === "admin"
+              : workMode === "plant"
+                ? "Compost batch lifecycle status, progress, and quick access to plant operations."
+                : workMode === "admin"
               ? "Administrative overview with operations and financial visibility."
               : workMode === "sales"
                 ? "Mushroom and compost sales totals and quick access to records."
@@ -278,6 +312,93 @@ export default function DashboardPage() {
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
+
+      {(workMode === "plant" || (workMode === "admin" && canPlantOps)) ? (
+        <div className="card card-soft">
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 12 }}>
+            <h3 className="panel-title" style={{ margin: 0 }}>
+              Compost lifecycle batches
+            </h3>
+            <Link href="/plant-operations" className="btn btn-secondary">
+              Open plant operations
+            </Link>
+          </div>
+          <p className="page-lead">
+            Fixed timeline: wetting (3d) → filling (1d) → three turns (2d each) → pasteurisation (10d) → compost ready. Status updates
+            from the batch start date unless manually overridden.
+          </p>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Batch</th>
+                  <th style={{ minWidth: 200 }}>Start · est. compost ready</th>
+                  <th>Status</th>
+                  <th>Progress</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {compostBatches.length === 0 ? (
+                  <tr>
+                    <td colSpan={5}>
+                      <span className="cell-empty">No batches yet. Create one in Plant operations.</span>
+                    </td>
+                  </tr>
+                ) : (
+                  compostBatches.map((b) => {
+                    const estReadyIso = compostEstimatedReadyIso(b);
+                    return (
+                    <tr key={b._id}>
+                      <td>
+                        <strong>{b.batchName}</strong>
+                        {b.isManualOverride ? (
+                          <span className="tag" style={{ marginLeft: 8 }}>
+                            Manual
+                          </span>
+                        ) : null}
+                      </td>
+                      <td>
+                        <div className="dashboard-compost-timeline-dates">
+                          <div>
+                            <span className="dashboard-compost-date-label">Started</span>{" "}
+                            <span className="dashboard-compost-date-value">{formatShortDate(b.startDate)}</span>
+                          </div>
+                          <div>
+                            <span className="dashboard-compost-date-label">Est. ready</span>{" "}
+                            <span className="dashboard-compost-date-value">
+                              {estReadyIso ? formatShortDate(estReadyIso) : "—"}
+                            </span>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span className={compostStagePillClass(b.effectiveStatus)}>
+                          {compostStageDisplayLabel(b.effectiveStatus)}
+                        </span>
+                      </td>
+                      <td style={{ minWidth: 160 }}>
+                        <div className="compost-progress">
+                          <div
+                            className="compost-progress__fill"
+                            style={{ width: `${Math.round((b.progress || 0) * 100)}%` }}
+                          />
+                        </div>
+                      </td>
+                      <td>
+                        <Link className="btn btn-secondary" href={`/plant-operations/${b._id}`}>
+                          Detail
+                        </Link>
+                      </td>
+                    </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ) : null}
 
       {(workMode === "room" || workMode === "admin" || workMode === "tunnel") && tunnelPrompts.length ? (
         <div className="card card-soft">

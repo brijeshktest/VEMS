@@ -11,6 +11,7 @@ export default function WorkModePage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [allowRoomOps, setAllowRoomOps] = useState(false);
   const [allowTunnelOps, setAllowTunnelOps] = useState(false);
+  const [allowPlantOps, setAllowPlantOps] = useState(false);
   const [allowSales, setAllowSales] = useState(false);
   const [allowContributions, setAllowContributions] = useState(false);
   const [error, setError] = useState("");
@@ -24,6 +25,7 @@ export default function WorkModePage() {
         if (admin || permData.permissions === "all") {
           setAllowRoomOps(true);
           setAllowTunnelOps(true);
+          setAllowPlantOps(true);
           setAllowSales(true);
           setAllowContributions(true);
           return;
@@ -33,12 +35,18 @@ export default function WorkModePage() {
           permData.permissions?.roomActivities?.view || permData.permissions?.roomActivities?.edit
         );
         const canTunnelOps = Boolean(permData.permissions?.tunnelBunkerOps?.view || permData.permissions?.tunnelBunkerOps?.edit);
+        const canPlantOps = Boolean(
+          permData.permissions?.plantOperations?.view ||
+            permData.permissions?.plantOperations?.edit ||
+            permData.permissions?.plantOperations?.create
+        );
         const canSales = Boolean(permData.permissions?.sales?.view || permData.permissions?.sales?.edit);
         const canContributions = Boolean(
           permData.permissions?.contributions?.view || permData.permissions?.contributions?.edit
         );
         setAllowRoomOps(canRoomStages || canRoomActivities);
         setAllowTunnelOps(canTunnelOps);
+        setAllowPlantOps(canPlantOps);
         setAllowSales(canSales);
         setAllowContributions(canContributions);
       } catch (err) {
@@ -63,7 +71,7 @@ export default function WorkModePage() {
 
       {error ? <div className="alert alert-error">{error}</div> : null}
 
-      <div className="grid grid-3" style={{ alignItems: "stretch" }}>
+      <div className="grid grid-3" style={{ alignItems: "stretch", gap: "16px" }}>
         <button
           className="card stat-card mode-card mode-card--expense"
           type="button"
@@ -107,6 +115,15 @@ export default function WorkModePage() {
         >
           <span className="stat-value" style={{ fontSize: 22 }}>Tunnel &amp; Bunker Ops</span>
           <span className="stat-hint">Bunkers, one tunnel per batch, then growing rooms; movement alerts</span>
+        </button>
+        <button
+          className="card stat-card mode-card mode-card--plant"
+          type="button"
+          disabled={!allowPlantOps}
+          onClick={() => chooseMode("plant")}
+        >
+          <span className="stat-value" style={{ fontSize: 22 }}>Plant operations</span>
+          <span className="stat-hint">Compost lifecycle, lagoon/bunker/tunnel allocation, raw materials</span>
         </button>
         {isAdmin ? (
           <button className="card stat-card mode-card mode-card--admin" type="button" onClick={() => chooseMode("admin")}>

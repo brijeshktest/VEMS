@@ -18,6 +18,7 @@ const modules = [
   "roomStages",
   "roomActivities",
   "tunnelBunkerOps",
+  "plantOperations",
   "sales",
   "contributions",
   "roles",
@@ -34,6 +35,7 @@ const MODULE_LABELS = {
   roomStages: "Room stages",
   roomActivities: "Room activities",
   tunnelBunkerOps: "Tunnel & bunker ops",
+  plantOperations: "Plant operations (compost lifecycle)",
   sales: "Sales management",
   contributions: "Contribution management",
   roles: "Roles",
@@ -421,11 +423,11 @@ export default function AdminPage() {
       <div className="card">
         <h3 className="panel-title">Growing operations</h3>
         <p className="page-lead" style={{ marginBottom: 16 }}>
-          Rooms and stages are managed in dedicated screens for clearer workflows.
+          Plant resources and stages are managed in dedicated screens for clearer workflows.
         </p>
         <div className="grid grid-2">
           <Link className="btn btn-secondary" href="/admin/rooms">
-            Growing rooms
+            Plant resources
           </Link>
           <Link className="btn btn-secondary" href="/admin/stages">
             Room stages
