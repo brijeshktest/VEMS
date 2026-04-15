@@ -94,3 +94,36 @@ export function compostCycleDayDisplay(batch, now = new Date()) {
   const day = Math.min(span, Math.floor(elapsedDays) + 1);
   return `Day ${day} of ${span}`;
 }
+
+/**
+ * True when the batch is still on a workflow stage but the standard calendar window for that stage
+ * (from batch start + planned days) has already ended — user should record the next stage movement.
+ * @param {{ operationalStageKey?: string, timeline?: { stages?: Array<{ key: string, endsAt?: string | null }> } }} batch
+ * @param {Date} [now]
+ */
+export function compostStageAdvanceReminder(batch, now = new Date()) {
+  const op = batch?.operationalStageKey;
+  if (!op || op === "done") {
+    return { due: false, endsAt: null, endsLabel: "", stageKey: op || "" };
+  }
+  const stages = batch?.timeline?.stages;
+  if (!Array.isArray(stages)) {
+    return { due: false, endsAt: null, endsLabel: "", stageKey: op };
+  }
+  const row = stages.find((s) => s.key === op);
+  if (!row?.endsAt) {
+    return { due: false, endsAt: null, endsLabel: "", stageKey: op };
+  }
+  const end = new Date(row.endsAt);
+  if (Number.isNaN(end.getTime())) {
+    return { due: false, endsAt: null, endsLabel: "", stageKey: op };
+  }
+  const t = now instanceof Date ? now : new Date(now);
+  const due = t.getTime() >= end.getTime();
+  return {
+    due,
+    endsAt: row.endsAt,
+    endsLabel: formatShortDate(row.endsAt),
+    stageKey: op
+  };
+}
