@@ -187,31 +187,130 @@ function formatAxisRupeeShort(n) {
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** Pastel wheel for raw-material pie slices */
+const RAW_MATERIAL_PIE_COLORS = [
+  "#b8e0d4",
+  "#f6cac9",
+  "#c9daf8",
+  "#fff3bf",
+  "#e2d5f6",
+  "#fcd5ce",
+  "#d0ebff",
+  "#ffecb8",
+  "#c4f1f9",
+  "#ffc9e8",
+  "#d5f5e3",
+  "#fde2e4"
+];
+
+/** Distinct pastel bars per month (cohesive expense palette) */
+const MONTH_BAR_COLORS = [
+  "#a5b4fc",
+  "#fbcfe8",
+  "#fde68a",
+  "#bbf7d0",
+  "#bae6fd",
+  "#e9d5ff",
+  "#fecdd3",
+  "#a5f3fc",
+  "#ddd6fe",
+  "#fed7aa",
+  "#d9f99d",
+  "#99f6e4"
+];
+
+function materialsByIdMap(catalog) {
+  const m = new Map();
+  for (const mat of catalog || []) {
+    if (mat?._id) m.set(String(mat._id), mat);
+  }
+  return m;
+}
+
+function formatQuantityWithUnit(quantity, unit) {
+  const n = Number(quantity);
+  if (!Number.isFinite(n)) return "—";
+  const u = String(unit || "").trim();
+  const s = Number.isInteger(n)
+    ? String(n)
+    : n.toLocaleString("en-IN", { maximumFractionDigits: 3, minimumFractionDigits: 0 });
+  return u ? `${s} ${u}` : s;
+}
+
+/** Allocates voucher paid amount to lines by pre-tax share; only category Raw Material. Sums line quantities per material. */
+function rawMaterialLineSpendSlices(vouchers, materialsCatalog, year, monthIndex) {
+  const byId = materialsByIdMap(materialsCatalog);
+  /** @type {Map<string, { label: string, value: number, quantity: number, unit: string }>} */
+  const agg = new Map();
+  for (const v of vouchers) {
+    const d = voucherPurchaseDate(v);
+    if (!d || d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
+    const subTotal = Number(v.subTotal) || 0;
+    const paid = Number(v?.paidAmount);
+    const paidAmt = Number.isFinite(paid) ? paid : Number(v?.finalAmount) || 0;
+    if (subTotal <= 0 || paidAmt <= 0) continue;
+    for (const item of v.items || []) {
+      const mid = item.materialId?._id ?? item.materialId;
+      const midStr = String(mid);
+      const mat = byId.get(midStr);
+      if (!mat || String(mat.category || "").trim() !== "Raw Material") continue;
+      const linePreTax = (Number(item.quantity) || 0) * (Number(item.pricePerUnit) || 0);
+      const alloc = (linePreTax / subTotal) * paidAmt;
+      if (alloc <= 0) continue;
+      const lineQty = Number(item.quantity) || 0;
+      const name = (mat.name || "Unknown").trim() || "Unknown";
+      const unit = String(mat.unit || "").trim();
+      const cur = agg.get(midStr) || { label: name, value: 0, quantity: 0, unit };
+      cur.label = name;
+      cur.value += alloc;
+      cur.quantity += lineQty;
+      if (unit) cur.unit = unit;
+      agg.set(midStr, cur);
+    }
+  }
+  return [...agg.entries()]
+    .map(([materialId, row]) => ({ materialId, ...row }))
+    .filter((x) => x.value > 0)
+    .sort((a, b) => b.value - a.value);
+}
+
+function pieSlicePath(cx, cy, r, startAngleDeg, endAngleDeg) {
+  const rad = Math.PI / 180;
+  const a1 = (startAngleDeg - 90) * rad;
+  const a2 = (endAngleDeg - 90) * rad;
+  const x1 = cx + r * Math.cos(a1);
+  const y1 = cy + r * Math.sin(a1);
+  const x2 = cx + r * Math.cos(a2);
+  const y2 = cy + r * Math.sin(a2);
+  const largeArc = endAngleDeg - startAngleDeg > 180 ? 1 : 0;
+  return `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
+}
+
 function ExpenseMonthlyChart({ year, monthlyTotals, onYearChange }) {
   const maxVal = Math.max(1, ...monthlyTotals);
-  const chartW = 640;
-  const chartH = 220;
-  const padL = 56;
-  const padR = 20;
-  const padB = 40;
-  const padT = 12;
+  const chartW = 520;
+  const chartH = 210;
+  const padL = 52;
+  const padR = 16;
+  const padB = 38;
+  const padT = 14;
   const innerW = chartW - padL - padR;
   const innerH = chartH - padT - padB;
-  const barGap = 6;
+  const barGap = 5;
   const barW = (innerW - barGap * 11) / 12;
   const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => maxVal * t);
 
-  const cy = new Date().getFullYear();
+  const currentChartYear = new Date().getFullYear();
   const yearOptions = [];
-  for (let y = cy + 1; y >= cy - 8; y -= 1) yearOptions.push(y);
+  for (let y = currentChartYear + 1; y >= currentChartYear - 8; y -= 1) yearOptions.push(y);
 
   return (
-    <div className="dashboard-voucher-chart-card">
+    <div className="dashboard-voucher-chart-card dashboard-voucher-chart-card--compact">
       <div className="dashboard-voucher-chart-card__head">
         <div>
           <h3 className="dashboard-voucher-chart-card__title">Voucher spend by month</h3>
           <p className="dashboard-voucher-chart-card__subtitle">
-            Total paid amount (same basis as vouchers) grouped by purchase date — local calendar.
+            Paid amount by purchase month (local dates).
           </p>
         </div>
         <label className="dashboard-voucher-chart-card__year">
@@ -233,12 +332,6 @@ function ExpenseMonthlyChart({ year, monthlyTotals, onYearChange }) {
             role="img"
             aria-label={`Voucher spend by month for ${year}`}
           >
-            <defs>
-              <linearGradient id="expenseBarGrad" x1="0" y1="1" x2="0" y2="0">
-                <stop offset="0%" stopColor="rgba(114, 76, 31, 0.35)" />
-                <stop offset="100%" stopColor="var(--brand-green)" />
-              </linearGradient>
-            </defs>
             {ticks.map((tv, i) => {
               const y = padT + innerH - (tv / maxVal) * innerH;
               return (
@@ -248,7 +341,7 @@ function ExpenseMonthlyChart({ year, monthlyTotals, onYearChange }) {
                     y1={y}
                     x2={chartW - padR}
                     y2={y}
-                    stroke="var(--border)"
+                    stroke="rgba(148, 163, 184, 0.35)"
                     strokeDasharray="4 4"
                     strokeWidth="1"
                   />
@@ -269,8 +362,10 @@ function ExpenseMonthlyChart({ year, monthlyTotals, onYearChange }) {
                     y={y}
                     width={barW}
                     height={Math.max(h, 0)}
-                    rx="4"
-                    fill="url(#expenseBarGrad)"
+                    rx="5"
+                    fill={MONTH_BAR_COLORS[mi % MONTH_BAR_COLORS.length]}
+                    stroke="rgba(255, 255, 255, 0.55)"
+                    strokeWidth="1"
                     className="dashboard-voucher-chart__bar"
                   >
                     <title>{`${label} ${year}: ${formatIndianRupee(monthlyTotals[mi])}`}</title>
@@ -291,6 +386,146 @@ function ExpenseMonthlyChart({ year, monthlyTotals, onYearChange }) {
             </text>
           </svg>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function RawMaterialSpendPie({ vouchers, materialsCatalog, year, monthIndex, onYearChange, onMonthChange }) {
+  const slices = useMemo(
+    () => rawMaterialLineSpendSlices(vouchers, materialsCatalog, year, monthIndex),
+    [vouchers, materialsCatalog, year, monthIndex]
+  );
+  const total = useMemo(() => slices.reduce((s, x) => s + x.value, 0), [slices]);
+  const currentY = new Date().getFullYear();
+  const yearOptions = [];
+  for (let y = currentY + 1; y >= currentY - 8; y -= 1) yearOptions.push(y);
+
+  /** Sized to align visually with the bar chart plot (~210px) in the paired column. */
+  const pieView = { w: 230, h: 230, cx: 115, cy: 115, r: 96 };
+  const { cx, cy: cySvg, r } = pieView;
+  let angle = 0;
+  const paths = [];
+  for (let i = 0; i < slices.length; i += 1) {
+    const frac = total > 0 ? slices[i].value / total : 0;
+    const span = frac * 360;
+    const start = angle;
+    const end = i === slices.length - 1 ? 360 : angle + span;
+    angle = end;
+    const color = RAW_MATERIAL_PIE_COLORS[i % RAW_MATERIAL_PIE_COLORS.length];
+    const qtyStr = formatQuantityWithUnit(slices[i].quantity, slices[i].unit);
+    const title = `${slices[i].label}: ${formatIndianRupee(slices[i].value)} · ${qtyStr}`;
+    if (slices.length === 1 && span >= 359.99) {
+      paths.push({ key: slices[i].label, full: true, color, title });
+    } else {
+      paths.push({
+        key: slices[i].label,
+        d: pieSlicePath(cx, cySvg, r, start, end),
+        color,
+        title
+      });
+    }
+  }
+
+  return (
+    <div className="dashboard-raw-mat-pie-card dashboard-voucher-chart-card--compact">
+      <div className="dashboard-voucher-chart-card__head dashboard-raw-mat-pie-card__head">
+        <div>
+          <h3 className="dashboard-voucher-chart-card__title">Raw material spend</h3>
+          <p className="dashboard-voucher-chart-card__subtitle">
+            Paid amount (pie) and total voucher line quantities for materials in category &quot;Raw Material&quot;
+            (allocated spend uses each line&apos;s share of voucher subtotal).
+          </p>
+        </div>
+        <div className="dashboard-raw-mat-pie-card__controls" aria-label="Month and year">
+          <label className="dashboard-voucher-chart-card__year">
+            <span className="dashboard-voucher-chart-card__year-label">Month</span>
+            <select
+              className="input dashboard-voucher-chart-card__select dashboard-raw-mat-pie-card__select--month"
+              value={monthIndex}
+              onChange={(e) => onMonthChange(Number(e.target.value))}
+            >
+              {MONTH_LABELS.map((label, idx) => (
+                <option key={label} value={idx}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="dashboard-voucher-chart-card__year">
+            <span className="dashboard-voucher-chart-card__year-label">Year</span>
+            <select
+              className="input dashboard-voucher-chart-card__select"
+              value={year}
+              onChange={(e) => onYearChange(Number(e.target.value))}
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+      <div className="dashboard-voucher-chart-card__body dashboard-raw-mat-pie-card__body">
+        {total <= 0 ? (
+          <div className="dashboard-raw-mat-pie-card__empty">
+            <p>No Raw Material line spend in {MONTH_LABELS[monthIndex]} {year}.</p>
+            <p className="dashboard-raw-mat-pie-card__empty-hint">Try another month or confirm vouchers use Raw Material categories.</p>
+          </div>
+        ) : (
+          <div className="dashboard-raw-mat-pie-card__chart">
+            <svg
+              className="dashboard-raw-mat-pie-card__svg"
+              viewBox={`0 0 ${pieView.w} ${pieView.h}`}
+              role="img"
+              aria-label="Raw material spend pie chart"
+            >
+              <circle cx={cx} cy={cySvg} r={r} fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+              {paths.map((p) =>
+                p.full ? (
+                  <circle key={p.key} cx={cx} cy={cySvg} r={r} fill={p.color} className="dashboard-raw-mat-pie-card__slice">
+                    <title>{p.title}</title>
+                  </circle>
+                ) : (
+                  <path
+                    key={p.key}
+                    d={p.d}
+                    fill={p.color}
+                    stroke="rgba(255, 255, 255, 0.92)"
+                    strokeWidth="2"
+                    className="dashboard-raw-mat-pie-card__slice"
+                  >
+                    <title>{p.title}</title>
+                  </path>
+                )
+              )}
+              <text x={cx} y={cySvg - 2} textAnchor="middle" className="dashboard-raw-mat-pie-card__center-total">
+                {formatAxisRupeeShort(total)}
+              </text>
+              <text x={cx} y={cySvg + 18} textAnchor="middle" className="dashboard-raw-mat-pie-card__center-label">
+                total
+              </text>
+            </svg>
+            <ul className="dashboard-raw-mat-pie-card__legend">
+              {slices.map((s, i) => (
+                <li key={s.materialId} className="dashboard-raw-mat-pie-card__legend-item">
+                  <span className="dashboard-raw-mat-pie-card__swatch" style={{ background: RAW_MATERIAL_PIE_COLORS[i % RAW_MATERIAL_PIE_COLORS.length] }} />
+                  <div className="dashboard-raw-mat-pie-card__legend-mid">
+                    <span className="dashboard-raw-mat-pie-card__legend-label" title={s.label}>
+                      {s.label}
+                    </span>
+                    <span className="dashboard-raw-mat-pie-card__legend-qty" title="Total quantity on vouchers this month">
+                      {formatQuantityWithUnit(s.quantity, s.unit)}
+                    </span>
+                  </div>
+                  <span className="dashboard-raw-mat-pie-card__legend-val">{formatIndianRupee(s.value, { maxDecimals: 0 })}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -317,7 +552,10 @@ export default function DashboardPage() {
   const [compostBatches, setCompostBatches] = useState([]);
   const [canPlantOps, setCanPlantOps] = useState(false);
   const [expenseVouchers, setExpenseVouchers] = useState([]);
+  const [expenseMaterialsCatalog, setExpenseMaterialsCatalog] = useState([]);
   const [expenseChartYear, setExpenseChartYear] = useState(() => new Date().getFullYear());
+  const [rawMatPieYear, setRawMatPieYear] = useState(() => new Date().getFullYear());
+  const [rawMatPieMonth, setRawMatPieMonth] = useState(() => new Date().getMonth());
 
   useEffect(() => {
     async function load() {
@@ -376,22 +614,26 @@ export default function DashboardPage() {
         }
 
         if (selectedMode === "expense" || selectedMode === "admin") {
-          const [summaryData, vendorData, materialData, taxData, payerAgg, voucherList] = await Promise.all([
-            apiFetch("/reports/expenses"),
-            apiFetch("/reports/vendor-expenses"),
-            apiFetch("/reports/material-summary"),
-            apiFetch("/reports/tax-payments"),
-            apiFetch("/reports/payment-made-from-aggregate").catch(() => []),
-            apiFetch("/vouchers").catch(() => null)
-          ]);
+          const [summaryData, vendorData, materialData, taxData, payerAgg, voucherList, allMaterials] =
+            await Promise.all([
+              apiFetch("/reports/expenses"),
+              apiFetch("/reports/vendor-expenses"),
+              apiFetch("/reports/material-summary"),
+              apiFetch("/reports/tax-payments"),
+              apiFetch("/reports/payment-made-from-aggregate").catch(() => []),
+              apiFetch("/vouchers").catch(() => null),
+              apiFetch("/materials").catch(() => null)
+            ]);
           setSummary(summaryData);
           setVendors(vendorData.slice(0, 5));
           setMaterials(materialData.slice(0, 5));
           setTax(taxData);
           setPaymentMadeByAgg(Array.isArray(payerAgg) ? payerAgg : []);
           setExpenseVouchers(Array.isArray(voucherList) ? voucherList : []);
+          setExpenseMaterialsCatalog(Array.isArray(allMaterials) ? allMaterials : []);
         } else {
           setExpenseVouchers([]);
+          setExpenseMaterialsCatalog([]);
         }
         if (selectedMode === "room" || selectedMode === "admin") {
           if (!allowRoomStages) {
@@ -729,12 +971,26 @@ export default function DashboardPage() {
               </Link>
             </div>
           </section>
-          <section className="saas-section" aria-label="Monthly voucher spend">
-            <ExpenseMonthlyChart
-              year={expenseChartYear}
-              monthlyTotals={expenseVoucherDerived.monthlyTotals}
-              onYearChange={setExpenseChartYear}
-            />
+          <section className="saas-section dashboard-expense-charts-section" aria-label="Monthly voucher spend and raw materials">
+            <div className="dashboard-expense-charts-row">
+              <div className="dashboard-expense-charts-row__cell">
+                <ExpenseMonthlyChart
+                  year={expenseChartYear}
+                  monthlyTotals={expenseVoucherDerived.monthlyTotals}
+                  onYearChange={setExpenseChartYear}
+                />
+              </div>
+              <div className="dashboard-expense-charts-row__cell">
+                <RawMaterialSpendPie
+                  vouchers={expenseVouchers}
+                  materialsCatalog={expenseMaterialsCatalog}
+                  year={rawMatPieYear}
+                  monthIndex={rawMatPieMonth}
+                  onYearChange={setRawMatPieYear}
+                  onMonthChange={setRawMatPieMonth}
+                />
+              </div>
+            </div>
           </section>
         </>
       ) : null}

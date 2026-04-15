@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton, PdfDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
@@ -21,6 +21,7 @@ const initialForm = {
   soldAt: new Date().toISOString().slice(0, 10),
   paymentMode: "Cash",
   customerName: "",
+  customerAddress: "",
   gstin: "",
   pan: "",
   aadhaar: "",
@@ -29,7 +30,10 @@ const initialForm = {
   productName: "",
   quantity: null,
   unit: "kg",
-  totalAmount: null,
+  lineSubTotal: null,
+  discountType: "none",
+  discountValue: null,
+  taxPercent: 0,
   notes: ""
 };
 
@@ -54,6 +58,37 @@ function displayCustomer(row) {
   return n || "—";
 }
 
+function normalizeDiscountType(v) {
+  const s = String(v || "").trim();
+  if (s === "percent" || s === "flat") return s;
+  return "none";
+}
+
+/** Mirror API computeSaleInvoiceAmounts for live preview (GST on post-discount amount). */
+function computeSaleAmountsPreview(f) {
+  const discountType = normalizeDiscountType(f.discountType);
+  let discountValue = Number(f.discountValue);
+  if (!Number.isFinite(discountValue) || discountValue < 0) discountValue = 0;
+  let taxPercent = Number(f.taxPercent);
+  if (!Number.isFinite(taxPercent) || taxPercent < 0) taxPercent = 0;
+  if (taxPercent > 100) taxPercent = 100;
+
+  const lineNum = f.lineSubTotal != null && f.lineSubTotal !== "" ? Number(f.lineSubTotal) : NaN;
+  const hasPositiveLine = Number.isFinite(lineNum) && lineNum > 0;
+  const base = hasPositiveLine ? lineNum : 0;
+
+  let afterDiscount = base;
+  if (discountType === "percent") {
+    afterDiscount = base * (1 - Math.min(100, discountValue) / 100);
+  } else if (discountType === "flat") {
+    afterDiscount = Math.max(0, base - discountValue);
+  }
+
+  const taxAmount = afterDiscount * (taxPercent / 100);
+  const totalAmount = afterDiscount + taxAmount;
+  return { base, afterDiscount, taxAmount, totalAmount, discountType, discountValue, taxPercent };
+}
+
 export default function SalesPage() {
   const [sales, setSales] = useState([]);
   const [form, setForm] = useState(initialForm);
@@ -63,6 +98,8 @@ export default function SalesPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
+
+  const amountPreview = useMemo(() => computeSaleAmountsPreview(form), [form]);
 
   async function load() {
     try {
@@ -145,13 +182,17 @@ export default function SalesPage() {
     }
 
     const quantity = form.quantity;
-    const totalAmount = form.totalAmount;
     if (quantity == null || !Number.isFinite(quantity) || quantity < 0) {
       setError("Quantity must be a valid non-negative number.");
       return;
     }
-    if (totalAmount == null || !Number.isFinite(totalAmount) || totalAmount < 0) {
-      setError("Total amount must be a valid non-negative number.");
+    const lineSubTotal = form.lineSubTotal;
+    if (lineSubTotal == null || !Number.isFinite(Number(lineSubTotal)) || Number(lineSubTotal) <= 0) {
+      setError("Line amount (before discount & GST) must be a positive number.");
+      return;
+    }
+    if (!Number.isFinite(amountPreview.totalAmount) || amountPreview.totalAmount < 0) {
+      setError("Invalid totals from discount or GST.");
       return;
     }
 
@@ -160,6 +201,7 @@ export default function SalesPage() {
       soldAt: form.soldAt,
       paymentMode: form.paymentMode,
       customerName,
+      customerAddress: form.customerAddress.trim(),
       gstin: form.gstin.trim(),
       pan: form.pan.trim(),
       aadhaar: form.aadhaar.trim(),
@@ -168,7 +210,10 @@ export default function SalesPage() {
       productName: form.productName.trim(),
       quantity,
       unit: form.unit.trim() || "kg",
-      totalAmount,
+      lineSubTotal: Number(lineSubTotal),
+      discountType: amountPreview.discountType,
+      discountValue: amountPreview.discountValue,
+      taxPercent: amountPreview.taxPercent,
       notes: form.notes.trim()
     };
 
@@ -204,11 +249,16 @@ export default function SalesPage() {
   function startEdit(row) {
     setEditingId(row._id);
     setFieldErrors({});
+    const line =
+      row.lineSubTotal != null && Number(row.lineSubTotal) > 0
+        ? Number(row.lineSubTotal)
+        : Number(row.totalAmount ?? 0) || null;
     setForm({
       invoiceNumber: row.invoiceNumber?.trim() || "",
       soldAt: row.soldAt ? new Date(row.soldAt).toISOString().slice(0, 10) : new Date().toISOString().slice(0, 10),
       paymentMode: PAYMENT_MODES.includes(row.paymentMode) ? row.paymentMode : "Cash",
       customerName: displayCustomer(row) === "—" ? "" : displayCustomer(row),
+      customerAddress: row.customerAddress || "",
       gstin: row.gstin || "",
       pan: row.pan || "",
       aadhaar: row.aadhaar || "",
@@ -217,7 +267,13 @@ export default function SalesPage() {
       productName: row.productName || "",
       quantity: Number(row.quantity ?? 0) || null,
       unit: row.unit || "kg",
-      totalAmount: Number(row.totalAmount ?? 0),
+      lineSubTotal: line,
+      discountType: normalizeDiscountType(row.discountType),
+      discountValue:
+        row.discountValue != null && Number.isFinite(Number(row.discountValue))
+          ? Number(row.discountValue)
+          : null,
+      taxPercent: Number(row.taxPercent ?? 0) || 0,
       notes: row.notes || ""
     });
     setModalOpen(true);
@@ -250,7 +306,7 @@ export default function SalesPage() {
       <PageHeader
         eyebrow="Revenue"
         title="Sales invoices"
-        description="Record sales invoices for mushrooms and compost: customer, tax IDs, invoice number, and how payment was received. Access is set in Admin → Roles (Sales management)."
+        description="Record sales invoices for mushrooms and compost: customer, address, GST %, optional discount, line amount and totals, tax IDs, invoice number, and payment mode. Access is set in Admin → Roles (Sales management)."
       />
 
       {error ? <div className="alert alert-error">{error}</div> : null}
@@ -405,6 +461,17 @@ export default function SalesPage() {
                     required
                   />
                 </div>
+                <div className="form-span-all">
+                  <label htmlFor="sale-customer-address">Customer address (optional)</label>
+                  <textarea
+                    id="sale-customer-address"
+                    className="input sales-invoice-address"
+                    rows={3}
+                    placeholder="Billing / delivery address"
+                    value={form.customerAddress}
+                    onChange={(e) => setForm({ ...form, customerAddress: e.target.value })}
+                  />
+                </div>
                 <div>
                   <label htmlFor="sale-gstin">GSTIN (optional)</label>
                   <input
@@ -521,16 +588,93 @@ export default function SalesPage() {
                     onChange={(e) => setForm({ ...form, unit: e.target.value })}
                   />
                 </div>
-                <div>
-                  <label htmlFor="sale-amount">Total amount (invoice)</label>
+                <div className="form-span-all">
+                  <label htmlFor="sale-line-subtotal">Line amount (before discount &amp; GST)</label>
                   <IndianAmountField
-                    id="sale-amount"
+                    id="sale-line-subtotal"
                     className="input"
-                    value={form.totalAmount}
-                    onChange={(n) => setForm({ ...form, totalAmount: n })}
-                    placeholder="e.g. 1,00,000"
+                    value={form.lineSubTotal}
+                    onChange={(n) => setForm({ ...form, lineSubTotal: n })}
+                    placeholder="Taxable value for this line"
                     required
                   />
+                </div>
+                <div>
+                  <label htmlFor="sale-discount-type">Discount</label>
+                  <select
+                    id="sale-discount-type"
+                    className="input"
+                    value={form.discountType}
+                    onChange={(e) => setForm({ ...form, discountType: e.target.value })}
+                  >
+                    <option value="none">None</option>
+                    <option value="percent">Percent (%)</option>
+                    <option value="flat">Flat (Rs)</option>
+                  </select>
+                </div>
+                <div>
+                  <label htmlFor="sale-discount-value">
+                    {form.discountType === "percent" ? "Discount %" : "Discount amount (Rs)"}
+                  </label>
+                  {form.discountType === "flat" ? (
+                    <IndianAmountField
+                      id="sale-discount-value"
+                      className="input"
+                      value={form.discountValue}
+                      onChange={(n) => setForm({ ...form, discountValue: n })}
+                      placeholder="0"
+                      disabled={form.discountType === "none"}
+                    />
+                  ) : (
+                    <input
+                      id="sale-discount-value"
+                      className="input"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="0.01"
+                      value={form.discountType === "none" ? "" : form.discountValue ?? ""}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          discountValue: e.target.value === "" ? null : Number(e.target.value)
+                        })
+                      }
+                      placeholder="0"
+                      disabled={form.discountType === "none"}
+                    />
+                  )}
+                </div>
+                <div>
+                  <label htmlFor="sale-tax-percent">GST % (on amount after discount)</label>
+                  <input
+                    id="sale-tax-percent"
+                    className="input"
+                    type="number"
+                    min={0}
+                    max={100}
+                    step="0.01"
+                    value={form.taxPercent === 0 ? "" : form.taxPercent}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        taxPercent: e.target.value === "" ? 0 : Number(e.target.value)
+                      })
+                    }
+                    placeholder="0"
+                  />
+                </div>
+                <div className="form-span-all sales-invoice-totals-preview">
+                  <div className="sales-invoice-totals-preview__inner">
+                    <span>After discount</span>
+                    <strong>{formatIndianRupee(amountPreview.afterDiscount)}</strong>
+                    <span>GST</span>
+                    <strong>{formatIndianRupee(amountPreview.taxAmount)}</strong>
+                    <span>Grand total</span>
+                    <strong className="sales-invoice-totals-preview__grand">
+                      {formatIndianRupee(amountPreview.totalAmount)}
+                    </strong>
+                  </div>
                 </div>
                 <div className="form-span-all">
                   <label htmlFor="sale-notes">Notes (optional)</label>

@@ -257,8 +257,10 @@ export async function downloadSaleInvoicePdf(sale, letterheadApi) {
   }
   y = bandTop + bandH + 14;
 
+  const addr = String(sale.customerAddress ?? "").trim();
   const billRows = [
     ["Customer", displayCustomer(sale)],
+    ...(addr ? [["Address", addr]] : []),
     ["Contact", safe(sale.buyerContact)],
     ["GSTIN", safe(sale.gstin)],
     ["PAN", safe(sale.pan)],
@@ -375,8 +377,15 @@ export async function downloadSaleInvoicePdf(sale, letterheadApi) {
   const numsY = baselineVCenter(rowTop, rowH, numsFont);
   doc.text(String(sale.quantity ?? "—"), xQty, numsY);
   doc.text(safe(sale.unit), xUnit, numsY);
+  const lineSubNum = Number(sale.lineSubTotal);
+  const hasLineSub = Number.isFinite(lineSubNum) && lineSubNum > 0;
+  const discType = String(sale.discountType || "none");
+  const taxAmtNum = Number(sale.taxAmount) || 0;
+  const tp = Number(sale.taxPercent) || 0;
+  const afterDisc = Math.max(0, Number(sale.totalAmount) - taxAmtNum);
+  const lineDisplayAmount = hasLineSub ? lineSubNum : Number(sale.totalAmount) || 0;
   doc.setFont("helvetica", "bold");
-  doc.text(formatIndianRupee(sale.totalAmount), xAmtR, numsY, { align: "right" });
+  doc.text(formatIndianRupee(lineDisplayAmount), xAmtR, numsY, { align: "right" });
   doc.setFont("helvetica", "normal");
   y = rowTop + rowH + 10;
 
@@ -384,6 +393,43 @@ export async function downloadSaleInvoicePdf(sale, letterheadApi) {
   doc.setFontSize(9);
   doc.text(`Payment mode: ${safe(sale.paymentMode)}`, xDescL, y);
   y += 16;
+
+  if (hasLineSub) {
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(8.5);
+    const sumLeft = xDescL;
+    const sumRight = xAmtR;
+    const sumLine = 11;
+    doc.setTextColor(...muted);
+    doc.text("Line subtotal (excl. GST)", sumLeft, y);
+    doc.setTextColor(...ink);
+    doc.text(formatIndianRupee(lineSubNum), sumRight, y, { align: "right" });
+    y += sumLine;
+    if (discType !== "none" && Number(sale.discountValue) > 0) {
+      const dv = Number(sale.discountValue) || 0;
+      const discRupees = Math.max(0, lineSubNum - afterDisc);
+      const lab = discType === "percent" ? `Discount (${Math.min(100, dv)}%)` : "Discount (flat)";
+      doc.setTextColor(...muted);
+      doc.text(lab, sumLeft, y);
+      doc.setTextColor(...ink);
+      doc.text(formatIndianRupee(discRupees), sumRight, y, { align: "right" });
+      y += sumLine;
+    }
+    doc.setTextColor(...muted);
+    doc.text("Taxable / after discount", sumLeft, y);
+    doc.setTextColor(...ink);
+    doc.text(formatIndianRupee(afterDisc), sumRight, y, { align: "right" });
+    y += sumLine;
+    if (taxAmtNum > 0 || tp > 0) {
+      doc.setTextColor(...muted);
+      doc.text(`GST (${tp}%)`, sumLeft, y);
+      doc.setTextColor(...ink);
+      doc.text(formatIndianRupee(taxAmtNum), sumRight, y, { align: "right" });
+      y += sumLine + 4;
+    } else {
+      y += 4;
+    }
+  }
 
   const totalBoxH = 32;
   const totalTop = y;

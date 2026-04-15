@@ -20,8 +20,17 @@ const SaleSchema = new mongoose.Schema(
     buyerName: { type: String, trim: true, default: "" },
     buyerContact: { type: String, trim: true, default: "" },
     customerName: { type: String, trim: true, default: "" },
+    /** Multi-line billing / delivery address for the customer. */
+    customerAddress: { type: String, trim: true, default: "" },
     invoiceNumber: { type: String, trim: true, default: "" },
     paymentMode: { type: String, trim: true, default: "Cash" },
+    /** Line value before discount and before GST (exclusive). */
+    lineSubTotal: { type: Number, default: 0, min: 0 },
+    discountType: { type: String, enum: ["none", "percent", "flat"], default: "none" },
+    discountValue: { type: Number, default: 0, min: 0 },
+    /** GST % applied on amount after discount. */
+    taxPercent: { type: Number, default: 0, min: 0, max: 100 },
+    taxAmount: { type: Number, default: 0, min: 0 },
     gstin: { type: String, trim: true, default: "" },
     pan: { type: String, trim: true, default: "" },
     aadhaar: { type: String, trim: true, default: "" },
