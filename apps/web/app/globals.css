@@ -1430,6 +1430,87 @@ a.brand {
   min-height: 0;
 }
 
+.dashboard-contribution-bar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 10px 0 0;
+  padding: 0 4px 2px;
+  list-style: none;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.dashboard-contribution-bar-legend__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dashboard-contribution-bar-legend__swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.dashboard-sales-yoy-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 22px;
+  margin-top: 10px;
+  padding: 0 4px 2px;
+  font-size: 12px;
+  color: var(--text-muted);
+  align-items: center;
+}
+
+.dashboard-sales-yoy-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboard-sales-yoy-legend__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.dashboard-sales-yoy-legend__swatch--bar {
+  background: linear-gradient(135deg, #a5b4fc, #818cf8);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.dashboard-sales-yoy-legend__line {
+  width: 22px;
+  height: 0;
+  border-top: 3px solid #b45309;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+
+.dashboard-sales-semi-pie-card__body {
+  justify-content: flex-start;
+}
+
+.dashboard-sales-semi-pie-card__chart {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+
+.dashboard-sales-semi-pie-card__svg {
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+  display: block;
+}
+
 .dashboard-voucher-chart-card--compact .dashboard-voucher-chart-card__head {
   padding: 14px 16px;
 }

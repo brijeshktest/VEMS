@@ -219,6 +219,9 @@ const MONTH_BAR_COLORS = [
   "#99f6e4"
 ];
 
+/** One stable color per contribution member (bar + pie). */
+const CONTRIBUTION_MEMBER_CHART_COLORS = ["#6b8cff", "#e891b0", "#e6b422", "#3ec995", "#9b6fe8"];
+
 function materialsByIdMap(catalog) {
   const m = new Map();
   for (const mat of catalog || []) {
@@ -531,6 +534,566 @@ function RawMaterialSpendPie({ vouchers, materialsCatalog, year, monthIndex, onY
   );
 }
 
+function ContributionMemberMonthlyChart({ year, members, monthly, onYearChange }) {
+  const memList = Array.isArray(members) ? members : [];
+  const rows = Array.isArray(monthly) ? monthly : [];
+  let maxVal = 1;
+  for (const row of rows) {
+    for (const m of memList) {
+      maxVal = Math.max(maxVal, Number(row.amounts?.[m]) || 0);
+    }
+  }
+  const chartW = 900;
+  const chartH = 228;
+  const padL = 58;
+  const padR = 18;
+  const padB = 48;
+  const padT = 14;
+  const innerW = chartW - padL - padR;
+  const innerH = chartH - padT - padB;
+  const groupSlotW = innerW / 12;
+  const innerGroupW = groupSlotW * 0.92;
+  const barGap = 1;
+  const nMem = Math.max(1, memList.length);
+  const barW = (innerGroupW - barGap * (nMem - 1)) / nMem;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => maxVal * t);
+  const currentChartYear = new Date().getFullYear();
+  const yearOptions = [];
+  for (let y = currentChartYear + 1; y >= currentChartYear - 8; y -= 1) yearOptions.push(y);
+
+  return (
+    <div className="dashboard-voucher-chart-card dashboard-voucher-chart-card--compact">
+      <div className="dashboard-voucher-chart-card__head">
+        <div>
+          <h3 className="dashboard-voucher-chart-card__title">Bank contribution by month</h3>
+          <p className="dashboard-voucher-chart-card__subtitle">
+            Amount (₹) grouped by calendar month; one bar per partner from contribution entries (member field). Primary
+            holders only include their own bank rows.
+          </p>
+        </div>
+        <label className="dashboard-voucher-chart-card__year">
+          <span className="dashboard-voucher-chart-card__year-label">Year</span>
+          <select
+            className="input dashboard-voucher-chart-card__select"
+            value={year}
+            onChange={(e) => onYearChange(Number(e.target.value))}
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="dashboard-voucher-chart-card__body">
+        <div className="dashboard-voucher-chart__svg-wrap">
+          <svg
+            className="dashboard-voucher-chart__svg"
+            viewBox={`0 0 ${chartW} ${chartH}`}
+            role="img"
+            aria-label={`Bank contribution by month and member for ${year}`}
+          >
+            {ticks.map((tv, i) => {
+              const yLine = padT + innerH - (tv / maxVal) * innerH;
+              return (
+                <g key={`grid-${i}`}>
+                  <line
+                    x1={padL}
+                    y1={yLine}
+                    x2={chartW - padR}
+                    y2={yLine}
+                    stroke="rgba(148, 163, 184, 0.35)"
+                    strokeDasharray="4 4"
+                    strokeWidth="1"
+                  />
+                  <text x={padL - 8} y={yLine + 4} textAnchor="end" className="dashboard-voucher-chart__axis-text">
+                    {formatAxisRupeeShort(tv)}
+                  </text>
+                </g>
+              );
+            })}
+            {MONTH_LABELS.map((label, mi) => {
+              const slotLeft = padL + mi * groupSlotW;
+              const groupLeft = slotLeft + (groupSlotW - innerGroupW) / 2;
+              return (
+                <g key={label}>
+                  {memList.map((mem, ji) => {
+                    const amt = Number(rows[mi]?.amounts?.[mem]) || 0;
+                    const h = (amt / maxVal) * innerH;
+                    const yBar = padT + innerH - h;
+                    const x = groupLeft + ji * (barW + barGap);
+                    const fill = CONTRIBUTION_MEMBER_CHART_COLORS[ji % CONTRIBUTION_MEMBER_CHART_COLORS.length];
+                    return (
+                      <rect
+                        key={mem}
+                        x={x}
+                        y={yBar}
+                        width={barW}
+                        height={Math.max(h, 0)}
+                        rx="3"
+                        fill={fill}
+                        stroke="rgba(255, 255, 255, 0.55)"
+                        strokeWidth="1"
+                        className="dashboard-voucher-chart__bar"
+                      >
+                        <title>{`${mem} · ${label} ${year}: ${formatIndianRupee(amt)}`}</title>
+                      </rect>
+                    );
+                  })}
+                  <text
+                    x={slotLeft + groupSlotW / 2}
+                    y={chartH - padB + 24}
+                    textAnchor="middle"
+                    className="dashboard-voucher-chart__month-text"
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+            <text x={padL + innerW / 2} y={chartH - 6} textAnchor="middle" className="dashboard-voucher-chart__axis-title">
+              Month
+            </text>
+          </svg>
+        </div>
+        <ul className="dashboard-contribution-bar-legend" aria-label="Member colors">
+          {memList.map((mem, ji) => (
+            <li key={mem} className="dashboard-contribution-bar-legend__item">
+              <span
+                className="dashboard-contribution-bar-legend__swatch"
+                style={{ background: CONTRIBUTION_MEMBER_CHART_COLORS[ji % CONTRIBUTION_MEMBER_CHART_COLORS.length] }}
+              />
+              <span>{mem}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+function ContributionTotalsPie({ members, totalsTillDate }) {
+  const memList = Array.isArray(members) ? members : [];
+  const slices = memList
+    .map((name, i) => ({
+      key: name,
+      value: Number(totalsTillDate?.[name]) || 0,
+      color: CONTRIBUTION_MEMBER_CHART_COLORS[i % CONTRIBUTION_MEMBER_CHART_COLORS.length]
+    }))
+    .filter((s) => s.value > 0);
+  const total = slices.reduce((s, x) => s + x.value, 0);
+  const pieView = { w: 230, h: 230, cx: 115, cy: 115, r: 96 };
+  const { cx, cy: cySvg, r } = pieView;
+  let angle = 0;
+  const paths = [];
+  for (let i = 0; i < slices.length; i += 1) {
+    const frac = total > 0 ? slices[i].value / total : 0;
+    const span = frac * 360;
+    const start = angle;
+    const end = i === slices.length - 1 ? 360 : angle + span;
+    angle = end;
+    const title = `${slices[i].key}: ${formatIndianRupee(slices[i].value)}`;
+    if (slices.length === 1 && span >= 359.99) {
+      paths.push({ key: slices[i].key, full: true, color: slices[i].color, title });
+    } else {
+      paths.push({
+        key: slices[i].key,
+        d: pieSlicePath(cx, cySvg, r, start, end),
+        color: slices[i].color,
+        title
+      });
+    }
+  }
+
+  return (
+    <div className="dashboard-raw-mat-pie-card dashboard-voucher-chart-card--compact">
+      <div className="dashboard-voucher-chart-card__head dashboard-raw-mat-pie-card__head">
+        <div>
+          <h3 className="dashboard-voucher-chart-card__title">Total contribution</h3>
+          <p className="dashboard-voucher-chart-card__subtitle">
+            All-time per member: bank contribution module plus direct expense (paid vouchers, same basis as Total
+            contribution in the table).
+          </p>
+        </div>
+      </div>
+      <div className="dashboard-voucher-chart-card__body dashboard-raw-mat-pie-card__body">
+        {total <= 0 ? (
+          <div className="dashboard-raw-mat-pie-card__empty">
+            <p>No total contribution data yet.</p>
+            <p className="dashboard-raw-mat-pie-card__empty-hint">
+              Add bank entries or paid expense vouchers attributed to members.
+            </p>
+          </div>
+        ) : (
+          <div className="dashboard-raw-mat-pie-card__chart">
+            <svg
+              className="dashboard-raw-mat-pie-card__svg"
+              viewBox={`0 0 ${pieView.w} ${pieView.h}`}
+              role="img"
+              aria-label="Total contribution by member"
+            >
+              <circle cx={cx} cy={cySvg} r={r} fill="var(--surface)" stroke="var(--border)" strokeWidth="1" />
+              {paths.map((p) =>
+                p.full ? (
+                  <circle key={p.key} cx={cx} cy={cySvg} r={r} fill={p.color} className="dashboard-raw-mat-pie-card__slice">
+                    <title>{p.title}</title>
+                  </circle>
+                ) : (
+                  <path
+                    key={p.key}
+                    d={p.d}
+                    fill={p.color}
+                    stroke="rgba(255, 255, 255, 0.92)"
+                    strokeWidth="2"
+                    className="dashboard-raw-mat-pie-card__slice"
+                  >
+                    <title>{p.title}</title>
+                  </path>
+                )
+              )}
+              <text x={cx} y={cySvg - 2} textAnchor="middle" className="dashboard-raw-mat-pie-card__center-total">
+                {formatAxisRupeeShort(total)}
+              </text>
+              <text x={cx} y={cySvg + 18} textAnchor="middle" className="dashboard-raw-mat-pie-card__center-label">
+                total
+              </text>
+            </svg>
+            <ul className="dashboard-raw-mat-pie-card__legend">
+              {memList.map((name, i) => {
+                const val = Number(totalsTillDate?.[name]) || 0;
+                return (
+                  <li key={name} className="dashboard-raw-mat-pie-card__legend-item">
+                    <span
+                      className="dashboard-raw-mat-pie-card__swatch"
+                      style={{ background: CONTRIBUTION_MEMBER_CHART_COLORS[i % CONTRIBUTION_MEMBER_CHART_COLORS.length] }}
+                    />
+                    <div className="dashboard-raw-mat-pie-card__legend-mid">
+                      <span className="dashboard-raw-mat-pie-card__legend-label" title={name}>
+                        {name}
+                      </span>
+                    </div>
+                    <span className="dashboard-raw-mat-pie-card__legend-val">
+                      {formatIndianRupee(val, { maxDecimals: 0 })}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Point on upper semicircle (opens upward); c in [0,1] from left to right. */
+function salesSemiDonutPt(cx, cy, r, c) {
+  const th = Math.PI * (1 - c);
+  return { x: cx + r * Math.cos(th), y: cy - r * Math.sin(th) };
+}
+
+function salesSemiDonutSlicePath(cx, cy, rOut, rIn, c0, c1) {
+  if (c1 - c0 < 1e-9) return "";
+  const delta = Math.PI * (c1 - c0);
+  const largeArc = delta > Math.PI ? 1 : 0;
+  const o0 = salesSemiDonutPt(cx, cy, rOut, c0);
+  const o1 = salesSemiDonutPt(cx, cy, rOut, c1);
+  const i1 = salesSemiDonutPt(cx, cy, rIn, c1);
+  const i0 = salesSemiDonutPt(cx, cy, rIn, c0);
+  return `M ${o0.x} ${o0.y} A ${rOut} ${rOut} 0 ${largeArc} 1 ${o1.x} ${o1.y} L ${i1.x} ${i1.y} A ${rIn} ${rIn} 0 ${largeArc} 0 ${i0.x} ${i0.y} Z`;
+}
+
+const SALES_SEMI_CASH_COLOR = "#34d399";
+const SALES_SEMI_NONCASH_COLOR = "#60a5fa";
+
+function SalesYoYMonthlyChart({
+  comparisonYear,
+  previousYear,
+  monthlyThisYear,
+  monthlyPreviousYear,
+  onComparisonYearChange
+}) {
+  const thisArr = Array.isArray(monthlyThisYear) ? monthlyThisYear : Array.from({ length: 12 }, () => 0);
+  const prevArr = Array.isArray(monthlyPreviousYear) ? monthlyPreviousYear : Array.from({ length: 12 }, () => 0);
+  let maxVal = 1;
+  for (let i = 0; i < 12; i += 1) {
+    maxVal = Math.max(maxVal, Number(thisArr[i]) || 0, Number(prevArr[i]) || 0);
+  }
+  const chartW = 560;
+  const chartH = 228;
+  const padL = 52;
+  const padR = 20;
+  const padB = 52;
+  const padT = 14;
+  const innerW = chartW - padL - padR;
+  const innerH = chartH - padT - padB;
+  const slotW = innerW / 12;
+  const barW = slotW * 0.42;
+  const barGap = (slotW - barW) / 2;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => maxVal * t);
+  const currentChartYear = new Date().getFullYear();
+  const yearOptions = [];
+  for (let y = currentChartYear + 1; y >= currentChartYear - 8; y -= 1) yearOptions.push(y);
+
+  const linePts = MONTH_LABELS.map((_, mi) => {
+    const cx = padL + mi * slotW + slotW / 2;
+    const v = Number(prevArr[mi]) || 0;
+    const h = (v / maxVal) * innerH;
+    const y = padT + innerH - h;
+    return `${cx},${y}`;
+  }).join(" ");
+
+  return (
+    <div className="dashboard-voucher-chart-card dashboard-voucher-chart-card--compact">
+      <div className="dashboard-voucher-chart-card__head">
+        <div>
+          <h3 className="dashboard-voucher-chart-card__title">Monthly sales vs prior year</h3>
+          <p className="dashboard-voucher-chart-card__subtitle">
+            Bars: total sale in selected year (IST calendar month). Line: same months in {previousYear}.
+          </p>
+        </div>
+        <label className="dashboard-voucher-chart-card__year">
+          <span className="dashboard-voucher-chart-card__year-label">Year</span>
+          <select
+            className="input dashboard-voucher-chart-card__select"
+            value={comparisonYear}
+            onChange={(e) => onComparisonYearChange(Number(e.target.value))}
+          >
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="dashboard-voucher-chart-card__body">
+        <div className="dashboard-voucher-chart__svg-wrap">
+          <svg
+            className="dashboard-voucher-chart__svg"
+            viewBox={`0 0 ${chartW} ${chartH}`}
+            role="img"
+            aria-label={`Monthly sales ${comparisonYear} vs ${previousYear}`}
+          >
+            {ticks.map((tv, i) => {
+              const yLine = padT + innerH - (tv / maxVal) * innerH;
+              return (
+                <g key={`grid-${i}`}>
+                  <line
+                    x1={padL}
+                    y1={yLine}
+                    x2={chartW - padR}
+                    y2={yLine}
+                    stroke="rgba(148, 163, 184, 0.35)"
+                    strokeDasharray="4 4"
+                    strokeWidth="1"
+                  />
+                  <text x={padL - 8} y={yLine + 4} textAnchor="end" className="dashboard-voucher-chart__axis-text">
+                    {formatAxisRupeeShort(tv)}
+                  </text>
+                </g>
+              );
+            })}
+            {MONTH_LABELS.map((label, mi) => {
+              const x = padL + mi * slotW + barGap;
+              const v = Number(thisArr[mi]) || 0;
+              const h = (v / maxVal) * innerH;
+              const y = padT + innerH - h;
+              return (
+                <g key={label}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={Math.max(h, 0)}
+                    rx="4"
+                    fill={MONTH_BAR_COLORS[mi % MONTH_BAR_COLORS.length]}
+                    stroke="rgba(255, 255, 255, 0.55)"
+                    strokeWidth="1"
+                    className="dashboard-voucher-chart__bar"
+                  >
+                    <title>{`${label} ${comparisonYear}: ${formatIndianRupee(v)}`}</title>
+                  </rect>
+                  <text
+                    x={padL + mi * slotW + slotW / 2}
+                    y={chartH - padB + 22}
+                    textAnchor="middle"
+                    className="dashboard-voucher-chart__month-text"
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+            <polyline
+              fill="none"
+              stroke="#b45309"
+              strokeWidth="2.5"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              points={linePts}
+              opacity="0.92"
+            />
+            {MONTH_LABELS.map((_, mi) => {
+              const cx = padL + mi * slotW + slotW / 2;
+              const v = Number(prevArr[mi]) || 0;
+              const h = (v / maxVal) * innerH;
+              const y = padT + innerH - h;
+              return (
+                <circle key={`dot-${mi}`} cx={cx} cy={y} r="4" fill="#b45309" stroke="#fff" strokeWidth="1">
+                  <title>{`${MONTH_LABELS[mi]} ${previousYear}: ${formatIndianRupee(v)}`}</title>
+                </circle>
+              );
+            })}
+            <text x={padL + innerW / 2} y={chartH - 8} textAnchor="middle" className="dashboard-voucher-chart__axis-title">
+              Month
+            </text>
+          </svg>
+        </div>
+        <div className="dashboard-sales-yoy-legend">
+          <span className="dashboard-sales-yoy-legend__item">
+            <span className="dashboard-sales-yoy-legend__swatch dashboard-sales-yoy-legend__swatch--bar" />
+            {comparisonYear}
+          </span>
+          <span className="dashboard-sales-yoy-legend__item">
+            <span className="dashboard-sales-yoy-legend__line" />
+            {previousYear}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SalesCashBankSemiPie({ pieYear, pieMonthIndex, pieCash, pieNonCash, onPieYearChange, onPieMonthChange }) {
+  const cash = Number(pieCash) || 0;
+  const nonCash = Number(pieNonCash) || 0;
+  const total = cash + nonCash;
+  const fracCash = total > 0 ? cash / total : 0;
+  const currentY = new Date().getFullYear();
+  const yearOptions = [];
+  for (let y = currentY + 1; y >= currentY - 8; y -= 1) yearOptions.push(y);
+
+  const vbW = 260;
+  const vbH = 200;
+  const cx = 130;
+  const cy = 138;
+  const rOut = 92;
+  const rIn = 56;
+  const c1 = fracCash;
+  const pathCash = total > 0 ? salesSemiDonutSlicePath(cx, cy, rOut, rIn, 0, c1) : "";
+  const pathNon = total > 0 ? salesSemiDonutSlicePath(cx, cy, rOut, rIn, c1, 1) : "";
+
+  return (
+    <div className="dashboard-raw-mat-pie-card dashboard-voucher-chart-card--compact dashboard-sales-semi-pie-card">
+      <div className="dashboard-voucher-chart-card__head dashboard-raw-mat-pie-card__head">
+        <div>
+          <h3 className="dashboard-voucher-chart-card__title">Cash vs bank / digital</h3>
+          <p className="dashboard-voucher-chart-card__subtitle">
+            Semicircle split by payment mode for the selected month (IST). Non-cash is UPI, bank transfer, cheque, card,
+            and other (everything except Cash).
+          </p>
+        </div>
+        <div className="dashboard-raw-mat-pie-card__controls" aria-label="Month and year">
+          <label className="dashboard-voucher-chart-card__year">
+            <span className="dashboard-voucher-chart-card__year-label">Month</span>
+            <select
+              className="input dashboard-voucher-chart-card__select dashboard-raw-mat-pie-card__select--month"
+              value={pieMonthIndex}
+              onChange={(e) => onPieMonthChange(Number(e.target.value))}
+            >
+              {MONTH_LABELS.map((label, idx) => (
+                <option key={label} value={idx}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="dashboard-voucher-chart-card__year">
+            <span className="dashboard-voucher-chart-card__year-label">Year</span>
+            <select
+              className="input dashboard-voucher-chart-card__select"
+              value={pieYear}
+              onChange={(e) => onPieYearChange(Number(e.target.value))}
+            >
+              {yearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+      </div>
+      <div className="dashboard-voucher-chart-card__body dashboard-raw-mat-pie-card__body dashboard-sales-semi-pie-card__body">
+        {total <= 0 ? (
+          <div className="dashboard-raw-mat-pie-card__empty">
+            <p>No sales in {MONTH_LABELS[pieMonthIndex]} {pieYear}.</p>
+            <p className="dashboard-raw-mat-pie-card__empty-hint">Try another month or add sales lines.</p>
+          </div>
+        ) : (
+          <div className="dashboard-sales-semi-pie-card__chart">
+            <svg
+              className="dashboard-sales-semi-pie-card__svg"
+              viewBox={`0 0 ${vbW} ${vbH}`}
+              role="img"
+              aria-label="Cash versus non-cash sales semicircle"
+            >
+              <path
+                d={pathCash}
+                fill={SALES_SEMI_CASH_COLOR}
+                stroke="rgba(255,255,255,0.9)"
+                strokeWidth="2"
+                className="dashboard-raw-mat-pie-card__slice"
+              >
+                <title>{`Cash: ${formatIndianRupee(cash)}`}</title>
+              </path>
+              <path
+                d={pathNon}
+                fill={SALES_SEMI_NONCASH_COLOR}
+                stroke="rgba(255,255,255,0.9)"
+                strokeWidth="2"
+                className="dashboard-raw-mat-pie-card__slice"
+              >
+                <title>{`Bank / digital & other: ${formatIndianRupee(nonCash)}`}</title>
+              </path>
+              <text x={cx} y={cy - 8} textAnchor="middle" className="dashboard-raw-mat-pie-card__center-total">
+                {formatAxisRupeeShort(total)}
+              </text>
+              <text x={cx} y={cy + 12} textAnchor="middle" className="dashboard-raw-mat-pie-card__center-label">
+                month total
+              </text>
+            </svg>
+            <ul className="dashboard-raw-mat-pie-card__legend">
+              <li className="dashboard-raw-mat-pie-card__legend-item">
+                <span className="dashboard-raw-mat-pie-card__swatch" style={{ background: SALES_SEMI_CASH_COLOR }} />
+                <div className="dashboard-raw-mat-pie-card__legend-mid">
+                  <span className="dashboard-raw-mat-pie-card__legend-label">Cash</span>
+                </div>
+                <span className="dashboard-raw-mat-pie-card__legend-val">
+                  {formatIndianRupee(cash, { maxDecimals: 0 })}
+                </span>
+              </li>
+              <li className="dashboard-raw-mat-pie-card__legend-item">
+                <span className="dashboard-raw-mat-pie-card__swatch" style={{ background: SALES_SEMI_NONCASH_COLOR }} />
+                <div className="dashboard-raw-mat-pie-card__legend-mid">
+                  <span className="dashboard-raw-mat-pie-card__legend-label" title="Non-cash payment modes">
+                    Bank / digital &amp; other
+                  </span>
+                </div>
+                <span className="dashboard-raw-mat-pie-card__legend-val">
+                  {formatIndianRupee(nonCash, { maxDecimals: 0 })}
+                </span>
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [summary, setSummary] = useState(null);
@@ -556,6 +1119,12 @@ export default function DashboardPage() {
   const [expenseChartYear, setExpenseChartYear] = useState(() => new Date().getFullYear());
   const [rawMatPieYear, setRawMatPieYear] = useState(() => new Date().getFullYear());
   const [rawMatPieMonth, setRawMatPieMonth] = useState(() => new Date().getMonth());
+  const [contributionChartYear, setContributionChartYear] = useState(() => new Date().getFullYear());
+  const [contributionChartsData, setContributionChartsData] = useState(null);
+  const [salesComparisonYear, setSalesComparisonYear] = useState(() => new Date().getFullYear());
+  const [salesPieYear, setSalesPieYear] = useState(() => new Date().getFullYear());
+  const [salesPieMonth, setSalesPieMonth] = useState(() => new Date().getMonth());
+  const [salesChartsData, setSalesChartsData] = useState(null);
 
   useEffect(() => {
     async function load() {
@@ -703,6 +1272,52 @@ export default function DashboardPage() {
     }
     load();
   }, [router]);
+
+  useEffect(() => {
+    const show =
+      (workMode === "contributions" || workMode === "admin") && contributionSummary != null;
+    if (!show) {
+      setContributionChartsData(null);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = await apiFetch(`/contributions/dashboard-charts?year=${contributionChartYear}`);
+        if (!cancelled) setContributionChartsData(d);
+      } catch {
+        if (!cancelled) setContributionChartsData(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workMode, contributionSummary, contributionChartYear]);
+
+  useEffect(() => {
+    const show = (workMode === "sales" || workMode === "admin") && salesSummary != null;
+    if (!show) {
+      setSalesChartsData(null);
+      return undefined;
+    }
+    let cancelled = false;
+    const q = new URLSearchParams({
+      comparisonYear: String(salesComparisonYear),
+      pieYear: String(salesPieYear),
+      pieMonth: String(salesPieMonth)
+    });
+    (async () => {
+      try {
+        const d = await apiFetch(`/sales/dashboard-charts?${q.toString()}`);
+        if (!cancelled) setSalesChartsData(d);
+      } catch {
+        if (!cancelled) setSalesChartsData(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workMode, salesSummary, salesComparisonYear, salesPieYear, salesPieMonth]);
 
   const paymentMadeByRows = useMemo(
     () =>
@@ -997,32 +1612,131 @@ export default function DashboardPage() {
 
       {(workMode === "sales" || workMode === "admin") && salesSummary ? (
         <section className="saas-section" aria-label="Sales metrics">
-          <div className="grid grid-3">
+          <div className="dashboard-expense-dashlets">
             <Link className="stat-link" href="/sales">
-              <div className="card stat-card">
-                <span className="stat-label">Total sales value</span>
-                <span className="stat-value">{formatIndianRupee(salesSummary.totalAmount)}</span>
-                <span className="stat-hint">View sales →</span>
+              <div className="card stat-card stat-dashlet">
+                <div className="stat-dashlet__icon" aria-hidden>
+                  <IconStatPaid />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Total sales value</span>
+                  <span className="stat-value">{formatIndianRupee(salesSummary.totalAmount)}</span>
+                  <span className="stat-hint">All time · View sales →</span>
+                </div>
               </div>
             </Link>
             <Link className="stat-link" href="/sales">
-              <div className="card stat-card">
-                <span className="stat-label">Mushroom sales</span>
-                <span className="stat-value">
-                  {formatIndianRupee(salesSummary.byCategory?.mushroom?.totalAmount ?? 0)}
-                </span>
-                <span className="stat-hint">{salesSummary.byCategory?.mushroom?.count ?? 0} line(s) →</span>
+              <div className="card stat-card stat-dashlet">
+                <div className="stat-dashlet__icon" aria-hidden>
+                  <IconStatVouchers />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Mushroom sales</span>
+                  <span className="stat-value">
+                    {formatIndianRupee(salesSummary.byCategory?.mushroom?.totalAmount ?? 0)}
+                  </span>
+                  <span className="stat-hint">{salesSummary.byCategory?.mushroom?.count ?? 0} line(s) →</span>
+                </div>
               </div>
             </Link>
             <Link className="stat-link" href="/sales">
-              <div className="card stat-card">
-                <span className="stat-label">Compost sales</span>
-                <span className="stat-value">
-                  {formatIndianRupee(salesSummary.byCategory?.compost?.totalAmount ?? 0)}
-                </span>
-                <span className="stat-hint">{salesSummary.byCategory?.compost?.count ?? 0} line(s) →</span>
+              <div className="card stat-card stat-dashlet">
+                <div className="stat-dashlet__icon" aria-hidden>
+                  <IconStatTax />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Compost sales</span>
+                  <span className="stat-value">
+                    {formatIndianRupee(salesSummary.byCategory?.compost?.totalAmount ?? 0)}
+                  </span>
+                  <span className="stat-hint">{salesSummary.byCategory?.compost?.count ?? 0} line(s) →</span>
+                </div>
               </div>
             </Link>
+            <Link className="stat-link" href="/sales">
+              <div className="card stat-card stat-dashlet stat-dashlet--yesterday">
+                <div className="stat-dashlet__icon stat-dashlet__icon--yesterday" aria-hidden>
+                  <IconStatYesterday />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Yesterday sales (IST)</span>
+                  <span className="stat-value">
+                    {formatIndianRupee(salesSummary.yesterdayTotal ?? 0)}
+                  </span>
+                  <span className="stat-hint">Calendar day in India →</span>
+                </div>
+              </div>
+            </Link>
+            <Link className="stat-link" href="/sales">
+              <div className="card stat-card stat-dashlet stat-dashlet--month">
+                <div className="stat-dashlet__icon stat-dashlet__icon--month" aria-hidden>
+                  <IconStatMonth />
+                </div>
+                <div className="stat-dashlet__body">
+                  <span className="stat-label">Current month sales (IST)</span>
+                  <span className="stat-value">
+                    {formatIndianRupee(salesSummary.currentMonthTotal ?? 0)}
+                  </span>
+                  <span className="stat-hint">This calendar month →</span>
+                </div>
+              </div>
+            </Link>
+          </div>
+
+          <div className="dashboard-expense-charts-section" aria-label="Sales charts" style={{ marginTop: 16 }}>
+            <div className="dashboard-expense-charts-row">
+              <div className="dashboard-expense-charts-row__cell">
+                {salesChartsData &&
+                salesChartsData.comparisonYear === salesComparisonYear &&
+                salesChartsData.pieYear === salesPieYear &&
+                salesChartsData.pieMonthIndex === salesPieMonth ? (
+                  <SalesYoYMonthlyChart
+                    comparisonYear={salesComparisonYear}
+                    previousYear={salesChartsData.previousYear}
+                    monthlyThisYear={salesChartsData.monthlyThisYear}
+                    monthlyPreviousYear={salesChartsData.monthlyPreviousYear}
+                    onComparisonYearChange={setSalesComparisonYear}
+                  />
+                ) : (
+                  <div className="dashboard-voucher-chart-card dashboard-voucher-chart-card--compact">
+                    <div className="dashboard-voucher-chart-card__head">
+                      <h3 className="dashboard-voucher-chart-card__title">Monthly sales vs prior year</h3>
+                    </div>
+                    <div className="dashboard-voucher-chart-card__body">
+                      <p className="page-lead" style={{ margin: 0 }}>
+                        Loading chart…
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="dashboard-expense-charts-row__cell">
+                {salesChartsData &&
+                salesChartsData.comparisonYear === salesComparisonYear &&
+                salesChartsData.pieYear === salesPieYear &&
+                salesChartsData.pieMonthIndex === salesPieMonth ? (
+                  <SalesCashBankSemiPie
+                    pieYear={salesPieYear}
+                    pieMonthIndex={salesPieMonth}
+                    pieCash={salesChartsData.pieCash}
+                    pieNonCash={salesChartsData.pieNonCash}
+                    onPieYearChange={setSalesPieYear}
+                    onPieMonthChange={setSalesPieMonth}
+                  />
+                ) : (
+                  <div className="dashboard-raw-mat-pie-card dashboard-voucher-chart-card--compact">
+                    <div className="dashboard-voucher-chart-card__head">
+                      <h3 className="dashboard-voucher-chart-card__title">Cash vs bank / digital</h3>
+                    </div>
+                    <div className="dashboard-voucher-chart-card__body">
+                      <p className="page-lead" style={{ margin: 0 }}>
+                        Loading chart…
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </section>
       ) : null}
@@ -1068,6 +1782,49 @@ export default function DashboardPage() {
                 <span className="stat-hint">{contributionSummary.receivedByPrimary?.Shailendra?.count ?? 0} row(s) →</span>
               </div>
             </Link>
+          </div>
+
+          <div className="dashboard-expense-charts-row" style={{ marginTop: 20 }}>
+            <div className="dashboard-expense-charts-row__cell">
+              {contributionChartsData ? (
+                <ContributionMemberMonthlyChart
+                  year={contributionChartYear}
+                  members={contributionChartsData.members}
+                  monthly={contributionChartsData.monthly}
+                  onYearChange={setContributionChartYear}
+                />
+              ) : (
+                <div className="dashboard-voucher-chart-card dashboard-voucher-chart-card--compact">
+                  <div className="dashboard-voucher-chart-card__head">
+                    <h3 className="dashboard-voucher-chart-card__title">Bank contribution by month</h3>
+                  </div>
+                  <div className="dashboard-voucher-chart-card__body">
+                    <p className="page-lead" style={{ margin: 0 }}>
+                      Loading chart…
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="dashboard-expense-charts-row__cell">
+              {contributionChartsData ? (
+                <ContributionTotalsPie
+                  members={contributionChartsData.members}
+                  totalsTillDate={contributionChartsData.totalsTillDate}
+                />
+              ) : (
+                <div className="dashboard-raw-mat-pie-card dashboard-voucher-chart-card--compact">
+                  <div className="dashboard-voucher-chart-card__head">
+                    <h3 className="dashboard-voucher-chart-card__title">Total contribution</h3>
+                  </div>
+                  <div className="dashboard-voucher-chart-card__body">
+                    <p className="page-lead" style={{ margin: 0 }}>
+                      Loading chart…
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="card" style={{ marginTop: 20 }}>

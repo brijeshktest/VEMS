@@ -317,6 +317,61 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
   });
 });
 
+/**
+ * Month × member bank totals from contribution entries; pie uses per-member bank + direct expense (table Total contribution).
+ */
+router.get("/dashboard-charts", requireAuth, requirePermission("contributions", "view"), async (req, res) => {
+  const y = Number(req.query.year);
+  const year = Number.isFinite(y) ? Math.min(2100, Math.max(1990, Math.floor(y))) : new Date().getUTCFullYear();
+  const start = new Date(Date.UTC(year, 0, 1));
+  const end = new Date(Date.UTC(year + 1, 0, 1));
+
+  const [byMonthMember, totalsByMember, expenseByMember] = await Promise.all([
+    ContributionEntry.aggregate([
+      { $match: { contributedAt: { $gte: start, $lt: end } } },
+      {
+        $group: {
+          _id: {
+            month: { $month: "$contributedAt" },
+            member: "$member"
+          },
+          total: { $sum: "$amount" }
+        }
+      }
+    ]),
+    ContributionEntry.aggregate([{ $group: { _id: "$member", total: { $sum: "$amount" } } }]),
+    expensePaidTotalsByContributionMember({})
+  ]);
+
+  const members = [...CONTRIBUTION_MEMBERS];
+  const monthly = Array.from({ length: 12 }, (_, monthIndex) => {
+    const amounts = {};
+    for (const m of members) amounts[m] = 0;
+    return { monthIndex, amounts };
+  });
+  for (const row of byMonthMember) {
+    const mi = (row._id?.month ?? 1) - 1;
+    const mem = row._id?.member;
+    if (mi >= 0 && mi < 12 && mem && monthly[mi].amounts[mem] !== undefined) {
+      monthly[mi].amounts[mem] = Number(row.total) || 0;
+    }
+  }
+
+  const bankByMember = {};
+  for (const m of members) bankByMember[m] = 0;
+  for (const row of totalsByMember) {
+    if (row._id && bankByMember[row._id] !== undefined) bankByMember[row._id] = Number(row.total) || 0;
+  }
+
+  /** Per member: bank module + direct expense (paid vouchers by payment made from), same as table Total contribution. */
+  const totalsTillDate = {};
+  for (const m of members) {
+    totalsTillDate[m] = (bankByMember[m] || 0) + (Number(expenseByMember[m]) || 0);
+  }
+
+  return res.json({ year, members, monthly, totalsTillDate });
+});
+
 router.get("/entries", requireAuth, requirePermission("contributions", "view"), async (req, res) => {
   const q = {};
   if (req.query.member && CONTRIBUTION_MEMBERS.includes(req.query.member)) {

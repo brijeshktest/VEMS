@@ -11,6 +11,53 @@ import {
 
 const router = express.Router();
 
+const IST_TZ = "Asia/Kolkata";
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function istCalendarPartsFromDate(d) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: IST_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(d);
+  const get = (t) => Number(parts.find((p) => p.type === t)?.value);
+  return { y: get("year"), m: get("month"), d: get("day") };
+}
+
+/** Start of calendar day in IST, as a JavaScript Date (UTC instant). */
+function istDayStartUtc(y, month1to12, day) {
+  return new Date(`${y}-${pad2(month1to12)}-${pad2(day)}T00:00:00+05:30`);
+}
+
+function istMonthRangeUtc(year, monthIndex0) {
+  const m = monthIndex0 + 1;
+  const start = istDayStartUtc(year, m, 1);
+  const next = monthIndex0 === 11 ? { y: year + 1, mo: 1 } : { y: year, mo: m + 1 };
+  const end = istDayStartUtc(next.y, next.mo, 1);
+  return { start, end };
+}
+
+function istYesterdayRangeUtc() {
+  const { y, m, d } = istCalendarPartsFromDate(new Date());
+  const todayStart = istDayStartUtc(y, m, d);
+  const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+  return { start: yesterdayStart, end: todayStart };
+}
+
+function istCurrentMonthRangeUtc() {
+  const { y, m } = istCalendarPartsFromDate(new Date());
+  return istMonthRangeUtc(y, m - 1);
+}
+
+function clampYear(y) {
+  if (!Number.isFinite(y)) return new Date().getUTCFullYear();
+  return Math.min(2100, Math.max(1990, Math.floor(y)));
+}
+
 function normalizePaymentMode(raw) {
   const v = typeof raw === "string" ? raw.trim() : "";
   if (SALE_PAYMENT_MODES.includes(v)) return v;
@@ -98,26 +145,40 @@ function collectSaleInvoiceFieldErrors(body) {
 }
 
 router.get("/summary", requireAuth, requirePermission("sales", "view"), async (req, res) => {
-  const [agg] = await Sale.aggregate([
-    {
-      $facet: {
-        overall: [{ $group: { _id: null, totalAmount: { $sum: "$totalAmount" }, count: { $sum: 1 } } }],
-        byCategory: [
-          {
-            $group: {
-              _id: "$productCategory",
-              totalAmount: { $sum: "$totalAmount" },
-              count: { $sum: 1 }
+  const yest = istYesterdayRangeUtc();
+  const curMo = istCurrentMonthRangeUtc();
+
+  const [facetRows, yestAgg, monthAgg] = await Promise.all([
+    Sale.aggregate([
+      {
+        $facet: {
+          overall: [{ $group: { _id: null, totalAmount: { $sum: "$totalAmount" }, count: { $sum: 1 } } }],
+          byCategory: [
+            {
+              $group: {
+                _id: "$productCategory",
+                totalAmount: { $sum: "$totalAmount" },
+                count: { $sum: 1 }
+              }
             }
-          }
-        ]
+          ]
+        }
       }
-    }
+    ]),
+    Sale.aggregate([
+      { $match: { soldAt: { $gte: yest.start, $lt: yest.end } } },
+      { $group: { _id: null, totalAmount: { $sum: "$totalAmount" } } }
+    ]),
+    Sale.aggregate([
+      { $match: { soldAt: { $gte: curMo.start, $lt: curMo.end } } },
+      { $group: { _id: null, totalAmount: { $sum: "$totalAmount" } } }
+    ])
   ]);
 
-  const overall = agg?.overall?.[0] || { totalAmount: 0, count: 0 };
+  const facet = facetRows[0] || {};
+  const overall = facet?.overall?.[0] || { totalAmount: 0, count: 0 };
   const byCategory = { mushroom: { totalAmount: 0, count: 0 }, compost: { totalAmount: 0, count: 0 } };
-  for (const row of agg?.byCategory || []) {
+  for (const row of facet?.byCategory || []) {
     if (row._id && byCategory[row._id] !== undefined) {
       byCategory[row._id] = { totalAmount: row.totalAmount, count: row.count };
     }
@@ -126,7 +187,87 @@ router.get("/summary", requireAuth, requirePermission("sales", "view"), async (r
   return res.json({
     totalAmount: overall.totalAmount,
     count: overall.count,
-    byCategory
+    byCategory,
+    yesterdayTotal: Number(yestAgg[0]?.totalAmount) || 0,
+    currentMonthTotal: Number(monthAgg[0]?.totalAmount) || 0
+  });
+});
+
+/** Monthly totals (IST), YoY comparison, and cash vs non-cash for one month. */
+router.get("/dashboard-charts", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+  const istNow = istCalendarPartsFromDate(new Date());
+  const comparisonYear = clampYear(Number(req.query.comparisonYear) || istNow.y);
+  const prevYear = comparisonYear - 1;
+  let pieYear = clampYear(Number(req.query.pieYear) || istNow.y);
+  let pieMonth = Number(req.query.pieMonth);
+  if (!Number.isFinite(pieMonth) || pieMonth < 0 || pieMonth > 11) pieMonth = istNow.m - 1;
+
+  const yStart = istDayStartUtc(comparisonYear, 1, 1);
+  const yEnd = istDayStartUtc(comparisonYear + 1, 1, 1);
+  const pStart = istDayStartUtc(prevYear, 1, 1);
+  const pEnd = istDayStartUtc(prevYear + 1, 1, 1);
+  const pieR = istMonthRangeUtc(pieYear, pieMonth);
+
+  const [thisYearRows, prevYearRows, pieAgg] = await Promise.all([
+    Sale.aggregate([
+      { $match: { soldAt: { $gte: yStart, $lt: yEnd } } },
+      {
+        $addFields: {
+          m: { $month: { date: "$soldAt", timezone: IST_TZ } }
+        }
+      },
+      { $group: { _id: "$m", totalAmount: { $sum: "$totalAmount" } } }
+    ]),
+    Sale.aggregate([
+      { $match: { soldAt: { $gte: pStart, $lt: pEnd } } },
+      {
+        $addFields: {
+          m: { $month: { date: "$soldAt", timezone: IST_TZ } }
+        }
+      },
+      { $group: { _id: "$m", totalAmount: { $sum: "$totalAmount" } } }
+    ]),
+    Sale.aggregate([
+      { $match: { soldAt: { $gte: pieR.start, $lt: pieR.end } } },
+      {
+        $group: {
+          _id: null,
+          cash: {
+            $sum: {
+              $cond: [{ $eq: [{ $trim: { input: { $ifNull: ["$paymentMode", ""] } } }, "Cash"] }, "$totalAmount", 0]
+            }
+          },
+          nonCash: {
+            $sum: {
+              $cond: [{ $ne: [{ $trim: { input: { $ifNull: ["$paymentMode", ""] } } }, "Cash"] }, "$totalAmount", 0]
+            }
+          }
+        }
+      }
+    ])
+  ]);
+
+  const monthlyThisYear = Array.from({ length: 12 }, () => 0);
+  for (const row of thisYearRows) {
+    const mi = (row._id || 0) - 1;
+    if (mi >= 0 && mi < 12) monthlyThisYear[mi] = Number(row.totalAmount) || 0;
+  }
+  const monthlyPreviousYear = Array.from({ length: 12 }, () => 0);
+  for (const row of prevYearRows) {
+    const mi = (row._id || 0) - 1;
+    if (mi >= 0 && mi < 12) monthlyPreviousYear[mi] = Number(row.totalAmount) || 0;
+  }
+  const pieRow = pieAgg[0] || {};
+
+  return res.json({
+    comparisonYear,
+    previousYear: prevYear,
+    monthlyThisYear,
+    monthlyPreviousYear,
+    pieYear,
+    pieMonthIndex: pieMonth,
+    pieCash: Number(pieRow.cash) || 0,
+    pieNonCash: Number(pieRow.nonCash) || 0
   });
 });
 
