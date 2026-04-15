@@ -15,7 +15,7 @@ export default function RoomOpsPage() {
       const permData = await apiFetch("/auth/permissions");
       setPermissions(permData.permissions);
       const [data, tunnelAlerts] = await Promise.all([
-        apiFetch("/rooms/status"),
+        apiFetch("/rooms/status?onlyRoomResources=true"),
         apiFetch("/tunnel-bunker/alerts").catch(() => ({ dueItems: [] }))
       ]);
       setRooms(data);

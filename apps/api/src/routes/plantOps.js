@@ -265,6 +265,9 @@ async function toBatchView(doc, { populate = true } = {}) {
   const nextOperationalStage = getNextStageKey(operationalStageKey);
   const timeline = buildCompostTimeline(o.startDate);
   const progress = compostProgressFraction(o.startDate, effectiveStatus, now);
+  const logsRaw = Array.isArray(o.dailyParameterLogs) ? [...o.dailyParameterLogs] : [];
+  logsRaw.sort((a, b) => new Date(a.loggedAt || 0).getTime() - new Date(b.loggedAt || 0).getTime());
+  const latestDailyParameters = logsRaw.length ? logsRaw[logsRaw.length - 1] : null;
   return {
     ...o,
     id: o._id,
@@ -274,7 +277,9 @@ async function toBatchView(doc, { populate = true } = {}) {
     nextOperationalStage,
     isManualOverride: Boolean(o.manualStatus && String(o.manualStatus).trim()),
     timeline,
-    progress
+    progress,
+    dailyParameterLogs: logsRaw,
+    latestDailyParameters
   };
 }
 
@@ -487,6 +492,28 @@ router.get("/compost-batches", requireAuth, requirePermission("plantOperations",
   return res.json(out);
 });
 
+/** Next auto batch id `SH-C-#001`, `SH-C-#002`, … (must be registered before GET /compost-batches/:id). */
+const SH_COMPOST_BATCH_CODE_RE = /^SH-C-#(\d+)$/i;
+
+router.get(
+  "/compost-batches/next-batch-code",
+  requireAuth,
+  requirePermission("plantOperations", "create"),
+  async (req, res) => {
+    const rows = await CompostLifecycleBatch.find().select("batchName").lean();
+    let max = 0;
+    for (const row of rows) {
+      const m = SH_COMPOST_BATCH_CODE_RE.exec(String(row.batchName || "").trim());
+      if (m) {
+        const n = parseInt(m[1], 10);
+        if (Number.isFinite(n)) max = Math.max(max, n);
+      }
+    }
+    const next = max + 1;
+    return res.json({ batchName: `SH-C-#${String(next).padStart(3, "0")}` });
+  }
+);
+
 router.post("/compost-batches", requireAuth, requirePermission("plantOperations", "create"), async (req, res) => {
   const body = req.body || {};
   const missing = requireFields(body, ["batchName", "startDate", "resources", "rawMaterials"]);
@@ -566,6 +593,82 @@ router.get("/compost-batches/:id", requireAuth, requirePermission("plantOperatio
   }
   return res.json(await toBatchView(batch));
 });
+
+router.post(
+  "/compost-batches/:id/daily-parameter-logs",
+  requireAuth,
+  requirePermission("plantOperations", "edit"),
+  async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid batch id" });
+    }
+    const batch = await CompostLifecycleBatch.findById(req.params.id);
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+    const now = new Date();
+    if (operationalStageFromDoc(batch, now) === "done") {
+      return res.status(400).json({ error: "This batch is compost ready; daily parameter logs cannot be added." });
+    }
+    const body = req.body || {};
+    const temp = Number(body.temperatureC ?? body.temperature);
+    const moisture = Number(body.moisturePercent ?? body.moisture);
+    const ammonia = Number(body.ammoniaLevel ?? body.ammonia);
+    if (!Number.isFinite(temp)) {
+      return res.status(400).json({ error: "temperatureC must be a number" });
+    }
+    if (!Number.isFinite(moisture) || moisture < 0 || moisture > 100) {
+      return res.status(400).json({ error: "moisturePercent must be a number between 0 and 100" });
+    }
+    if (!Number.isFinite(ammonia) || ammonia < 0) {
+      return res.status(400).json({ error: "ammoniaLevel must be a non-negative number" });
+    }
+    let loggedAt = new Date();
+    if (body.loggedAt != null && String(body.loggedAt).trim() !== "") {
+      const d = new Date(body.loggedAt);
+      if (Number.isNaN(d.getTime())) {
+        return res.status(400).json({ error: "Invalid loggedAt" });
+      }
+      loggedAt = d;
+    }
+    const uid = req.user?.id && mongoose.Types.ObjectId.isValid(String(req.user.id)) ? req.user.id : null;
+    const recordedByName = req.user?.name ? String(req.user.name).trim() : "";
+    const snapshotTime = new Date();
+    const operationalStageKey = operationalStageFromDoc(batch, snapshotTime);
+    await batch.populate({
+      path: "resourceAllocations.growingRoomId",
+      select: "name resourceType"
+    });
+    /** @type {Array<{ name: string, resourceType: string, allocationStageKey: string }>} */
+    const allocatedResources = [];
+    for (const a of batch.resourceAllocations || []) {
+      if (!allocationIsOpen(a)) continue;
+      const gr = a.growingRoomId;
+      const name =
+        gr && typeof gr === "object" && gr != null && "name" in gr
+          ? String(gr.name || "").trim() || "—"
+          : "—";
+      const resourceType =
+        gr && typeof gr === "object" && gr != null && "resourceType" in gr
+          ? String(gr.resourceType || "").trim()
+          : "";
+      const sk = a.stageKey != null && String(a.stageKey).trim() !== "" ? String(a.stageKey).trim() : "";
+      allocatedResources.push({ name, resourceType, allocationStageKey: sk });
+    }
+    batch.dailyParameterLogs.push({
+      temperatureC: temp,
+      moisturePercent: moisture,
+      ammoniaLevel: ammonia,
+      loggedAt,
+      recordedByUserId: uid || undefined,
+      recordedByName: recordedByName,
+      operationalStageKey,
+      allocatedResources
+    });
+    await batch.save();
+    return res.status(201).json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+  }
+);
 
 router.patch("/compost-batches/:id", requireAuth, requirePermission("plantOperations", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -700,20 +803,25 @@ router.post(
       revertEndDates();
       return res.status(400).json({ error: resPush.error });
     }
-    const rawRes = await applyRawMaterialsForStage(batch, nextKey, rawMaterials || [], note);
-    if (!rawRes.ok) {
-      revertEndDates();
-      while (batch.resourceAllocations.length > lenBeforeNewResources) {
-        batch.resourceAllocations.pop();
+    const rm = Array.isArray(rawMaterials) ? rawMaterials : [];
+    let rawMaterialsUsed = [];
+    if (rm.length) {
+      const rawRes = await applyRawMaterialsForStage(batch, nextKey, rm, note);
+      if (!rawRes.ok) {
+        revertEndDates();
+        while (batch.resourceAllocations.length > lenBeforeNewResources) {
+          batch.resourceAllocations.pop();
+        }
+        return res.status(400).json({ error: rawRes.error });
       }
-      return res.status(400).json({ error: rawRes.error });
+      rawMaterialsUsed = rawRes.rawMaterialsUsed;
     }
     batch.stageMovements.push({
       movedAt: now,
       fromStage: op,
       toStage: nextKey,
       resourcesUsed: resPush.resourcesUsed,
-      rawMaterialsUsed: rawRes.rawMaterialsUsed
+      rawMaterialsUsed
     });
     batch.operationalStageKey = nextKey;
     try {

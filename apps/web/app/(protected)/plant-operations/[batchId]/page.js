@@ -9,8 +9,11 @@ import {
   compostStagePillClass,
   compostStageDisplayLabel,
   compostCycleDayDisplay,
+  compostEstimatedReadyIso,
   formatShortDate,
-  formatStockQty
+  formatDateTime,
+  formatStockQty,
+  compostParameterLogAlerts
 } from "../../../../lib/compostUi.js";
 
 const STATUS_OPTIONS = ["wetting", "filling", "turn1", "turn2", "turn3", "pasteurisation", "done"];
@@ -119,6 +122,21 @@ function initialAdvanceRawLines() {
   return [newAdvanceRawMaterialLine()];
 }
 
+/** Snapshot list from a daily parameter log (embedded on save). */
+function formatAllocatedResourcesFromLog(log) {
+  const list = log?.allocatedResources;
+  if (!Array.isArray(list) || list.length === 0) return "—";
+  return list
+    .map((r) => {
+      const nm = (r.name || "").trim() || "—";
+      const tp = (r.resourceType || "").trim();
+      const sk = (r.allocationStageKey || "").trim();
+      const label = tp ? `${nm} (${tp})` : nm;
+      return sk ? `${label} · ${compostStageDisplayLabel(sk)}` : label;
+    })
+    .join("; ");
+}
+
 export default function CompostBatchDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -129,7 +147,6 @@ export default function CompostBatchDetailPage() {
   const [resourceId, setResourceId] = useState("");
   const [advanceRawLines, setAdvanceRawLines] = useState(() => initialAdvanceRawLines());
   const [advanceNote, setAdvanceNote] = useState("");
-  const [manualChoice, setManualChoice] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
 
@@ -137,13 +154,12 @@ export default function CompostBatchDetailPage() {
     if (!batchId) return;
     const data = await apiFetch(`/plant-ops/compost-batches/${batchId}`);
     setBatch(data);
-    setManualChoice(data.manualStatus || "");
   }, [batchId]);
 
   const advanceTarget = batch?.nextOperationalStage;
 
   const loadResourceOptions = useCallback(async () => {
-    if (!batchId || !batch?.isManualOverride || !advanceTarget || advanceTarget === "done") {
+    if (!batchId || !advanceTarget || advanceTarget === "done") {
       setResourceOptions([]);
       return;
     }
@@ -151,7 +167,7 @@ export default function CompostBatchDetailPage() {
       `/plant-ops/resource-options?status=${encodeURIComponent(advanceTarget)}&excludeBatchId=${encodeURIComponent(batchId)}`
     );
     setResourceOptions((data.resources || []).filter((r) => r.available));
-  }, [batchId, batch?.isManualOverride, advanceTarget]);
+  }, [batchId, advanceTarget]);
 
   const loadRawMaterialStock = useCallback(async () => {
     const data = await apiFetch("/plant-ops/raw-materials-expense-summary");
@@ -180,7 +196,7 @@ export default function CompostBatchDetailPage() {
   }, [batchId, loadBatch, router]);
 
   useEffect(() => {
-    if (!batch?.isManualOverride || !advanceTarget || advanceTarget === "done") return;
+    if (!batch || !advanceTarget || advanceTarget === "done") return;
     let cancelled = false;
     (async () => {
       try {
@@ -192,7 +208,7 @@ export default function CompostBatchDetailPage() {
     return () => {
       cancelled = true;
     };
-  }, [batch?.isManualOverride, advanceTarget, loadResourceOptions]);
+  }, [batch, advanceTarget, loadResourceOptions]);
 
   useEffect(() => {
     let cancelled = false;
@@ -245,34 +261,10 @@ export default function CompostBatchDetailPage() {
     });
   }
 
-  async function saveManualOverride(clear) {
-    setError("");
-    setMessage("");
-    try {
-      const manualStatus = clear ? null : manualChoice || null;
-      if (!clear && !manualStatus) {
-        setError("Pick a status to apply, or use Clear override.");
-        return;
-      }
-      await apiFetch(`/plant-ops/compost-batches/${batchId}`, {
-        method: "PATCH",
-        body: JSON.stringify({ manualStatus })
-      });
-      setMessage(clear ? "Reverted to automatic timeline." : "Manual status saved.");
-      await loadBatch();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
   async function advanceStage(e) {
     e.preventDefault();
     setError("");
     setMessage("");
-    if (!batch?.isManualOverride) {
-      setError("Apply a manual status override first to unlock stage movement.");
-      return;
-    }
     if (!advanceTarget) {
       setError("No further stage to advance to.");
       return;
@@ -304,12 +296,6 @@ export default function CompostBatchDetailPage() {
         rawMaterials.push({ materialId: ln.materialId, allocations });
       }
     }
-    if (!rawMaterials.length) {
-      setError(
-        "For at least one raw material, choose a catalogue item and enter a positive quantity for one vendor."
-      );
-      return;
-    }
     const payload =
       advanceTarget === "done"
         ? { rawMaterials, note: advanceNote.trim() || undefined }
@@ -340,14 +326,18 @@ export default function CompostBatchDetailPage() {
 
   const timelineSteps = useMemo(() => {
     if (!batch?.timeline?.stages) return [];
-    const active = batch.effectiveStatus;
+    const active = batch.operationalStageKey || batch.effectiveStatus;
+    const activeOrder = STATUS_OPTIONS.indexOf(active);
     return batch.timeline.stages.map((s) => {
       const order = STATUS_OPTIONS.indexOf(s.key);
-      const activeOrder = STATUS_OPTIONS.indexOf(active);
       let cls = "compost-timeline__step";
       if (s.key === active) cls += " compost-timeline__step--active";
-      else if (order < activeOrder) cls += " compost-timeline__step--past";
-      return { ...s, cls };
+      else if (activeOrder >= 0 && order >= 0 && order < activeOrder) cls += " compost-timeline__step--past";
+      const showCompletedTick =
+        activeOrder >= 0 &&
+        order >= 0 &&
+        (order < activeOrder || (active === "done" && s.key === "done"));
+      return { ...s, cls, showCompletedTick };
     });
   }, [batch]);
 
@@ -355,6 +345,19 @@ export default function CompostBatchDetailPage() {
     () => clusterRawMaterialLines(batch?.rawMaterialLines),
     [batch?.rawMaterialLines]
   );
+
+  /** Planned end of the current workflow stage on the standard calendar — prompts manual advance when passed. */
+  const stageMovementDue = useMemo(() => {
+    if (!batch?.operationalStageKey || batch.operationalStageKey === "done") {
+      return { due: false, endsLabel: "" };
+    }
+    const row = batch.timeline?.stages?.find((s) => s.key === batch.operationalStageKey);
+    if (!row?.endsAt) return { due: false, endsLabel: "" };
+    const end = new Date(row.endsAt);
+    if (Number.isNaN(end.getTime())) return { due: false, endsLabel: "" };
+    const due = Date.now() >= end.getTime();
+    return { due, endsLabel: formatShortDate(row.endsAt) };
+  }, [batch]);
 
   if (!batch) {
     return (
@@ -365,13 +368,14 @@ export default function CompostBatchDetailPage() {
   }
 
   const atDone = batch.operationalStageKey === "done" || !batch.nextOperationalStage;
+  const estCompostReadyIso = compostEstimatedReadyIso(batch);
 
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Plant operations"
         title={batch.batchName}
-        description={`Started ${formatShortDate(batch.startDate)} · Workflow: ${compostStageDisplayLabel(batch.operationalStageKey)} · ${batch.isManualOverride ? "Manual timeline override" : "Automatic timeline"}`}
+        description={`Started ${formatShortDate(batch.startDate)} · Recorded workflow: ${compostStageDisplayLabel(batch.operationalStageKey)}. Use the workflow and timeline panel plus stage movements below to plan and advance.`}
       >
         <Link href="/plant-operations" className="btn btn-ghost">
           ← All batches
@@ -381,176 +385,277 @@ export default function CompostBatchDetailPage() {
       {error ? <div className="alert alert-error">{error}</div> : null}
       {message ? <div className="alert alert-success">{message}</div> : null}
 
-      <div className="card">
-        <h3 className="panel-title">Status &amp; progress</h3>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center" }}>
-          <span className={compostStagePillClass(batch.effectiveStatus)}>
-            {compostStageDisplayLabel(batch.effectiveStatus)}
-          </span>
-          <span className={compostStagePillClass(batch.operationalStageKey)}>
-            Workflow: {compostStageDisplayLabel(batch.operationalStageKey)}
-          </span>
-          {batch.isManualOverride ? (
-            <span className="tag">
-              Manual override (computed would be: {compostStageDisplayLabel(batch.computedStatus)})
-            </span>
-          ) : (
-            <span className="text-muted">Computed from dates: {batch.computedStatus}</span>
-          )}
-        </div>
-        <div className="compost-progress-wrap" style={{ marginTop: 16, maxWidth: 480 }}>
-          <div className="compost-progress">
-            <div className="compost-progress__fill" style={{ width: `${Math.round((batch.progress || 0) * 100)}%` }} />
-          </div>
-          <div className="compost-progress-foot">{compostCycleDayDisplay(batch)}</div>
-        </div>
-        <p className="page-lead" style={{ marginTop: 12, marginBottom: 0 }}>
-          Overall span to end of pasteurisation: <strong>{batch.timeline?.totalSpanDays ?? 20}</strong> days.
+      <div className="card compost-lifecycle-card">
+        <h3 className="panel-title">Workflow &amp; planned timeline</h3>
+        <p className="page-lead compost-lifecycle-card__lead">
+          Started <strong>{formatShortDate(batch.startDate)}</strong>. The <strong>workflow</strong> pill is what you have
+          recorded; the <strong>calendar</strong> line is where the batch sits on the standard plan by date alone. The strip of
+          stages is the full plan through pasteurisation — the highlighted step matches your current workflow. Advance the
+          workflow only from <strong>Stage movements</strong> below.
         </p>
-      </div>
-
-      <div className="card">
-        <h3 className="panel-title">Stage timeline</h3>
-        <p className="page-lead" style={{ marginBottom: 12 }}>
-          Expected window for each stage from the batch start date (UTC midnight on the chosen calendar day).
-        </p>
-        <div className="compost-timeline">
-          {timelineSteps.map((s) => (
-            <div key={s.key} className={s.cls}>
-              <div className="compost-timeline__label">{s.label}</div>
-              <div className="compost-timeline__meta">
-                {s.days ? `${s.days} day(s)` : "Final"} · start {formatShortDate(s.startsAt)}
-                {s.endsAt ? (
-                  <>
-                    {" "}
-                    → end {formatShortDate(s.endsAt)}
-                  </>
+        <div className="compost-lifecycle-card__body">
+          <section className="compost-lifecycle-card__col compost-lifecycle-card__col--status" aria-labelledby="compost-status-heading">
+            <h4 id="compost-status-heading" className="compost-lifecycle-card__subhead">
+              Status &amp; calendar progress
+            </h4>
+            <div className="compost-lifecycle-card__pills">
+              <span className={compostStagePillClass(batch.operationalStageKey)}>
+                Workflow: {compostStageDisplayLabel(batch.operationalStageKey)}
+              </span>
+              <div className="compost-lifecycle-card__calendar-line text-muted">
+                Calendar (by start date): <strong>{compostStageDisplayLabel(batch.computedStatus)}</strong>
+                {batch.isManualOverride ? (
+                  <span className="tag" style={{ marginLeft: 8 }}>
+                    Display override
+                  </span>
                 ) : null}
               </div>
             </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="card">
-        <h3 className="panel-title">Manual status override</h3>
-        <p className="page-lead" style={{ marginBottom: 12 }}>
-          Choose the lifecycle stage that matches what you are about to record, then click <strong>Apply override</strong>. That
-          unlocks the <strong>Advance workflow</strong> form inside <strong>Stage movements</strong> so you can commit the next
-          resource allocation and raw material draw. Clear override when you want to hide that form again.
-        </p>
-        <div className="grid grid-3" style={{ alignItems: "end" }}>
-          <div>
-            <label>Status</label>
-            <select className="input" value={manualChoice} onChange={(e) => setManualChoice(e.target.value)}>
-              <option value="">(automatic)</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s} value={s}>
-                  {compostStageDisplayLabel(s)}
-                </option>
+            <div className="compost-lifecycle-card__progress-block">
+              <div className="compost-lifecycle-card__progress-label">Elapsed vs full plan (by calendar)</div>
+              <div className="compost-progress-wrap compost-progress-wrap--wide">
+                <div className="compost-progress compost-progress--lg">
+                  <div className="compost-progress__fill" style={{ width: `${Math.round((batch.progress || 0) * 100)}%` }} />
+                </div>
+                <div className="compost-progress-foot">{compostCycleDayDisplay(batch)}</div>
+              </div>
+            </div>
+            <dl className="compost-lifecycle-metrics">
+              <div>
+                <dt>Planned span</dt>
+                <dd>{batch.timeline?.totalSpanDays ?? 20} days</dd>
+              </div>
+              <div>
+                <dt>Est. compost ready</dt>
+                <dd>{estCompostReadyIso ? formatShortDate(estCompostReadyIso) : "—"}</dd>
+              </div>
+              <div>
+                <dt>Batch start</dt>
+                <dd>{formatShortDate(batch.startDate)}</dd>
+              </div>
+            </dl>
+          </section>
+          <section className="compost-lifecycle-card__col compost-lifecycle-card__col--timeline" aria-labelledby="compost-plan-heading">
+            <h4 id="compost-plan-heading" className="compost-lifecycle-card__subhead">
+              Planned stages (reference)
+            </h4>
+            <div className="compost-timeline compost-timeline--in-card">
+              {timelineSteps.map((s) => (
+                <div key={s.key} className={s.cls}>
+                  <div className="compost-timeline__label-row">
+                    {s.showCompletedTick ? (
+                      <span className="compost-timeline__tick" title="Completed in workflow" role="img" aria-label="Completed">
+                        ✓
+                      </span>
+                    ) : null}
+                    <div className="compost-timeline__label">{s.label}</div>
+                  </div>
+                  <div className="compost-timeline__meta">
+                    {s.days ? `${s.days}d` : "—"} · {formatShortDate(s.startsAt)}
+                    {s.endsAt ? (
+                      <>
+                        {" "}
+                        → {formatShortDate(s.endsAt)}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
               ))}
-            </select>
-          </div>
-          <button type="button" className="btn" onClick={() => void saveManualOverride(false)}>
-            Apply override
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => void saveManualOverride(true)}>
-            Clear override
-          </button>
+            </div>
+            <div className="compost-latest-params">
+              {batch.latestDailyParameters ? (
+                <>
+                  <h4 className="compost-latest-params__heading">
+                    <span className="compost-lifecycle-card__subhead compost-latest-params__heading-label">
+                      Latest daily parameters
+                    </span>
+                    <span className="compost-latest-params__title-meta">
+                      (Logged {formatDateTime(batch.latestDailyParameters.loggedAt)}
+                      {batch.latestDailyParameters.recordedByName
+                        ? ` · ${batch.latestDailyParameters.recordedByName}`
+                        : ""}
+                      )
+                    </span>
+                  </h4>
+                  <dl className="compost-latest-params__grid compost-latest-params__grid--metrics">
+                    <div>
+                      <dt>Temperature</dt>
+                      <dd>{Number(batch.latestDailyParameters.temperatureC).toFixed(1)}°C</dd>
+                    </div>
+                    <div>
+                      <dt>Moisture</dt>
+                      <dd>{Number(batch.latestDailyParameters.moisturePercent).toFixed(1)}%</dd>
+                    </div>
+                    <div>
+                      <dt>Ammonia</dt>
+                      <dd>
+                        {Number(batch.latestDailyParameters.ammoniaLevel).toLocaleString("en-IN", {
+                          maximumFractionDigits: 2
+                        })}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>Alerts</dt>
+                      <dd>
+                        {(() => {
+                          const a = compostParameterLogAlerts(batch.latestDailyParameters);
+                          return (
+                            <div className="compost-param-log-alerts compost-latest-params__alerts-cell">
+                              {a.highTemperature ? (
+                                <span className="compost-param-alert compost-param-alert--temp" title="Temperature above 75°C">
+                                  Temp {">"} 75°C
+                                </span>
+                              ) : null}
+                              {a.lowMoisture ? (
+                                <span className="compost-param-alert compost-param-alert--moisture" title="Moisture below 65%">
+                                  Moisture {"<"} 65%
+                                </span>
+                              ) : null}
+                              {!a.highTemperature && !a.lowMoisture ? (
+                                <span
+                                  className="compost-param-alert compost-param-alert--ok"
+                                  title="Temperature ≤ 75°C and moisture ≥ 65%"
+                                >
+                                  OK
+                                </span>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
+                      </dd>
+                    </div>
+                  </dl>
+                  <div className="compost-latest-params__context-row">
+                    <strong>Stage</strong>
+                    {batch.latestDailyParameters.operationalStageKey ? (
+                      <span className={compostStagePillClass(batch.latestDailyParameters.operationalStageKey)}>
+                        {compostStageDisplayLabel(batch.latestDailyParameters.operationalStageKey)}
+                      </span>
+                    ) : (
+                      <span>—</span>
+                    )}
+                    <span className="compost-latest-params__context-sep" aria-hidden>
+                      ·
+                    </span>
+                    <strong>Resources</strong>
+                    <span className="compost-latest-params__context-resources">
+                      {formatAllocatedResourcesFromLog(batch.latestDailyParameters)}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h4 className="compost-lifecycle-card__subhead" style={{ marginBottom: 10 }}>
+                    Latest daily parameters
+                  </h4>
+                  <p className="text-muted" style={{ marginBottom: 0, fontSize: 13 }}>
+                    No daily parameter logs yet. Add logs from <strong>Plant operations</strong> using the log button on the
+                    batch row.
+                  </p>
+                </>
+              )}
+            </div>
+          </section>
         </div>
       </div>
 
-      <div className="card">
+      <div className="card compost-movements-card">
         <h3 className="panel-title">Stage movements</h3>
-        <p className="page-lead" style={{ marginBottom: 12 }}>
-          History of each workflow step (resources opened and raw material committed). After you apply a{" "}
-          <strong>manual status override</strong> above, use <strong>Advance workflow</strong> here to record the next
-          movement.
+        <p className="page-lead compost-stage-movements__lead">
+          Log of each advance: plant resources and any raw material draws. Use <strong>Record next stage movement</strong> when
+          you are ready — assign the next resource where required; raw materials are optional unless this step uses stock.
         </p>
-        <div className="table-wrap">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>From → To</th>
-                <th>Resources</th>
-                <th>Raw materials</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(batch.stageMovements || []).length === 0 ? (
+        <div className="compost-stage-movements__section">
+          <h4 className="compost-lifecycle-card__subhead">History</h4>
+          <div className="table-wrap compost-stage-movements__table-wrap">
+            <table className="table compost-stage-movements__table">
+              <thead>
                 <tr>
-                  <td colSpan={4}>
-                    <span className="cell-empty">No stage movements recorded yet.</span>
-                  </td>
+                  <th>When</th>
+                  <th>From → To</th>
+                  <th>Resources</th>
+                  <th>Raw materials</th>
                 </tr>
-              ) : (
-                (batch.stageMovements || []).map((mv) => (
-                  <tr key={mv._id}>
-                    <td>{formatShortDate(mv.movedAt)}</td>
-                    <td>
-                      <strong>{compostStageDisplayLabel(mv.fromStage)}</strong>
-                      <span className="text-muted"> → </span>
-                      <strong>{compostStageDisplayLabel(mv.toStage)}</strong>
-                    </td>
-                    <td>
-                      {(mv.resourcesUsed || []).length ? (
-                        <ul style={{ margin: 0, paddingLeft: 18 }}>
-                          {(mv.resourcesUsed || []).map((r, i) => (
-                            <li key={i}>
-                              {r.name} <span className="text-muted">({r.resourceType})</span>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
-                    </td>
-                    <td>
-                      {(mv.rawMaterialsUsed || []).length ? (
-                        <ul style={{ margin: 0, paddingLeft: 18 }}>
-                          {(mv.rawMaterialsUsed || []).map((r, i) => (
-                            <li key={i}>
-                              {r.materialName} · {r.vendorName}: <strong>{formatStockQty(r.quantity)}</strong>
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <span className="text-muted">—</span>
-                      )}
+              </thead>
+              <tbody>
+                {(batch.stageMovements || []).length === 0 ? (
+                  <tr>
+                    <td colSpan={4}>
+                      <span className="cell-empty">No stage movements recorded yet.</span>
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : (
+                  (batch.stageMovements || []).map((mv) => (
+                    <tr key={mv._id}>
+                      <td>{formatShortDate(mv.movedAt)}</td>
+                      <td>
+                        <strong>{compostStageDisplayLabel(mv.fromStage)}</strong>
+                        <span className="text-muted"> → </span>
+                        <strong>{compostStageDisplayLabel(mv.toStage)}</strong>
+                      </td>
+                      <td>
+                        {(mv.resourcesUsed || []).length ? (
+                          <ul style={{ margin: 0, paddingLeft: 18 }}>
+                            {(mv.resourcesUsed || []).map((r, i) => (
+                              <li key={i}>
+                                {r.name} <span className="text-muted">({r.resourceType})</span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td>
+                        {(mv.rawMaterialsUsed || []).length ? (
+                          <ul style={{ margin: 0, paddingLeft: 18 }}>
+                            {(mv.rawMaterialsUsed || []).map((r, i) => (
+                              <li key={i}>
+                                {r.materialName} · {r.vendorName}: <strong>{formatStockQty(r.quantity)}</strong>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
         </div>
 
-        <div className="panel-inset panel-inset--strong" style={{ marginTop: 20 }}>
-          <h4 className="panel-title" style={{ fontSize: 15, marginBottom: 10 }}>
-            Advance workflow
-          </h4>
-          {atDone ? (
-            <p className="page-lead" style={{ marginBottom: 0 }}>
-              This batch has reached <strong>compost ready</strong>. No further stage movements are available.
-            </p>
-          ) : !batch.isManualOverride ? (
-            <p className="page-lead" style={{ marginBottom: 0 }}>
-              To record the next stage movement, set <strong>Manual status override</strong> above to the stage you are working
-              in, then click <strong>Apply override</strong>. The advance form will appear here.
-            </p>
-          ) : (
-            <>
+        <div className="compost-stage-movements__form-shell">
+          <div className="panel-inset panel-inset--strong compost-advance-panel">
+            <h4 className="panel-title" style={{ fontSize: 15, marginBottom: 10 }}>
+              Record next stage movement
+            </h4>
+            {atDone ? (
+              <p className="page-lead" style={{ marginBottom: 0 }}>
+                This batch has reached <strong>compost ready</strong>. No further stage movements are available.
+              </p>
+            ) : (
+              <>
+              {stageMovementDue.due && advanceTarget ? (
+                <div className="alert alert-warn" style={{ marginBottom: 16 }}>
+                  <strong>Action required.</strong> The planned window for{" "}
+                  <strong>{compostStageDisplayLabel(batch.operationalStageKey)}</strong> ended on{" "}
+                  <strong>{stageMovementDue.endsLabel}</strong>. When ready, record the movement below — next workflow stage:{" "}
+                  <strong>{compostStageDisplayLabel(advanceTarget)}</strong>.
+                </div>
+              ) : null}
               <p className="page-lead" style={{ marginBottom: 12 }}>
-                Move the batch from <strong>{compostStageDisplayLabel(batch.operationalStageKey)}</strong> to{" "}
-                <strong>{compostStageDisplayLabel(advanceTarget)}</strong>. Record one or more raw materials with quantities per
-                vendor;{" "}
+                Advance the recorded workflow from <strong>{compostStageDisplayLabel(batch.operationalStageKey)}</strong> to{" "}
+                <strong>{compostStageDisplayLabel(advanceTarget)}</strong>.
                 {advanceTarget === "done" ? (
-                  <>no new plant resource is required for the final step.</>
+                  <> No new plant resource is required. Raw material draws are optional.</>
                 ) : (
                   <>
-                    pick one available <strong>{resourceOptions[0]?.resourceType || "plant resource"}</strong> allowed for the
-                    next stage.
+                    {" "}
+                    Select one available <strong>{resourceOptions[0]?.resourceType || "plant resource"}</strong> for the next
+                    stage. Raw materials are <strong>optional</strong> — add lines only if this movement uses stock.
                   </>
                 )}
               </p>
@@ -573,7 +678,7 @@ export default function CompostBatchDetailPage() {
                 ) : null}
                 <div className="section-stack" style={{ gap: 14 }}>
                   <div className="flex flex-wrap" style={{ alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                    <label style={{ marginBottom: 0 }}>Raw materials</label>
+                    <label style={{ marginBottom: 0 }}>Raw materials (optional)</label>
                     <button type="button" className="btn btn-secondary" style={{ fontSize: 13, padding: "6px 12px" }} onClick={addAdvanceRawMaterialLine}>
                       Add material
                     </button>
@@ -664,8 +769,9 @@ export default function CompostBatchDetailPage() {
                   {advanceTarget === "done" ? "Mark compost ready" : `Advance to ${compostStageDisplayLabel(advanceTarget)}`}
                 </button>
               </form>
-            </>
-          )}
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -770,6 +876,84 @@ export default function CompostBatchDetailPage() {
                 </article>
               );
             })}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3 className="panel-title">Daily parameter logs</h3>
+        <p className="page-lead" style={{ marginBottom: 12 }}>
+          Temperature (°C), moisture (%), and ammonia level recorded over time. Each row stores the <strong>workflow stage</strong>{" "}
+          and <strong>open plant resources</strong> from when the log was saved. Rows are sorted by date. The alerts column shows
+          a green <strong>OK</strong> when temperature and moisture are in range, or coloured tags when temperature is above 75°C
+          or moisture is below 65%.
+        </p>
+        {!(batch.dailyParameterLogs || []).length ? (
+          <p className="cell-empty" style={{ marginBottom: 0 }}>
+            No parameter logs yet.
+          </p>
+        ) : (
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Date / time</th>
+                  <th>Stage</th>
+                  <th>Allocated resources</th>
+                  <th>Temperature</th>
+                  <th>Moisture</th>
+                  <th>Ammonia</th>
+                  <th>Recorded by</th>
+                  <th>Alerts</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(batch.dailyParameterLogs || []).map((log) => {
+                  const a = compostParameterLogAlerts(log);
+                  return (
+                    <tr key={log._id}>
+                      <td>{formatDateTime(log.loggedAt)}</td>
+                      <td>
+                        {log.operationalStageKey ? (
+                          <span className={compostStagePillClass(log.operationalStageKey)}>
+                            {compostStageDisplayLabel(log.operationalStageKey)}
+                          </span>
+                        ) : (
+                          <span className="text-muted">—</span>
+                        )}
+                      </td>
+                      <td style={{ maxWidth: 280, fontSize: 13 }}>{formatAllocatedResourcesFromLog(log)}</td>
+                      <td>{Number(log.temperatureC).toFixed(1)}°C</td>
+                      <td>{Number(log.moisturePercent).toFixed(1)}%</td>
+                      <td>{Number(log.ammoniaLevel).toLocaleString("en-IN", { maximumFractionDigits: 2 })}</td>
+                      <td>{log.recordedByName || <span className="text-muted">—</span>}</td>
+                      <td>
+                        <div className="compost-param-log-alerts">
+                          {a.highTemperature ? (
+                            <span className="compost-param-alert compost-param-alert--temp" title="Temperature above 75°C">
+                              Temp {">"} 75°C
+                            </span>
+                          ) : null}
+                          {a.lowMoisture ? (
+                            <span className="compost-param-alert compost-param-alert--moisture" title="Moisture below 65%">
+                              Moisture {"<"} 65%
+                            </span>
+                          ) : null}
+                          {!a.highTemperature && !a.lowMoisture ? (
+                            <span
+                              className="compost-param-alert compost-param-alert--ok"
+                              title="Temperature ≤ 75°C and moisture ≥ 65%"
+                            >
+                              OK
+                            </span>
+                          ) : null}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

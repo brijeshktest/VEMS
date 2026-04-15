@@ -199,3 +199,47 @@ export function ClearFiltersIconButton({
     </button>
   );
 }
+
+/** Thermometer + list — daily compost parameter log. */
+function IconParameterLog({ className }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M10 18.5V5a2 2 0 114 0v13.5"
+        stroke="currentColor"
+        strokeWidth="1.85"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M8 18.5h8a2.5 2.5 0 01-8 0z"
+        stroke="currentColor"
+        strokeWidth="1.85"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <path d="M15 8h4M15 11h4M15 14h3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ParameterLogIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "Log daily parameters",
+  title = "Log daily parameters"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconParameterLog />
+    </button>
+  );
+}

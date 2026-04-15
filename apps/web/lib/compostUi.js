@@ -38,6 +38,32 @@ export function formatShortDate(iso) {
   }
 }
 
+export function formatDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch {
+    return "—";
+  }
+}
+
+/** Threshold alerts for daily compost parameter logs (aligned with plant operations UI). */
+export function compostParameterLogAlerts(log) {
+  if (!log) {
+    return { highTemperature: false, lowMoisture: false };
+  }
+  return {
+    highTemperature: Number(log.temperatureC) > 75,
+    lowMoisture: Number(log.moisturePercent) < 65
+  };
+}
+
 /** Planned compost-ready moment: end of pasteurisation on the standard timeline (`buildCompostTimeline`). */
 export function compostEstimatedReadyIso(batch) {
   const stages = batch?.timeline?.stages;

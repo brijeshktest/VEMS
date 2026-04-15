@@ -14,7 +14,7 @@ import {
   formatStockQty
 } from "../../../lib/compostUi.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
-import { DeleteIconButton, ViewIconLink } from "../../../components/EditDeleteIconButtons.js";
+import { DeleteIconButton, ParameterLogIconButton, ViewIconLink } from "../../../components/EditDeleteIconButtons.js";
 
 function newRawMaterialLineId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
@@ -38,6 +38,28 @@ function getInitialForm() {
     rawMaterialLines: [newRawMaterialLine()],
     rawMaterialNote: ""
   };
+}
+
+/** `yyyy-mm-dd` in local time for `<input type="date" />`. */
+function todayLocalDateInputValue() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function nextShCompostBatchNameFromList(batchList) {
+  let max = 0;
+  const re = /^SH-C-#(\d+)$/i;
+  for (const b of batchList || []) {
+    const m = re.exec(String(b.batchName || "").trim());
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (Number.isFinite(n)) max = Math.max(max, n);
+    }
+  }
+  return `SH-C-#${String(max + 1).padStart(3, "0")}`;
 }
 
 function vendorQtyTemplateFromMaterial(m) {
@@ -133,7 +155,14 @@ export default function PlantOperationsPage() {
   const [modalError, setModalError] = useState("");
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [permissions, setPermissions] = useState(null);
+  const [logModalBatch, setLogModalBatch] = useState(null);
+  const [logForm, setLogForm] = useState({ temperatureC: "", moisturePercent: "", ammoniaLevel: "" });
+  const [logModalError, setLogModalError] = useState("");
+  const [logSaving, setLogSaving] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
+
+  const canPlantEdit = permissions === "all" || Boolean(permissions?.plantOperations?.edit);
 
   const lagoonStats = useMemo(() => {
     const list = availablePlant?.byType?.Lagoon || [];
@@ -159,14 +188,16 @@ export default function PlantOperationsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [meData, batchData, rawSummary, apr, wetting] = await Promise.all([
+      const [meData, permData, batchData, rawSummary, apr, wetting] = await Promise.all([
         apiFetch("/auth/me").catch(() => ({})),
+        apiFetch("/auth/permissions").catch(() => ({ permissions: {} })),
         apiFetch("/plant-ops/compost-batches"),
         apiFetch("/plant-ops/raw-materials-expense-summary").catch(() => []),
         apiFetch("/plant-ops/available-plant-resources").catch(() => null),
         apiFetch("/plant-ops/resource-options?status=wetting").catch(() => ({ resources: [] }))
       ]);
       setIsAdmin(meData.user?.role === "admin");
+      setPermissions(permData.permissions ?? {});
       setBatches(Array.isArray(batchData) ? batchData : []);
       setRawExpenseSummary(Array.isArray(rawSummary) ? rawSummary : []);
       setAvailablePlant(apr && apr.byType ? apr : null);
@@ -183,14 +214,80 @@ export default function PlantOperationsPage() {
     load();
   }, [load]);
 
-  function openCreateModal() {
+  async function openCreateModal() {
     setModalError("");
+    const startDate = todayLocalDateInputValue();
+    let batchName = nextShCompostBatchNameFromList(batches);
+    try {
+      const next = await apiFetch("/plant-ops/compost-batches/next-batch-code");
+      if (next && typeof next.batchName === "string" && next.batchName.trim()) {
+        batchName = next.batchName.trim();
+      }
+    } catch {
+      /* use client-derived batchName from batches list */
+    }
+    setForm({
+      ...getInitialForm(),
+      batchName,
+      startDate
+    });
     setCreateModalOpen(true);
   }
 
   function closeCreateModal() {
     setCreateModalOpen(false);
     setModalError("");
+  }
+
+  function openLogModal(batch) {
+    setLogModalError("");
+    setLogForm({ temperatureC: "", moisturePercent: "", ammoniaLevel: "" });
+    setLogModalBatch(batch);
+  }
+
+  function closeLogModal() {
+    setLogModalBatch(null);
+    setLogModalError("");
+    setLogSaving(false);
+  }
+
+  async function submitDailyParameterLog(e) {
+    e.preventDefault();
+    if (!logModalBatch?._id) return;
+    setLogModalError("");
+    const temp = Number(logForm.temperatureC);
+    const moisture = Number(logForm.moisturePercent);
+    const ammonia = Number(logForm.ammoniaLevel);
+    if (!Number.isFinite(temp)) {
+      setLogModalError("Enter a valid temperature (°C).");
+      return;
+    }
+    if (!Number.isFinite(moisture) || moisture < 0 || moisture > 100) {
+      setLogModalError("Moisture must be between 0 and 100%.");
+      return;
+    }
+    if (!Number.isFinite(ammonia) || ammonia < 0) {
+      setLogModalError("Enter a valid ammonia level (0 or greater).");
+      return;
+    }
+    setLogSaving(true);
+    try {
+      await apiFetch(`/plant-ops/compost-batches/${logModalBatch._id}/daily-parameter-logs`, {
+        method: "POST",
+        body: JSON.stringify({
+          temperatureC: temp,
+          moisturePercent: moisture,
+          ammoniaLevel: ammonia
+        })
+      });
+      setMessage("Daily parameter log saved.");
+      closeLogModal();
+      await load();
+    } catch (err) {
+      setLogModalError(err.message || "Could not save log.");
+    } finally {
+      setLogSaving(false);
+    }
   }
 
   function setRawLineMaterial(lineId, materialId) {
@@ -316,7 +413,7 @@ export default function PlantOperationsPage() {
       <PageHeader
         eyebrow="Operations"
         title="Plant operations"
-        description="Compost batch lifecycle: wetting through pasteurisation with automatic dates, resource allocation by stage, and raw material tracking from the expense catalogue."
+        description="Compost batch lifecycle: wetting through pasteurisation with a planned calendar for reference, manual stage advances on each batch, resource allocation per movement, and raw material tracking from the expense catalogue."
       >
         <Link href="/dashboard" className="btn btn-ghost">
           ← Dashboard
@@ -578,7 +675,7 @@ export default function PlantOperationsPage() {
                 <th>Status</th>
                 <th>Workflow</th>
                 <th>Progress</th>
-                <th>Override</th>
+                <th>Timeline display</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -640,10 +737,23 @@ export default function PlantOperationsPage() {
                         <div className="compost-progress-foot">{compostCycleDayDisplay(b)}</div>
                       </div>
                     </td>
-                    <td>{b.isManualOverride ? <span className="tag">Manual</span> : <span className="text-muted">Auto</span>}</td>
+                    <td>
+                      {b.isManualOverride ? (
+                        <span className="tag">Override</span>
+                      ) : (
+                        <span className="text-muted">From dates</span>
+                      )}
+                    </td>
                     <td>
                       <div className="row-actions">
                         <ViewIconLink href={`/plant-operations/${b._id}`} title="View batch" aria-label="View batch details" />
+                        {canPlantEdit && b.operationalStageKey !== "done" ? (
+                          <ParameterLogIconButton
+                            onClick={() => openLogModal(b)}
+                            title="Add daily parameter log"
+                            aria-label={`Add daily parameter log for ${b.batchName}`}
+                          />
+                        ) : null}
                         {isAdmin && b.operationalStageKey !== "done" ? (
                           <DeleteIconButton onClick={() => void deleteBatch(b)} title="Delete batch (admin)" />
                         ) : null}
@@ -708,11 +818,15 @@ export default function PlantOperationsPage() {
                     <label>Batch name / ID</label>
                     <input
                       className="input"
-                      placeholder="e.g. CB-2026-0411-A"
+                      placeholder="SH-C-#001"
                       value={form.batchName}
                       onChange={(e) => setForm({ ...form, batchName: e.target.value })}
                       required
                     />
+                    <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                      Auto-filled as <strong>SH-C-#001</strong>, <strong>SH-C-#002</strong>, … from existing batches. You can edit
+                      if needed.
+                    </p>
                   </div>
                   <div>
                     <label>Start date</label>
@@ -723,6 +837,9 @@ export default function PlantOperationsPage() {
                       onChange={(e) => setForm({ ...form, startDate: e.target.value })}
                       required
                     />
+                    <p className="text-muted" style={{ fontSize: 12, marginTop: 6, marginBottom: 0 }}>
+                      Defaults to <strong>today</strong>; change if the batch actually started on another day.
+                    </p>
                   </div>
                   <div>
                     <label>Quantity (optional)</label>
@@ -870,6 +987,91 @@ export default function PlantOperationsPage() {
                     Create batch
                   </button>
                   <button type="button" className="btn btn-secondary" onClick={closeCreateModal}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {logModalBatch ? (
+        <div
+          className="voucher-modal-backdrop"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeLogModal();
+          }}
+        >
+          <div
+            className="voucher-modal-dialog voucher-modal-dialog--narrow"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="compost-daily-log-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="voucher-modal-header">
+              <h3 id="compost-daily-log-modal-title" className="voucher-modal-title">
+                Daily parameter log — {logModalBatch.batchName}
+              </h3>
+              <button type="button" className="voucher-modal-close" aria-label="Close" onClick={closeLogModal}>
+                ×
+              </button>
+            </div>
+            <div className="voucher-modal-body" style={{ overflow: "auto" }}>
+              <p className="page-lead" style={{ marginBottom: 16 }}>
+                Record <strong>temperature</strong> (°C), <strong>moisture</strong> (%), and <strong>ammonia level</strong> (ppm
+                or your site standard). Alerts appear if temperature is above 75°C or moisture is below 65%. The current{" "}
+                <strong>workflow stage</strong> and <strong>open plant resource allocations</strong> are stored automatically
+                with this log.
+              </p>
+              {logModalError ? <div className="alert alert-error" style={{ marginBottom: 12 }}>{logModalError}</div> : null}
+              <form className="section-stack voucher-modal-form" onSubmit={submitDailyParameterLog} style={{ gap: 14 }}>
+                <div className="grid grid-3">
+                  <div>
+                    <label>Temperature (°C)</label>
+                    <input
+                      className="input"
+                      type="number"
+                      step="any"
+                      required
+                      value={logForm.temperatureC}
+                      onChange={(e) => setLogForm((f) => ({ ...f, temperatureC: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label>Moisture (%)</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="any"
+                      required
+                      value={logForm.moisturePercent}
+                      onChange={(e) => setLogForm((f) => ({ ...f, moisturePercent: e.target.value }))}
+                    />
+                  </div>
+                  <div>
+                    <label>Ammonia level</label>
+                    <input
+                      className="input"
+                      type="number"
+                      min="0"
+                      step="any"
+                      required
+                      value={logForm.ammoniaLevel}
+                      onChange={(e) => setLogForm((f) => ({ ...f, ammoniaLevel: e.target.value }))}
+                      placeholder="e.g. ppm"
+                    />
+                  </div>
+                </div>
+                <div className="voucher-modal-actions" style={{ paddingTop: 8 }}>
+                  <button className="btn" type="submit" disabled={logSaving}>
+                    {logSaving ? "Saving…" : "Save log"}
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={closeLogModal} disabled={logSaving}>
                     Cancel
                   </button>
                 </div>

@@ -25,6 +25,34 @@ const RawMaterialLineSchema = new mongoose.Schema(
   { _id: true }
 );
 
+const AllocatedResourceSnapshotSchema = new mongoose.Schema(
+  {
+    name: { type: String, trim: true, default: "" },
+    resourceType: { type: String, trim: true, default: "" },
+    allocationStageKey: { type: String, trim: true, default: "" }
+  },
+  { _id: false }
+);
+
+const DailyParameterLogSchema = new mongoose.Schema(
+  {
+    /** Degrees Celsius */
+    temperatureC: { type: Number, required: true },
+    /** Relative % */
+    moisturePercent: { type: Number, required: true },
+    /** Typical NH₃ monitoring units (ppm); stored as a plain number. */
+    ammoniaLevel: { type: Number, required: true },
+    loggedAt: { type: Date, default: Date.now },
+    recordedByUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    recordedByName: { type: String, trim: true, default: "" },
+    /** Workflow stage when the log was saved. */
+    operationalStageKey: { type: String, trim: true, default: "" },
+    /** Open plant resource allocations at log time (snapshot). */
+    allocatedResources: { type: [AllocatedResourceSnapshotSchema], default: [] }
+  },
+  { _id: true }
+);
+
 const StageMovementSchema = new mongoose.Schema(
   {
     movedAt: { type: Date, default: Date.now },
@@ -59,7 +87,8 @@ const CompostLifecycleBatchSchema = new mongoose.Schema(
     manualStatus: { type: String, trim: true },
     resourceAllocations: [ResourceAllocationSchema],
     rawMaterialLines: [RawMaterialLineSchema],
-    stageMovements: [StageMovementSchema]
+    stageMovements: [StageMovementSchema],
+    dailyParameterLogs: [DailyParameterLogSchema]
   },
   { timestamps: true }
 );

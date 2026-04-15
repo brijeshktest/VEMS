@@ -58,7 +58,13 @@ router.get("/status", requireAuth, async (req, res) => {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
   }
-  const rooms = await GrowingRoom.find().populate("currentStageId").sort({ name: 1 });
+  const onlyRoomResources = ["1", "true", "yes"].includes(
+    String(req.query.onlyRoomResources || "").trim().toLowerCase()
+  );
+  const roomFilter = onlyRoomResources
+    ? { $or: [{ resourceType: "Room" }, { resourceType: { $exists: false } }, { resourceType: null }] }
+    : {};
+  const rooms = await GrowingRoom.find(roomFilter).populate("currentStageId").sort({ name: 1 });
   const stages = await Stage.find().sort({ sequenceOrder: 1 });
   const stageLookup = new Map(stages.map((stage) => [stage._id.toString(), stage]));
   const orderedStages = stages.map((stage) => stage._id.toString());

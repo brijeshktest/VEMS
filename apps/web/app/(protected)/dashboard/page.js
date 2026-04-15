@@ -186,7 +186,7 @@ export default function DashboardPage() {
             return;
           }
           const [roomData, tunnelAlerts] = await Promise.all([
-            apiFetch("/rooms/status"),
+            apiFetch("/rooms/status?onlyRoomResources=true"),
             apiFetch("/tunnel-bunker/alerts").catch(() => ({ dueItems: [] }))
           ]);
           setRoomPrompts(roomData.filter((room) => room.dueNextStage));
@@ -263,8 +263,9 @@ export default function DashboardPage() {
         method: "POST",
         body: JSON.stringify({})
       });
-      const roomData = await apiFetch("/rooms/status");
+      const roomData = await apiFetch("/rooms/status?onlyRoomResources=true");
       setRoomPrompts(roomData.filter((room) => room.dueNextStage));
+      setRoomSummary(roomData);
     } catch (err) {
       setError(err.message);
     }
