@@ -1268,6 +1268,143 @@ a.brand {
   margin-top: 2px;
 }
 
+.dashboard-expense-dashlets {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 1280px) {
+  .dashboard-expense-dashlets {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-expense-dashlets {
+    grid-template-columns: 1fr;
+  }
+}
+
+.stat-dashlet--yesterday {
+  border-left-color: #c27803;
+}
+
+.stat-dashlet--month {
+  border-left-color: var(--brand-green);
+}
+
+.stat-dashlet__icon--yesterday {
+  color: #b45309;
+  background: linear-gradient(145deg, rgba(253, 230, 138, 0.55), rgba(251, 191, 36, 0.2));
+  border-color: rgba(180, 83, 9, 0.25);
+}
+
+.stat-dashlet__icon--month {
+  color: #047857;
+  background: linear-gradient(145deg, rgba(167, 243, 208, 0.55), rgba(52, 211, 153, 0.2));
+  border-color: rgba(4, 120, 87, 0.22);
+}
+
+.dashboard-voucher-chart-card {
+  border-radius: var(--card-radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--surface-elevated, var(--surface));
+}
+
+.dashboard-voucher-chart-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 22px;
+  background: linear-gradient(125deg, rgba(114, 76, 31, 0.09), rgba(32, 189, 90, 0.07), rgba(59, 130, 246, 0.05));
+  border-bottom: 1px solid var(--border);
+}
+
+.dashboard-voucher-chart-card__title {
+  margin: 0 0 6px;
+  font-size: 1.1rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
+.dashboard-voucher-chart-card__subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+  max-width: 42rem;
+  line-height: 1.45;
+}
+
+.dashboard-voucher-chart-card__year {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.dashboard-voucher-chart-card__year-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.dashboard-voucher-chart-card__select {
+  min-width: 5.5rem;
+  padding: 8px 12px;
+  font-weight: 600;
+}
+
+.dashboard-voucher-chart-card__body {
+  padding: 20px 16px 12px;
+  background: var(--surface);
+}
+
+.dashboard-voucher-chart__svg-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.dashboard-voucher-chart__svg {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  min-height: 200px;
+}
+
+.dashboard-voucher-chart__axis-text {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.dashboard-voucher-chart__month-text {
+  fill: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.dashboard-voucher-chart__axis-title {
+  fill: var(--text-muted);
+  font-size: 10px;
+  font-family: var(--font-sans, system-ui, sans-serif);
+}
+
+.dashboard-voucher-chart__bar {
+  transition: opacity 0.15s ease;
+}
+
+.dashboard-voucher-chart__bar:hover {
+  opacity: 0.92;
+}
+
 .mode-card {
   cursor: pointer;
 }

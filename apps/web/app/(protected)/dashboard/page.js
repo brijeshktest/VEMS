@@ -89,6 +89,213 @@ function IconStatVouchers({ className = "" }) {
   );
 }
 
+/** Yesterday — sun over horizon */
+function IconStatYesterday({ className = "" }) {
+  return (
+    <svg
+      className={className}
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M12 3v1M5.6 5.6l.7.7M3 12h1M19 12h1M18.3 5.6l-.7.7M16 16h2a4 4 0 0 1-8 0h2" />
+      <path d="M8 14a4 4 0 0 1 8 0" opacity="0.35" />
+    </svg>
+  );
+}
+
+/** Calendar month */
+function IconStatMonth({ className = "" }) {
+  return (
+    <svg
+      className={className}
+      width="22"
+      height="22"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.65"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
+    </svg>
+  );
+}
+
+function voucherSpendAmount(v) {
+  const p = Number(v?.paidAmount);
+  if (Number.isFinite(p)) return p;
+  return Number(v?.finalAmount) || 0;
+}
+
+function voucherPurchaseDate(v) {
+  if (!v?.dateOfPurchase) return null;
+  const d = new Date(v.dateOfPurchase);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function startOfLocalDay(d) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+function sumVouchersForLocalCalendarDay(vouchers, day) {
+  const start = startOfLocalDay(day);
+  const end = new Date(start);
+  end.setHours(23, 59, 59, 999);
+  let s = 0;
+  for (const v of vouchers) {
+    const d = voucherPurchaseDate(v);
+    if (!d) continue;
+    if (d >= start && d <= end) s += voucherSpendAmount(v);
+  }
+  return s;
+}
+
+function sumVouchersForLocalMonth(vouchers, year, monthIndex) {
+  let s = 0;
+  for (const v of vouchers) {
+    const d = voucherPurchaseDate(v);
+    if (!d) continue;
+    if (d.getFullYear() === year && d.getMonth() === monthIndex) s += voucherSpendAmount(v);
+  }
+  return s;
+}
+
+function monthlyTotalsForYear(vouchers, year) {
+  return Array.from({ length: 12 }, (_, m) => sumVouchersForLocalMonth(vouchers, year, m));
+}
+
+function formatAxisRupeeShort(n) {
+  const v = Math.abs(Number(n));
+  if (!Number.isFinite(v)) return "0";
+  if (v >= 1e7) return `${(v / 1e7).toFixed(1)} Cr`;
+  if (v >= 1e5) return `${(v / 1e5).toFixed(1)} L`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(0)}k`;
+  return String(Math.round(v));
+}
+
+const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function ExpenseMonthlyChart({ year, monthlyTotals, onYearChange }) {
+  const maxVal = Math.max(1, ...monthlyTotals);
+  const chartW = 640;
+  const chartH = 220;
+  const padL = 56;
+  const padR = 20;
+  const padB = 40;
+  const padT = 12;
+  const innerW = chartW - padL - padR;
+  const innerH = chartH - padT - padB;
+  const barGap = 6;
+  const barW = (innerW - barGap * 11) / 12;
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => maxVal * t);
+
+  const cy = new Date().getFullYear();
+  const yearOptions = [];
+  for (let y = cy + 1; y >= cy - 8; y -= 1) yearOptions.push(y);
+
+  return (
+    <div className="dashboard-voucher-chart-card">
+      <div className="dashboard-voucher-chart-card__head">
+        <div>
+          <h3 className="dashboard-voucher-chart-card__title">Voucher spend by month</h3>
+          <p className="dashboard-voucher-chart-card__subtitle">
+            Total paid amount (same basis as vouchers) grouped by purchase date — local calendar.
+          </p>
+        </div>
+        <label className="dashboard-voucher-chart-card__year">
+          <span className="dashboard-voucher-chart-card__year-label">Year</span>
+          <select className="input dashboard-voucher-chart-card__select" value={year} onChange={(e) => onYearChange(Number(e.target.value))}>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+      <div className="dashboard-voucher-chart-card__body">
+        <div className="dashboard-voucher-chart__svg-wrap">
+          <svg
+            className="dashboard-voucher-chart__svg"
+            viewBox={`0 0 ${chartW} ${chartH}`}
+            role="img"
+            aria-label={`Voucher spend by month for ${year}`}
+          >
+            <defs>
+              <linearGradient id="expenseBarGrad" x1="0" y1="1" x2="0" y2="0">
+                <stop offset="0%" stopColor="rgba(114, 76, 31, 0.35)" />
+                <stop offset="100%" stopColor="var(--brand-green)" />
+              </linearGradient>
+            </defs>
+            {ticks.map((tv, i) => {
+              const y = padT + innerH - (tv / maxVal) * innerH;
+              return (
+                <g key={`grid-${i}`}>
+                  <line
+                    x1={padL}
+                    y1={y}
+                    x2={chartW - padR}
+                    y2={y}
+                    stroke="var(--border)"
+                    strokeDasharray="4 4"
+                    strokeWidth="1"
+                  />
+                  <text x={padL - 8} y={y + 4} textAnchor="end" className="dashboard-voucher-chart__axis-text">
+                    {formatAxisRupeeShort(tv)}
+                  </text>
+                </g>
+              );
+            })}
+            {MONTH_LABELS.map((label, mi) => {
+              const x = padL + mi * (barW + barGap);
+              const h = (monthlyTotals[mi] / maxVal) * innerH;
+              const y = padT + innerH - h;
+              return (
+                <g key={label}>
+                  <rect
+                    x={x}
+                    y={y}
+                    width={barW}
+                    height={Math.max(h, 0)}
+                    rx="4"
+                    fill="url(#expenseBarGrad)"
+                    className="dashboard-voucher-chart__bar"
+                  >
+                    <title>{`${label} ${year}: ${formatIndianRupee(monthlyTotals[mi])}`}</title>
+                  </rect>
+                  <text
+                    x={x + barW / 2}
+                    y={chartH - padB + 22}
+                    textAnchor="middle"
+                    className="dashboard-voucher-chart__month-text"
+                  >
+                    {label}
+                  </text>
+                </g>
+              );
+            })}
+            <text x={padL + innerW / 2} y={chartH - 6} textAnchor="middle" className="dashboard-voucher-chart__axis-title">
+              Month
+            </text>
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [summary, setSummary] = useState(null);
@@ -109,6 +316,8 @@ export default function DashboardPage() {
   const [contributionSummary, setContributionSummary] = useState(null);
   const [compostBatches, setCompostBatches] = useState([]);
   const [canPlantOps, setCanPlantOps] = useState(false);
+  const [expenseVouchers, setExpenseVouchers] = useState([]);
+  const [expenseChartYear, setExpenseChartYear] = useState(() => new Date().getFullYear());
 
   useEffect(() => {
     async function load() {
@@ -167,18 +376,22 @@ export default function DashboardPage() {
         }
 
         if (selectedMode === "expense" || selectedMode === "admin") {
-          const [summaryData, vendorData, materialData, taxData, payerAgg] = await Promise.all([
+          const [summaryData, vendorData, materialData, taxData, payerAgg, voucherList] = await Promise.all([
             apiFetch("/reports/expenses"),
             apiFetch("/reports/vendor-expenses"),
             apiFetch("/reports/material-summary"),
             apiFetch("/reports/tax-payments"),
-            apiFetch("/reports/payment-made-from-aggregate").catch(() => [])
+            apiFetch("/reports/payment-made-from-aggregate").catch(() => []),
+            apiFetch("/vouchers").catch(() => null)
           ]);
           setSummary(summaryData);
           setVendors(vendorData.slice(0, 5));
           setMaterials(materialData.slice(0, 5));
           setTax(taxData);
           setPaymentMadeByAgg(Array.isArray(payerAgg) ? payerAgg : []);
+          setExpenseVouchers(Array.isArray(voucherList) ? voucherList : []);
+        } else {
+          setExpenseVouchers([]);
         }
         if (selectedMode === "room" || selectedMode === "admin") {
           if (!allowRoomStages) {
@@ -256,6 +469,16 @@ export default function DashboardPage() {
       ),
     [paymentMadeByAgg]
   );
+
+  const expenseVoucherDerived = useMemo(() => {
+    const now = new Date();
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayTotal = sumVouchersForLocalCalendarDay(expenseVouchers, yesterday);
+    const currentMonthTotal = sumVouchersForLocalMonth(expenseVouchers, now.getFullYear(), now.getMonth());
+    const monthlyTotals = monthlyTotalsForYear(expenseVouchers, expenseChartYear);
+    return { yesterdayTotal, currentMonthTotal, monthlyTotals };
+  }, [expenseVouchers, expenseChartYear]);
 
   async function moveRoom(roomId) {
     try {
@@ -441,46 +664,79 @@ export default function DashboardPage() {
       ) : null}
 
       {(workMode === "expense" || workMode === "admin") && summary ? (
-        <section className="saas-section" aria-label="Key metrics">
-          <div className="grid grid-3">
-            <Link className="stat-link" href="/reports">
-              <div className="card stat-card stat-dashlet">
-                <div className="stat-dashlet__icon" aria-hidden>
-                  <IconStatPaid />
+        <>
+          <section className="saas-section" aria-label="Key metrics">
+            <div className="dashboard-expense-dashlets">
+              <Link className="stat-link" href="/reports">
+                <div className="card stat-card stat-dashlet">
+                  <div className="stat-dashlet__icon" aria-hidden>
+                    <IconStatPaid />
+                  </div>
+                  <div className="stat-dashlet__body">
+                    <span className="stat-label">Total paid amount</span>
+                    <span className="stat-value">{summary ? formatIndianRupee(summary.totalPaidAmount) : "—"}</span>
+                    <span className="stat-hint">Open reports →</span>
+                  </div>
                 </div>
-                <div className="stat-dashlet__body">
-                  <span className="stat-label">Total paid amount</span>
-                  <span className="stat-value">{summary ? formatIndianRupee(summary.totalPaidAmount) : "—"}</span>
-                  <span className="stat-hint">Open reports →</span>
+              </Link>
+              <Link className="stat-link" href="/reports">
+                <div className="card stat-card stat-dashlet">
+                  <div className="stat-dashlet__icon" aria-hidden>
+                    <IconStatTax />
+                  </div>
+                  <div className="stat-dashlet__body">
+                    <span className="stat-label">Total tax</span>
+                    <span className="stat-value">{summary ? formatIndianRupee(summary.totalTax) : "—"}</span>
+                    <span className="stat-hint">Open reports →</span>
+                  </div>
                 </div>
-              </div>
-            </Link>
-            <Link className="stat-link" href="/reports">
-              <div className="card stat-card stat-dashlet">
-                <div className="stat-dashlet__icon" aria-hidden>
-                  <IconStatTax />
+              </Link>
+              <Link className="stat-link" href="/vouchers">
+                <div className="card stat-card stat-dashlet">
+                  <div className="stat-dashlet__icon" aria-hidden>
+                    <IconStatVouchers />
+                  </div>
+                  <div className="stat-dashlet__body">
+                    <span className="stat-label">Vouchers</span>
+                    <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
+                    <span className="stat-hint">View vouchers →</span>
+                  </div>
                 </div>
-                <div className="stat-dashlet__body">
-                  <span className="stat-label">Total tax</span>
-                  <span className="stat-value">{summary ? formatIndianRupee(summary.totalTax) : "—"}</span>
-                  <span className="stat-hint">Open reports →</span>
+              </Link>
+              <Link className="stat-link" href="/vouchers?dateRange=yesterday">
+                <div className="card stat-card stat-dashlet stat-dashlet--yesterday">
+                  <div className="stat-dashlet__icon stat-dashlet__icon--yesterday" aria-hidden>
+                    <IconStatYesterday />
+                  </div>
+                  <div className="stat-dashlet__body">
+                    <span className="stat-label">Yesterday expense</span>
+                    <span className="stat-value">{formatIndianRupee(expenseVoucherDerived.yesterdayTotal)}</span>
+                    <span className="stat-hint">Vouchers of previous day →</span>
+                  </div>
                 </div>
-              </div>
-            </Link>
-            <Link className="stat-link" href="/vouchers">
-              <div className="card stat-card stat-dashlet">
-                <div className="stat-dashlet__icon" aria-hidden>
-                  <IconStatVouchers />
+              </Link>
+              <Link className="stat-link" href="/vouchers?dateRange=month">
+                <div className="card stat-card stat-dashlet stat-dashlet--month">
+                  <div className="stat-dashlet__icon stat-dashlet__icon--month" aria-hidden>
+                    <IconStatMonth />
+                  </div>
+                  <div className="stat-dashlet__body">
+                    <span className="stat-label">Current month expense</span>
+                    <span className="stat-value">{formatIndianRupee(expenseVoucherDerived.currentMonthTotal)}</span>
+                    <span className="stat-hint">Vouchers of this month →</span>
+                  </div>
                 </div>
-                <div className="stat-dashlet__body">
-                  <span className="stat-label">Vouchers</span>
-                  <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
-                  <span className="stat-hint">View vouchers →</span>
-                </div>
-              </div>
-            </Link>
-          </div>
-        </section>
+              </Link>
+            </div>
+          </section>
+          <section className="saas-section" aria-label="Monthly voucher spend">
+            <ExpenseMonthlyChart
+              year={expenseChartYear}
+              monthlyTotals={expenseVoucherDerived.monthlyTotals}
+              onYearChange={setExpenseChartYear}
+            />
+          </section>
+        </>
       ) : null}
 
       {(workMode === "sales" || workMode === "admin") && salesSummary ? (

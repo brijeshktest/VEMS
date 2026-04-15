@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useRouter, useSearchParams } from "next/navigation";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
@@ -103,7 +104,32 @@ function voucherMaterialNamesForFilter(voucher, materialsList) {
     .join(" ");
 }
 
-export default function VouchersPage() {
+/** Local calendar YYYY-MM-DD for dashboard deep-links (?dateRange=yesterday | month). */
+function formatLocalYmd(d) {
+  const y = d.getFullYear();
+  const mo = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${day}`;
+}
+
+function purchaseDateRangeForPreset(preset) {
+  const now = new Date();
+  if (preset === "yesterday") {
+    const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    const key = formatLocalYmd(d);
+    return { dateFrom: key, dateTo: key };
+  }
+  if (preset === "month") {
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const start = new Date(y, m, 1);
+    const end = new Date(y, m + 1, 0);
+    return { dateFrom: formatLocalYmd(start), dateTo: formatLocalYmd(end) };
+  }
+  return { dateFrom: "", dateTo: "" };
+}
+
+function VouchersPageContent() {
   const [vouchers, setVouchers] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [materials, setMaterials] = useState([]);
@@ -145,6 +171,8 @@ export default function VouchersPage() {
   const dateFilterPanelRef = useRef(null);
 
   const dateFilterActive = Boolean(columnFilters.dateFrom || columnFilters.dateTo);
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   function openDateFilterPopover() {
     setDateDraftFrom(columnFilters.dateFrom || "");
@@ -162,7 +190,34 @@ export default function VouchersPage() {
     setDateDraftTo("");
     setColumnFilters((f) => ({ ...f, dateFrom: "", dateTo: "" }));
     setDateFilterOpen(false);
+    if (
+      searchParams.get("dateRange") ||
+      searchParams.get("dateFrom") ||
+      searchParams.get("dateTo")
+    ) {
+      router.replace("/vouchers");
+    }
   }
+
+  useEffect(() => {
+    const preset = searchParams.get("dateRange");
+    const qDf = searchParams.get("dateFrom") || "";
+    const qDt = searchParams.get("dateTo") || "";
+    let dateFrom = "";
+    let dateTo = "";
+    if (preset === "yesterday" || preset === "month") {
+      const r = purchaseDateRangeForPreset(preset);
+      dateFrom = r.dateFrom;
+      dateTo = r.dateTo;
+    } else if (qDf || qDt) {
+      dateFrom = qDf;
+      dateTo = qDt;
+    }
+    if (!dateFrom && !dateTo) return;
+    setColumnFilters((f) => ({ ...f, dateFrom, dateTo }));
+    setDateDraftFrom(dateFrom);
+    setDateDraftTo(dateTo);
+  }, [searchParams]);
 
   useLayoutEffect(() => {
     if (!dateFilterOpen || typeof window === "undefined") return;
@@ -651,7 +706,10 @@ export default function VouchersPage() {
               Create voucher
             </button>
             <ClearFiltersIconButton
-              onClick={() => setColumnFilters({ ...defaultColumnFilters })}
+              onClick={() => {
+                setColumnFilters({ ...defaultColumnFilters });
+                router.replace("/vouchers");
+              }}
               title="Clear all column filters"
             />
             {canBulkDelete ? (
@@ -1311,5 +1369,23 @@ export default function VouchersPage() {
           )
         : null}
     </div>
+  );
+}
+
+export default function VouchersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="page-stack">
+          <PageHeader
+            eyebrow="Purchasing"
+            title="Expense vouchers"
+            description="Line items, tax, discounts, and payment details with automatic totals. Attach invoices or receipts as needed."
+          />
+        </div>
+      }
+    >
+      <VouchersPageContent />
+    </Suspense>
   );
 }
