@@ -13,7 +13,8 @@ import {
   formatShortDate,
   formatDateTime,
   formatStockQty,
-  compostParameterLogAlerts
+  compostParameterLogAlerts,
+  compostStageAdvanceReminder
 } from "../../../../lib/compostUi.js";
 
 const STATUS_OPTIONS = ["wetting", "filling", "turn1", "turn2", "turn3", "pasteurisation", "done"];
@@ -149,6 +150,10 @@ export default function CompostBatchDetailPage() {
   const [advanceNote, setAdvanceNote] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
+  const [dispatchRoomOptions, setDispatchRoomOptions] = useState([]);
+  const [dispatchDestination, setDispatchDestination] = useState("growing_room");
+  const [dispatchRoomId, setDispatchRoomId] = useState("");
+  const [dispatchSubmitting, setDispatchSubmitting] = useState(false);
 
   const loadBatch = useCallback(async () => {
     if (!batchId) return;
@@ -173,6 +178,23 @@ export default function CompostBatchDetailPage() {
     const data = await apiFetch("/plant-ops/raw-materials-expense-summary");
     setRawMaterialStock(Array.isArray(data) ? data : []);
   }, []);
+
+  const loadDispatchRoomOptions = useCallback(async () => {
+    if (!batchId) return;
+    try {
+      const d = await apiFetch(`/plant-ops/compost-batches/${batchId}/growing-room-dispatch-options`);
+      const list = Array.isArray(d.resources) ? d.resources : [];
+      setDispatchRoomOptions(list);
+      const firstAvail = list.find((r) => r.available);
+      setDispatchRoomId((prev) => {
+        if (prev && list.some((r) => String(r._id) === prev && r.available)) return prev;
+        return firstAvail ? String(firstAvail._id) : "";
+      });
+    } catch {
+      setDispatchRoomOptions([]);
+      setDispatchRoomId("");
+    }
+  }, [batchId]);
 
   useEffect(() => {
     if (!batchId) return;
@@ -223,6 +245,60 @@ export default function CompostBatchDetailPage() {
       cancelled = true;
     };
   }, [loadRawMaterialStock]);
+
+  useEffect(() => {
+    if (!batchId || !batch || batch.operationalStageKey !== "done") return;
+    if (batch.postCompostRecordedAt) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        await loadDispatchRoomOptions();
+      } catch {
+        if (!cancelled) setDispatchRoomOptions([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [batchId, batch, loadDispatchRoomOptions]);
+
+  async function submitPostCompostDispatch(e) {
+    e.preventDefault();
+    setError("");
+    setMessage("");
+    if (dispatchDestination === "growing_room") {
+      if (!dispatchRoomId) {
+        setError("Select an available growing room, or choose Ready to sell.");
+        return;
+      }
+      const sel = dispatchRoomOptions.find((r) => String(r._id) === dispatchRoomId);
+      if (!sel?.available) {
+        setError("That growing room is not available. Pick another room or Ready to sell.");
+        return;
+      }
+    }
+    setDispatchSubmitting(true);
+    try {
+      const body =
+        dispatchDestination === "ready_to_sell"
+          ? { destination: "ready_to_sell" }
+          : { destination: "growing_room", growingRoomId: dispatchRoomId };
+      await apiFetch(`/plant-ops/compost-batches/${batchId}/post-compost-dispatch`, {
+        method: "POST",
+        body: JSON.stringify(body)
+      });
+      setMessage(
+        dispatchDestination === "ready_to_sell"
+          ? "Recorded as ready to sell."
+          : "Recorded: compost sent to the selected growing room."
+      );
+      await loadBatch();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDispatchSubmitting(false);
+    }
+  }
 
   function setAdvanceRawLineMaterial(lineId, materialId) {
     setAdvanceRawLines((prev) =>
@@ -346,18 +422,8 @@ export default function CompostBatchDetailPage() {
     [batch?.rawMaterialLines]
   );
 
-  /** Planned end of the current workflow stage on the standard calendar — prompts manual advance when passed. */
-  const stageMovementDue = useMemo(() => {
-    if (!batch?.operationalStageKey || batch.operationalStageKey === "done") {
-      return { due: false, endsLabel: "" };
-    }
-    const row = batch.timeline?.stages?.find((s) => s.key === batch.operationalStageKey);
-    if (!row?.endsAt) return { due: false, endsLabel: "" };
-    const end = new Date(row.endsAt);
-    if (Number.isNaN(end.getTime())) return { due: false, endsLabel: "" };
-    const due = Date.now() >= end.getTime();
-    return { due, endsLabel: formatShortDate(row.endsAt) };
-  }, [batch]);
+  /** Same rules as plant operations list: reminder when the next stage movement should be recorded. */
+  const stageAdvanceReminder = useMemo(() => compostStageAdvanceReminder(batch), [batch]);
 
   if (!batch) {
     return (
@@ -559,6 +625,126 @@ export default function CompostBatchDetailPage() {
         </div>
       </div>
 
+      {batch.operationalStageKey === "done" ? (
+        <div className="card compost-dispatch-card">
+          <h3 className="panel-title">Final step: growing room or ready to sell</h3>
+          <p className="page-lead" style={{ marginTop: 0, marginBottom: 14, fontSize: 13 }}>
+            After compost is ready, record whether the batch is moved into an empty <strong>Room</strong> plant resource for
+            growing, or marked <strong>ready to sell</strong>. Only rooms that are not already tied to an open compost allocation
+            are listed as available.
+          </p>
+          {batch.postCompostRecordedAt ? (
+            <div className="panel-inset panel-inset--strong">
+              {batch.postCompostReadyToSell ? (
+                <p className="page-lead" style={{ marginBottom: 0 }}>
+                  <strong>Ready to sell</strong> — recorded {formatDateTime(batch.postCompostRecordedAt)}.
+                </p>
+              ) : batch.postCompostGrowingRoomId &&
+                typeof batch.postCompostGrowingRoomId === "object" &&
+                batch.postCompostGrowingRoomId.name ? (
+                <p className="page-lead" style={{ marginBottom: 0 }}>
+                  <strong>Sent to growing room:</strong> {batch.postCompostGrowingRoomId.name}
+                  {batch.postCompostGrowingRoomId.locationInPlant
+                    ? ` · ${batch.postCompostGrowingRoomId.locationInPlant}`
+                    : ""}{" "}
+                  — recorded {formatDateTime(batch.postCompostRecordedAt)}.
+                </p>
+              ) : (
+                <p className="page-lead" style={{ marginBottom: 0 }}>
+                  Dispatch recorded {formatDateTime(batch.postCompostRecordedAt)}.
+                </p>
+              )}
+            </div>
+          ) : (
+            <form className="section-stack" style={{ gap: 16 }} onSubmit={submitPostCompostDispatch}>
+              <fieldset className="compost-dispatch-fieldset">
+                <legend className="visually-hidden">Destination</legend>
+                <label className="compost-dispatch-radio">
+                  <input
+                    type="radio"
+                    name="dispatch-dest"
+                    checked={dispatchDestination === "growing_room"}
+                    onChange={() => setDispatchDestination("growing_room")}
+                  />
+                  <span>Send to growing room (Room)</span>
+                </label>
+                <label className="compost-dispatch-radio">
+                  <input
+                    type="radio"
+                    name="dispatch-dest"
+                    checked={dispatchDestination === "ready_to_sell"}
+                    onChange={() => setDispatchDestination("ready_to_sell")}
+                  />
+                  <span>Ready to sell</span>
+                </label>
+              </fieldset>
+              {dispatchDestination === "growing_room" ? (
+                <div className="table-wrap">
+                  <table className="table compost-dispatch-rooms-table">
+                    <thead>
+                      <tr>
+                        <th>Growing room</th>
+                        <th>Location</th>
+                        <th>Status</th>
+                        <th>Select</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dispatchRoomOptions.length === 0 ? (
+                        <tr>
+                          <td colSpan={4}>
+                            <span className="cell-empty">No Room-type plant resources found. Add rooms in admin or choose Ready to sell.</span>
+                          </td>
+                        </tr>
+                      ) : (
+                        dispatchRoomOptions.map((r) => (
+                          <tr key={String(r._id)} className={!r.available ? "compost-dispatch-rooms-table__row--busy" : undefined}>
+                            <td>
+                              <strong>{r.name}</strong>
+                              {r.capacityTons != null ? (
+                                <span className="text-muted" style={{ display: "block", fontSize: 12, marginTop: 2 }}>
+                                  Capacity: {r.capacityTons} t
+                                </span>
+                              ) : null}
+                            </td>
+                            <td>{r.locationInPlant || "—"}</td>
+                            <td>
+                              {r.available ? (
+                                <span className="status-pill status-pill--active">Available</span>
+                              ) : (
+                                <span className="status-pill status-pill--pending">In use</span>
+                              )}
+                            </td>
+                            <td>
+                              <input
+                                type="radio"
+                                name="dispatch-room"
+                                checked={dispatchRoomId === String(r._id)}
+                                disabled={!r.available}
+                                onChange={() => setDispatchRoomId(String(r._id))}
+                                aria-label={`Select ${r.name}`}
+                              />
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="page-lead" style={{ marginBottom: 0, fontSize: 13 }}>
+                  Use this when compost is sold or leaves the plant without occupying a growing room. No room allocation is
+                  created.
+                </p>
+              )}
+              <button className="btn" type="submit" disabled={dispatchSubmitting}>
+                {dispatchSubmitting ? "Saving…" : "Confirm dispatch"}
+              </button>
+            </form>
+          )}
+        </div>
+      ) : null}
+
       <div className="card compost-movements-card">
         <h3 className="panel-title">Stage movements</h3>
         <p className="page-lead compost-stage-movements__lead">
@@ -634,16 +820,25 @@ export default function CompostBatchDetailPage() {
             </h4>
             {atDone ? (
               <p className="page-lead" style={{ marginBottom: 0 }}>
-                This batch has reached <strong>compost ready</strong>. No further stage movements are available.
+                This batch has reached <strong>compost ready</strong>. No further stage movements are available. Use{" "}
+                <strong>Final step: growing room or ready to sell</strong> above to record where the compost goes next.
               </p>
             ) : (
               <>
-              {stageMovementDue.due && advanceTarget ? (
+              {stageAdvanceReminder.due && advanceTarget ? (
                 <div className="alert alert-warn" style={{ marginBottom: 16 }}>
-                  <strong>Action required.</strong> The planned window for{" "}
-                  <strong>{compostStageDisplayLabel(batch.operationalStageKey)}</strong> ended on{" "}
-                  <strong>{stageMovementDue.endsLabel}</strong>. When ready, record the movement below — next workflow stage:{" "}
-                  <strong>{compostStageDisplayLabel(advanceTarget)}</strong>.
+                  <strong>Action required — record the next stage.</strong> Advance the workflow to{" "}
+                  <strong>{stageAdvanceReminder.nextStageLabel || compostStageDisplayLabel(advanceTarget)}</strong>.
+                  {stageAdvanceReminder.endsLabel ? (
+                    <>
+                      {" "}
+                      Planned end of the current recorded stage (<strong>
+                        {compostStageDisplayLabel(batch.operationalStageKey)}
+                      </strong>
+                      ){": "}
+                      <strong>{stageAdvanceReminder.endsLabel}</strong>.
+                    </>
+                  ) : null}
                 </div>
               ) : null}
               <p className="page-lead" style={{ marginBottom: 12 }}>

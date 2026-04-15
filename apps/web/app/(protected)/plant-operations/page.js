@@ -17,6 +17,26 @@ import {
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import { DeleteIconButton, ParameterLogIconButton, ViewIconLink } from "../../../components/EditDeleteIconButtons.js";
 
+/** Line under workflow when batch is compost ready (final dispatch). */
+function postCompostOutcomeSubtext(batch) {
+  if (batch?.operationalStageKey !== "done") return null;
+  if (!batch.postCompostRecordedAt) {
+    return { text: "Final step pending", pending: true };
+  }
+  if (batch.postCompostReadyToSell) {
+    return { text: `Sold on ${formatShortDate(batch.postCompostRecordedAt)}`, pending: false };
+  }
+  const room = batch.postCompostGrowingRoomId;
+  const name =
+    room && typeof room === "object" && room.name != null
+      ? String(room.name).trim()
+      : "";
+  if (name) {
+    return { text: `Used in ${name}`, pending: false };
+  }
+  return { text: "Dispatch recorded", pending: false };
+}
+
 function newRawMaterialLineId() {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -676,9 +696,10 @@ export default function PlantOperationsPage() {
 
       {batchesDueForStageMovement.length > 0 ? (
         <div className="alert alert-warn" style={{ marginBottom: 0 }}>
-          <strong>Stage movement reminders.</strong> The planned calendar window for the current workflow stage has ended for{" "}
-          {batchesDueForStageMovement.length === 1 ? "this batch" : "these batches"}. Open the batch and use{" "}
-          <strong>Record next stage movement</strong> to advance the workflow.
+          <strong>Next stage action required.</strong> The plan expects you to record the <strong>next</strong> workflow stage
+          for {batchesDueForStageMovement.length === 1 ? "this batch" : "these batches"} (planned window for the current
+          recorded stage has ended, or the date-only calendar is ahead of the recorded stage). Open the batch and use{" "}
+          <strong>Record next stage movement</strong>.
           <ul style={{ margin: "10px 0 0", paddingLeft: 20 }}>
             {batchesDueForStageMovement.map((b) => {
               const r = compostStageAdvanceReminder(b);
@@ -689,7 +710,13 @@ export default function PlantOperationsPage() {
                   </Link>
                   <span className="text-muted">
                     {" "}
-                    — {compostStageDisplayLabel(r.stageKey)} stage was due to end by <strong>{r.endsLabel}</strong>
+                    — record <strong>{r.nextStageLabel || "next stage"}</strong>
+                    {r.endsLabel ? (
+                      <>
+                        {" "}
+                        · current stage plan ended <strong>{r.endsLabel}</strong>
+                      </>
+                    ) : null}
                   </span>
                 </li>
               );
@@ -701,8 +728,9 @@ export default function PlantOperationsPage() {
       <div className="card">
         <h3 className="panel-title">All compost batches</h3>
         <p className="page-lead" style={{ marginTop: 0, marginBottom: 14, fontSize: 13 }}>
-          Reminders use the <strong>standard day plan</strong> from each batch start date. When that plan says the current
-          workflow stage should have finished, a warning appears until you record the next stage movement on the batch page.
+          <strong>Stage reminder</strong> appears when you need to <strong>record the next workflow stage</strong>: the
+          standard plan&apos;s end date for your current recorded stage has passed, or the date-only calendar has moved past
+          that stage while the workflow is still behind. Open the batch and use <strong>Record next stage movement</strong>.
         </p>
         <div className="table-wrap">
           <table className="table">
@@ -729,6 +757,7 @@ export default function PlantOperationsPage() {
                 batches.map((b) => {
                   const estReadyIso = compostEstimatedReadyIso(b);
                   const stageReminder = compostStageAdvanceReminder(b);
+                  const postOutcome = postCompostOutcomeSubtext(b);
                   return (
                   <tr key={b._id} className={stageReminder.due && b.operationalStageKey !== "done" ? "table-row--warn" : undefined}>
                     <td>
@@ -754,8 +783,8 @@ export default function PlantOperationsPage() {
                       </div>
                     </td>
                     <td>
-                      <span className={compostStagePillClass(b.effectiveStatus)}>
-                        {compostStageDisplayLabel(b.effectiveStatus)}
+                      <span className={compostStagePillClass(b.computedStatus)}>
+                        {compostStageDisplayLabel(b.computedStatus)}
                       </span>
                     </td>
                     <td>
@@ -768,6 +797,19 @@ export default function PlantOperationsPage() {
                           </>
                         ) : null}
                       </span>
+                      {postOutcome ? (
+                        <div
+                          className={postOutcome.pending ? "text-muted" : ""}
+                          style={{
+                            fontSize: 12,
+                            marginTop: 6,
+                            fontWeight: postOutcome.pending ? 400 : 600,
+                            color: postOutcome.pending ? undefined : "var(--ink-soft)"
+                          }}
+                        >
+                          {postOutcome.text}
+                        </div>
+                      ) : null}
                     </td>
                     <td style={{ minWidth: 140 }}>
                       <div className="compost-progress-wrap">
@@ -777,7 +819,7 @@ export default function PlantOperationsPage() {
                         <div className="compost-progress-foot">{compostCycleDayDisplay(b)}</div>
                       </div>
                     </td>
-                    <td style={{ maxWidth: 200 }}>
+                    <td style={{ maxWidth: 220 }}>
                       {b.operationalStageKey === "done" ? (
                         <span className="text-muted" style={{ fontSize: 13 }}>
                           —
@@ -785,9 +827,9 @@ export default function PlantOperationsPage() {
                       ) : stageReminder.due ? (
                         <span
                           className="compost-stage-reminder-badge"
-                          title={`Planned end of ${compostStageDisplayLabel(stageReminder.stageKey)} was ${stageReminder.endsLabel}. Record the next stage movement.`}
+                          title={`Record the next stage: ${stageReminder.nextStageLabel || "next"}. Current recorded stage: ${compostStageDisplayLabel(stageReminder.stageKey)}. Planned stage end: ${stageReminder.endsLabel || "—"}.`}
                         >
-                          Update stage
+                          Record → {stageReminder.nextStageLabel || "next"}
                         </span>
                       ) : (
                         <span className="text-muted" style={{ fontSize: 13 }}>

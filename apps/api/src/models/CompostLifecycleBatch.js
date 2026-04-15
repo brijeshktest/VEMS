@@ -88,7 +88,11 @@ const CompostLifecycleBatchSchema = new mongoose.Schema(
     resourceAllocations: [ResourceAllocationSchema],
     rawMaterialLines: [RawMaterialLineSchema],
     stageMovements: [StageMovementSchema],
-    dailyParameterLogs: [DailyParameterLogSchema]
+    dailyParameterLogs: [DailyParameterLogSchema],
+    /** After workflow reaches compost ready: user records final destination (mutually exclusive). */
+    postCompostReadyToSell: { type: Boolean, default: false },
+    postCompostGrowingRoomId: { type: mongoose.Schema.Types.ObjectId, ref: "GrowingRoom", default: null },
+    postCompostRecordedAt: { type: Date, default: null }
   },
   { timestamps: true }
 );

@@ -42,7 +42,6 @@ async function buildBusyGrowingRoomIdSet(excludeBatchId) {
   const busy = new Set();
   for (const b of batches) {
     if (excludeBatchId && String(b._id) === String(excludeBatchId)) continue;
-    if (operationalStageFromDoc(b, now) === "done") continue;
     for (const a of b.resourceAllocations || []) {
       if (allocationIsOpen(a)) {
         busy.add(String(a.growingRoomId));
@@ -52,12 +51,21 @@ async function buildBusyGrowingRoomIdSet(excludeBatchId) {
   return busy;
 }
 
+/** Rooms not used by another batch's open allocation and not the current batch's own open allocation (next stage must pick a different resource). */
 async function countFreeRoomsOfTypes(types, excludeBatchId) {
   const busy = await buildBusyGrowingRoomIdSet(excludeBatchId);
+  const selfOpenRooms = new Set();
+  if (excludeBatchId) {
+    const self = await CompostLifecycleBatch.findById(excludeBatchId).select("resourceAllocations").lean();
+    for (const a of self?.resourceAllocations || []) {
+      if (allocationIsOpen(a)) selfOpenRooms.add(String(a.growingRoomId));
+    }
+  }
   const rooms = await GrowingRoom.find({ resourceType: { $in: types } }).select("_id").lean();
   let n = 0;
   for (const r of rooms) {
-    if (!busy.has(String(r._id))) n += 1;
+    const id = String(r._id);
+    if (!busy.has(id) && !selfOpenRooms.has(id)) n += 1;
   }
   return n;
 }
@@ -76,7 +84,6 @@ async function buildRoomAvailabilityMeta(excludeBatchId) {
     .lean();
   for (const b of batches) {
     if (excludeBatchId && String(b._id) === String(excludeBatchId)) continue;
-    if (operationalStageFromDoc(b, now) === "done") continue;
     for (const a of b.resourceAllocations || []) {
       if (!allocationIsOpen(a)) continue;
       const gid = String(a.growingRoomId);
@@ -254,8 +261,12 @@ async function toBatchView(doc, { populate = true } = {}) {
     batch = await doc.populate([
       { path: "resourceAllocations.growingRoomId", select: "name resourceType locationInPlant" },
       { path: "rawMaterialLines.materialId", select: "name unit category" },
-      { path: "rawMaterialLines.vendorId", select: "name" }
+      { path: "rawMaterialLines.vendorId", select: "name" },
+      { path: "postCompostGrowingRoomId", select: "name resourceType locationInPlant capacityTons" }
     ]);
+  } else if (!populate && typeof doc.populate === "function") {
+    /** List view: still resolve room name for post–compost-ready dispatch display. */
+    batch = await doc.populate({ path: "postCompostGrowingRoomId", select: "name" });
   }
   const o = typeof batch.toObject === "function" ? batch.toObject() : { ...batch };
   const now = new Date();
@@ -264,7 +275,7 @@ async function toBatchView(doc, { populate = true } = {}) {
   const operationalStageKey = operationalStageFromDoc(o, now);
   const nextOperationalStage = getNextStageKey(operationalStageKey);
   const timeline = buildCompostTimeline(o.startDate);
-  const progress = compostProgressFraction(o.startDate, effectiveStatus, now);
+  const progress = compostProgressFraction(o.startDate, effectiveStatus, now, operationalStageKey);
   const logsRaw = Array.isArray(o.dailyParameterLogs) ? [...o.dailyParameterLogs] : [];
   logsRaw.sort((a, b) => new Date(a.loggedAt || 0).getTime() - new Date(b.loggedAt || 0).getTime());
   const latestDailyParameters = logsRaw.length ? logsRaw[logsRaw.length - 1] : null;
@@ -593,6 +604,107 @@ router.get("/compost-batches/:id", requireAuth, requirePermission("plantOperatio
   }
   return res.json(await toBatchView(batch));
 });
+
+/** Empty / available growing rooms (resourceType Room) for post–compost-ready dispatch. */
+router.get(
+  "/compost-batches/:id/growing-room-dispatch-options",
+  requireAuth,
+  requirePermission("plantOperations", "view"),
+  async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid batch id" });
+    }
+    const batch = await CompostLifecycleBatch.findById(req.params.id).select("operationalStageKey manualStatus startDate");
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+    const now = new Date();
+    if (operationalStageFromDoc(batch, now) !== "done") {
+      return res.status(400).json({ error: "Batch must be compost ready before choosing a dispatch destination." });
+    }
+    const busy = await buildBusyGrowingRoomIdSet(req.params.id);
+    const rooms = await GrowingRoom.find({ resourceType: "Room" })
+      .sort({ name: 1 })
+      .select("name resourceType locationInPlant capacityTons maxBagCapacity")
+      .lean();
+    const resources = rooms.map((r) => ({
+      _id: r._id,
+      name: r.name,
+      resourceType: r.resourceType,
+      locationInPlant: r.locationInPlant || "",
+      capacityTons: r.capacityTons ?? r.maxBagCapacity,
+      available: !busy.has(String(r._id))
+    }));
+    return res.json({ resources, readyToSellOption: true });
+  }
+);
+
+/**
+ * Record final step after compost ready: send compost to an empty growing room (Room), or mark ready to sell.
+ */
+router.post(
+  "/compost-batches/:id/post-compost-dispatch",
+  requireAuth,
+  requirePermission("plantOperations", "edit"),
+  async (req, res) => {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: "Invalid batch id" });
+    }
+    const batch = await CompostLifecycleBatch.findById(req.params.id);
+    if (!batch) {
+      return res.status(404).json({ error: "Batch not found" });
+    }
+    const now = new Date();
+    if (operationalStageFromDoc(batch, now) !== "done") {
+      return res.status(400).json({ error: "Batch must be compost ready before recording dispatch." });
+    }
+    if (batch.postCompostRecordedAt != null) {
+      return res.status(400).json({ error: "Dispatch has already been recorded for this batch." });
+    }
+    const body = req.body || {};
+    const destination = String(body.destination || "").trim();
+    if (destination === "ready_to_sell") {
+      batch.postCompostReadyToSell = true;
+      batch.postCompostGrowingRoomId = null;
+      batch.postCompostRecordedAt = now;
+      await batch.save();
+      return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+    }
+    if (destination === "growing_room") {
+      const gid = body.growingRoomId;
+      if (!gid || !mongoose.Types.ObjectId.isValid(String(gid))) {
+        return res.status(400).json({ error: "growingRoomId is required for destination growing_room" });
+      }
+      const room = await GrowingRoom.findById(gid);
+      if (!room) {
+        return res.status(404).json({ error: "Growing room not found" });
+      }
+      if (String(room.resourceType || "") !== "Room") {
+        return res.status(400).json({
+          error: `Only plant resources of type Room can receive compost after compost ready. “${room.name}” is ${room.resourceType}.`
+        });
+      }
+      const booked = await assertResourceNotDoubleBooked(room._id, batch._id);
+      if (!booked.ok) {
+        return res.status(400).json({ error: booked.error });
+      }
+      batch.postCompostReadyToSell = false;
+      batch.postCompostGrowingRoomId = room._id;
+      batch.postCompostRecordedAt = now;
+      batch.resourceAllocations.push({
+        growingRoomId: room._id,
+        stageKey: "done",
+        startDate: now,
+        endDate: null
+      });
+      await batch.save();
+      return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+    }
+    return res.status(400).json({
+      error: 'destination must be "growing_room" (with growingRoomId) or "ready_to_sell".'
+    });
+  }
+);
 
 router.post(
   "/compost-batches/:id/daily-parameter-logs",
@@ -1000,24 +1112,30 @@ router.get("/resource-options", requireAuth, requirePermission("plantOperations"
       ? new mongoose.Types.ObjectId(currentBatchId)
       : null;
   const busy = await buildBusyGrowingRoomIdSet(excludeOid);
+  const selfOpenRooms = new Set();
   if (excludeOid) {
     const self = await CompostLifecycleBatch.findById(excludeOid).select("resourceAllocations").lean();
     if (self) {
       for (const a of self.resourceAllocations || []) {
         if (allocationIsOpen(a)) {
-          busy.delete(String(a.growingRoomId));
+          selfOpenRooms.add(String(a.growingRoomId));
         }
       }
     }
   }
-  const list = rooms.map((r) => ({
-    _id: r._id,
-    name: r.name,
-    resourceType: r.resourceType,
-    locationInPlant: r.locationInPlant,
-    capacityTons: r.capacityTons ?? r.maxBagCapacity,
-    available: !busy.has(String(r._id))
-  }));
+  const list = rooms.map((r) => {
+    const idStr = String(r._id);
+    const usedByOthers = busy.has(idStr);
+    const usedByThisBatch = selfOpenRooms.has(idStr);
+    return {
+      _id: r._id,
+      name: r.name,
+      resourceType: r.resourceType,
+      locationInPlant: r.locationInPlant,
+      capacityTons: r.capacityTons ?? r.maxBagCapacity,
+      available: !usedByOthers && !usedByThisBatch
+    };
+  });
   return res.json({ status, allowedTypes: types, resources: list });
 });
 

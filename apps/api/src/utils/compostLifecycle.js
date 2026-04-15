@@ -125,10 +125,17 @@ export function expectedStageEndIso(startDate, stageKey) {
   return row?.endsAt || null;
 }
 
-export function compostProgressFraction(startDate, effectiveStatus, now = new Date()) {
+/**
+ * @param {Date|string} startDate
+ * @param {string} effectiveStatus
+ * @param {Date} [now]
+ * @param {string|null} [operationalStageKey] When `"done"` (compost ready in workflow), bar is full even if calendar plan lags.
+ */
+export function compostProgressFraction(startDate, effectiveStatus, now = new Date(), operationalStageKey = null) {
   const total = compostActiveSpanDays();
   if (total <= 0) return 0;
-  if (effectiveStatus === "done") return 1;
+  const op = operationalStageKey != null ? String(operationalStageKey).trim() : "";
+  if (effectiveStatus === "done" || op === "done") return 1;
   const start = startDate instanceof Date ? startDate : new Date(startDate);
   const elapsedMs = now.getTime() - start.getTime();
   const elapsedDays = Math.max(0, elapsedMs / MS_PER_DAY);
