@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "../../../lib/api.js";
+import { canEditRoomActivities, canEditRoomStages } from "../../../lib/modulePermissions.js";
 import PageHeader from "../../../components/PageHeader.js";
 
 export default function RoomOpsPage() {
@@ -29,10 +30,8 @@ export default function RoomOpsPage() {
     load();
   }, []);
 
-  const canMoveStage =
-    permissions === "all" || permissions?.roomStages?.edit || permissions?.roomStages?.view;
-  const canEditActivities =
-    permissions === "all" || permissions?.roomActivities?.edit || permissions?.roomActivities?.view;
+  const canMoveStage = permissions != null && canEditRoomStages(permissions);
+  const canEditActivities = permissions != null && canEditRoomActivities(permissions);
 
   async function initRoom(roomId) {
     setError("");

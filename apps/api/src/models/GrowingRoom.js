@@ -26,6 +26,13 @@ const GrowingRoomSchema = new mongoose.Schema(
       ruffling: { type: Boolean, default: false },
       thumping: { type: Boolean, default: false },
       ventilation: { type: Boolean, default: false }
+    },
+    /** Growing-room crop cycle occupancy (denormalized for dashboards). */
+    growingOperationalState: {
+      type: String,
+      enum: ["available", "active_growing", "cleaning"],
+      default: "available",
+      index: true
     }
   },
   { timestamps: true }

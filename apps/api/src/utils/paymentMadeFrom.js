@@ -14,3 +14,12 @@ export function isAllowedPaymentMadeBy(value) {
   if (!v) return false;
   return PAYMENT_MADE_FROM_CHOICES.includes(v);
 }
+
+/** Mongo `$match` fragment: exclude vouchers whose Payment made from is Velocity (case-insensitive). */
+export function matchExcludePaymentMadeFromVelocity() {
+  return {
+    $expr: {
+      $ne: [{ $toLower: { $trim: { input: { $ifNull: ["$paymentMadeBy", ""] } } } }, "velocity"]
+    }
+  };
+}

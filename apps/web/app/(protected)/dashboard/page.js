@@ -7,7 +7,16 @@ import { useRouter } from "next/navigation";
 import PageHeader from "../../../components/PageHeader.js";
 import { ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { getWorkMode } from "../../../lib/workMode.js";
+import {
+  hasExpenseAreaAccess,
+  canViewModule,
+  canCreateInModule,
+  canAccessTunnelOps,
+  canAccessRoomOps,
+  canEditTunnelBatch
+} from "../../../lib/modulePermissions.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
+import { isPaymentMadeFromVelocity } from "../../../lib/paymentMadeFrom.js";
 import { downloadPerPersonContributionSummaryXlsx } from "../../../lib/exportContributionsExcel.js";
 import {
   compostStagePillClass,
@@ -155,6 +164,7 @@ function sumVouchersForLocalCalendarDay(vouchers, day) {
   end.setHours(23, 59, 59, 999);
   let s = 0;
   for (const v of vouchers) {
+    if (isPaymentMadeFromVelocity(v)) continue;
     const d = voucherPurchaseDate(v);
     if (!d) continue;
     if (d >= start && d <= end) s += voucherSpendAmount(v);
@@ -165,6 +175,7 @@ function sumVouchersForLocalCalendarDay(vouchers, day) {
 function sumVouchersForLocalMonth(vouchers, year, monthIndex) {
   let s = 0;
   for (const v of vouchers) {
+    if (isPaymentMadeFromVelocity(v)) continue;
     const d = voucherPurchaseDate(v);
     if (!d) continue;
     if (d.getFullYear() === year && d.getMonth() === monthIndex) s += voucherSpendAmount(v);
@@ -246,6 +257,7 @@ function rawMaterialLineSpendSlices(vouchers, materialsCatalog, year, monthIndex
   /** @type {Map<string, { label: string, value: number, quantity: number, unit: string }>} */
   const agg = new Map();
   for (const v of vouchers) {
+    if (isPaymentMadeFromVelocity(v)) continue;
     const d = voucherPurchaseDate(v);
     if (!d || d.getFullYear() !== year || d.getMonth() !== monthIndex) continue;
     const subTotal = Number(v.subTotal) || 0;
@@ -1114,6 +1126,8 @@ export default function DashboardPage() {
   const [contributionSummary, setContributionSummary] = useState(null);
   const [compostBatches, setCompostBatches] = useState([]);
   const [canPlantOps, setCanPlantOps] = useState(false);
+  const [canGrowingRoomOps, setCanGrowingRoomOps] = useState(false);
+  const [growingRoomSummary, setGrowingRoomSummary] = useState(null);
   const [expenseVouchers, setExpenseVouchers] = useState([]);
   const [expenseMaterialsCatalog, setExpenseMaterialsCatalog] = useState([]);
   const [expenseChartYear, setExpenseChartYear] = useState(() => new Date().getFullYear());
@@ -1125,6 +1139,16 @@ export default function DashboardPage() {
   const [salesPieYear, setSalesPieYear] = useState(() => new Date().getFullYear());
   const [salesPieMonth, setSalesPieMonth] = useState(() => new Date().getMonth());
   const [salesChartsData, setSalesChartsData] = useState(null);
+  const [expensePerm, setExpensePerm] = useState({
+    viewReports: false,
+    viewVouchers: false,
+    viewVendors: false,
+    viewMaterials: false,
+    createVendors: false,
+    createMaterials: false,
+    createVouchers: false
+  });
+  const [canTunnelEditOps, setCanTunnelEditOps] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -1136,18 +1160,34 @@ export default function DashboardPage() {
         }
         setWorkMode(selectedMode);
         const permissionsData = await apiFetch("/auth/permissions");
-        const allowRoomStages =
-          permissionsData.permissions === "all" ||
-          permissionsData.permissions?.roomStages?.edit ||
-          permissionsData.permissions?.roomStages?.view;
-        const admin = permissionsData.permissions === "all";
+        const p = permissionsData.permissions;
+        const admin = p === "all";
         setIsAdmin(admin);
         const canPlant =
-          permissionsData.permissions === "all" ||
-          permissionsData.permissions?.plantOperations?.view ||
-          permissionsData.permissions?.plantOperations?.edit ||
-          permissionsData.permissions?.plantOperations?.create;
+          p === "all" ||
+          p?.plantOperations?.view ||
+          p?.plantOperations?.edit ||
+          p?.plantOperations?.create;
+        const canGrowing =
+          p === "all" ||
+          p?.growingRoomOps?.view ||
+          p?.growingRoomOps?.edit ||
+          p?.growingRoomOps?.create;
         setCanPlantOps(canPlant);
+        setCanGrowingRoomOps(canGrowing);
+
+        const ep = {
+          viewReports: admin || canViewModule(p, "reports"),
+          viewVouchers: admin || canViewModule(p, "vouchers"),
+          viewVendors: admin || canViewModule(p, "vendors"),
+          viewMaterials: admin || canViewModule(p, "materials"),
+          createVendors: admin || canCreateInModule(p, "vendors"),
+          createMaterials: admin || canCreateInModule(p, "materials"),
+          createVouchers: admin || canCreateInModule(p, "vouchers")
+        };
+        setExpensePerm(ep);
+        setCanTunnelEditOps(canEditTunnelBatch(p));
+
         if (selectedMode === "admin" && !admin) {
           router.replace("/work-mode");
           return;
@@ -1155,9 +1195,7 @@ export default function DashboardPage() {
 
         if (selectedMode === "sales") {
           const canSales =
-            permissionsData.permissions === "all" ||
-            permissionsData.permissions?.sales?.view ||
-            permissionsData.permissions?.sales?.edit;
+            p === "all" || p?.sales?.view || p?.sales?.edit;
           if (!canSales) {
             router.replace("/work-mode");
             return;
@@ -1166,9 +1204,7 @@ export default function DashboardPage() {
 
         if (selectedMode === "contributions") {
           const canContr =
-            permissionsData.permissions === "all" ||
-            permissionsData.permissions?.contributions?.view ||
-            permissionsData.permissions?.contributions?.edit;
+            p === "all" || p?.contributions?.view || p?.contributions?.edit;
           if (!canContr) {
             router.replace("/work-mode");
             return;
@@ -1176,39 +1212,66 @@ export default function DashboardPage() {
         }
 
         if (selectedMode === "plant") {
-          if (!canPlant) {
+          if (!canPlant && !canGrowing) {
             router.replace("/work-mode");
             return;
           }
         }
 
+        if (selectedMode === "expense" && !hasExpenseAreaAccess(p)) {
+          router.replace("/work-mode");
+          return;
+        }
+
+        if (selectedMode === "tunnel" && !canAccessTunnelOps(p)) {
+          router.replace("/work-mode");
+          return;
+        }
+
         if (selectedMode === "expense" || selectedMode === "admin") {
-          const [summaryData, vendorData, materialData, taxData, payerAgg, voucherList, allMaterials] =
-            await Promise.all([
+          if (ep.viewReports) {
+            const [summaryData, vendorData, materialData, taxData, payerAgg] = await Promise.all([
               apiFetch("/reports/expenses"),
               apiFetch("/reports/vendor-expenses"),
               apiFetch("/reports/material-summary"),
               apiFetch("/reports/tax-payments"),
-              apiFetch("/reports/payment-made-from-aggregate").catch(() => []),
-              apiFetch("/vouchers").catch(() => null),
-              apiFetch("/materials").catch(() => null)
+              apiFetch("/reports/payment-made-from-aggregate").catch(() => [])
             ]);
-          setSummary(summaryData);
-          setVendors(vendorData.slice(0, 5));
-          setMaterials(materialData.slice(0, 5));
-          setTax(taxData);
-          setPaymentMadeByAgg(Array.isArray(payerAgg) ? payerAgg : []);
-          setExpenseVouchers(Array.isArray(voucherList) ? voucherList : []);
-          setExpenseMaterialsCatalog(Array.isArray(allMaterials) ? allMaterials : []);
+            setSummary(summaryData);
+            setVendors(vendorData.slice(0, 5));
+            setMaterials(materialData.slice(0, 5));
+            setTax(taxData);
+            setPaymentMadeByAgg(Array.isArray(payerAgg) ? payerAgg : []);
+          } else {
+            setSummary(null);
+            setVendors([]);
+            setMaterials([]);
+            setTax(null);
+            setPaymentMadeByAgg([]);
+          }
+          if (ep.viewVouchers) {
+            const voucherList = await apiFetch("/vouchers").catch(() => null);
+            setExpenseVouchers(Array.isArray(voucherList) ? voucherList : []);
+          } else {
+            setExpenseVouchers([]);
+          }
+          if (ep.viewMaterials) {
+            const allMaterials = await apiFetch("/materials").catch(() => null);
+            setExpenseMaterialsCatalog(Array.isArray(allMaterials) ? allMaterials : []);
+          } else {
+            setExpenseMaterialsCatalog([]);
+          }
         } else {
           setExpenseVouchers([]);
           setExpenseMaterialsCatalog([]);
         }
-        if (selectedMode === "room" || selectedMode === "admin") {
-          if (!allowRoomStages) {
+        if (selectedMode === "room") {
+          if (!canAccessRoomOps(p)) {
             router.replace("/work-mode");
             return;
           }
+        }
+        if (selectedMode === "room" || selectedMode === "admin") {
           const [roomData, tunnelAlerts] = await Promise.all([
             apiFetch("/rooms/status?onlyRoomResources=true"),
             apiFetch("/tunnel-bunker/alerts").catch(() => ({ dueItems: [] }))
@@ -1224,9 +1287,7 @@ export default function DashboardPage() {
 
         if (selectedMode === "sales" || selectedMode === "admin") {
           const canSales =
-            permissionsData.permissions === "all" ||
-            permissionsData.permissions?.sales?.view ||
-            permissionsData.permissions?.sales?.edit;
+            p === "all" || p?.sales?.view || p?.sales?.edit;
           if (canSales) {
             try {
               const sm = await apiFetch("/sales/summary");
@@ -1241,9 +1302,7 @@ export default function DashboardPage() {
 
         if (selectedMode === "contributions" || selectedMode === "admin") {
           const canContr =
-            permissionsData.permissions === "all" ||
-            permissionsData.permissions?.contributions?.view ||
-            permissionsData.permissions?.contributions?.edit;
+            p === "all" || p?.contributions?.view || p?.contributions?.edit;
           if (canContr) {
             try {
               const cm = await apiFetch("/contributions/summary");
@@ -1265,6 +1324,17 @@ export default function DashboardPage() {
           }
         } else {
           setCompostBatches([]);
+        }
+
+        if ((selectedMode === "plant" || selectedMode === "admin") && canGrowing) {
+          try {
+            const gr = await apiFetch("/growing-room/dashboard-summary");
+            setGrowingRoomSummary(gr && typeof gr === "object" ? gr : null);
+          } catch {
+            setGrowingRoomSummary(null);
+          }
+        } else {
+          setGrowingRoomSummary(null);
         }
       } catch (err) {
         setError(err.message);
@@ -1394,6 +1464,42 @@ export default function DashboardPage() {
 
       {error ? <div className="alert alert-error">{error}</div> : null}
 
+      {(workMode === "plant" || (workMode === "admin" && canGrowingRoomOps)) && canGrowingRoomOps ? (
+        <div className="card card-soft" style={{ marginBottom: 16 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 12 }}>
+            <h3 className="panel-title" style={{ margin: 0 }}>
+              Growing room tasks
+            </h3>
+            <Link href="/plant-operations/growing-rooms" className="btn btn-secondary">
+              Open growing rooms
+            </Link>
+          </div>
+          <p className="page-lead">
+            Interventions by crop stage, daily monitoring, harvest yields, and cleaning between cycles.
+          </p>
+          <div className="grid grid-3" style={{ gap: 12 }}>
+            <div className="stat-card" style={{ padding: 16 }}>
+              <span className="stat-hint">Due today</span>
+              <span className="stat-value" style={{ fontSize: 22 }}>
+                {growingRoomSummary?.counts?.dueToday ?? "—"}
+              </span>
+            </div>
+            <div className="stat-card" style={{ padding: 16 }}>
+              <span className="stat-hint">Overdue</span>
+              <span className="stat-value" style={{ fontSize: 22, color: "var(--danger)" }}>
+                {growingRoomSummary?.counts?.overdue ?? "—"}
+              </span>
+            </div>
+            <div className="stat-card" style={{ padding: 16 }}>
+              <span className="stat-hint">Completed today</span>
+              <span className="stat-value" style={{ fontSize: 22 }}>
+                {growingRoomSummary?.counts?.completedToday ?? "—"}
+              </span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {(workMode === "plant" || (workMode === "admin" && canPlantOps)) ? (
         <div className="card card-soft">
           <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", marginBottom: 12 }}>
@@ -1508,9 +1614,13 @@ export default function DashboardPage() {
                     <td>{batch.dueAt ? new Date(batch.dueAt).toLocaleString() : "-"}</td>
                     <td>{batch.overdueDays} day(s)</td>
                     <td>
-                      <button className="btn btn-secondary" type="button" onClick={() => moveTunnelBatch(batch)}>
-                        Move now
-                      </button>
+                      {canTunnelEditOps ? (
+                        <button className="btn btn-secondary" type="button" onClick={() => moveTunnelBatch(batch)}>
+                          Move now
+                        </button>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1520,93 +1630,110 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {(workMode === "expense" || workMode === "admin") && summary ? (
+      {(workMode === "expense" || workMode === "admin") &&
+      (expensePerm.viewReports || expensePerm.viewVouchers || expensePerm.viewMaterials) ? (
         <>
-          <section className="saas-section" aria-label="Key metrics">
-            <div className="dashboard-expense-dashlets">
-              <Link className="stat-link" href="/reports">
-                <div className="card stat-card stat-dashlet">
-                  <div className="stat-dashlet__icon" aria-hidden>
-                    <IconStatPaid />
-                  </div>
-                  <div className="stat-dashlet__body">
-                    <span className="stat-label">Total paid amount</span>
-                    <span className="stat-value">{summary ? formatIndianRupee(summary.totalPaidAmount) : "—"}</span>
-                    <span className="stat-hint">Open reports →</span>
-                  </div>
-                </div>
-              </Link>
-              <Link className="stat-link" href="/reports">
-                <div className="card stat-card stat-dashlet">
-                  <div className="stat-dashlet__icon" aria-hidden>
-                    <IconStatTax />
-                  </div>
-                  <div className="stat-dashlet__body">
-                    <span className="stat-label">Total tax</span>
-                    <span className="stat-value">{summary ? formatIndianRupee(summary.totalTax) : "—"}</span>
-                    <span className="stat-hint">Open reports →</span>
-                  </div>
-                </div>
-              </Link>
-              <Link className="stat-link" href="/vouchers">
-                <div className="card stat-card stat-dashlet">
-                  <div className="stat-dashlet__icon" aria-hidden>
-                    <IconStatVouchers />
-                  </div>
-                  <div className="stat-dashlet__body">
-                    <span className="stat-label">Vouchers</span>
-                    <span className="stat-value">{summary ? summary.voucherCount : "—"}</span>
-                    <span className="stat-hint">View vouchers →</span>
-                  </div>
-                </div>
-              </Link>
-              <Link className="stat-link" href="/vouchers?dateRange=yesterday">
-                <div className="card stat-card stat-dashlet stat-dashlet--yesterday">
-                  <div className="stat-dashlet__icon stat-dashlet__icon--yesterday" aria-hidden>
-                    <IconStatYesterday />
-                  </div>
-                  <div className="stat-dashlet__body">
-                    <span className="stat-label">Yesterday expense</span>
-                    <span className="stat-value">{formatIndianRupee(expenseVoucherDerived.yesterdayTotal)}</span>
-                    <span className="stat-hint">Vouchers of previous day →</span>
-                  </div>
-                </div>
-              </Link>
-              <Link className="stat-link" href="/vouchers?dateRange=month">
-                <div className="card stat-card stat-dashlet stat-dashlet--month">
-                  <div className="stat-dashlet__icon stat-dashlet__icon--month" aria-hidden>
-                    <IconStatMonth />
-                  </div>
-                  <div className="stat-dashlet__body">
-                    <span className="stat-label">Current month expense</span>
-                    <span className="stat-value">{formatIndianRupee(expenseVoucherDerived.currentMonthTotal)}</span>
-                    <span className="stat-hint">Vouchers of this month →</span>
-                  </div>
-                </div>
-              </Link>
-            </div>
-          </section>
-          <section className="saas-section dashboard-expense-charts-section" aria-label="Monthly voucher spend and raw materials">
-            <div className="dashboard-expense-charts-row">
-              <div className="dashboard-expense-charts-row__cell">
-                <ExpenseMonthlyChart
-                  year={expenseChartYear}
-                  monthlyTotals={expenseVoucherDerived.monthlyTotals}
-                  onYearChange={setExpenseChartYear}
-                />
+          {expensePerm.viewReports || expensePerm.viewVouchers ? (
+            <section className="saas-section" aria-label="Key metrics">
+              <div className="dashboard-expense-dashlets">
+                {expensePerm.viewReports && summary ? (
+                  <>
+                    <Link className="stat-link" href="/reports">
+                      <div className="card stat-card stat-dashlet">
+                        <div className="stat-dashlet__icon" aria-hidden>
+                          <IconStatPaid />
+                        </div>
+                        <div className="stat-dashlet__body">
+                          <span className="stat-label">Total paid amount</span>
+                          <span className="stat-value">{formatIndianRupee(summary.totalPaidAmount)}</span>
+                          <span className="stat-hint">Open reports →</span>
+                        </div>
+                      </div>
+                    </Link>
+                    <Link className="stat-link" href="/reports">
+                      <div className="card stat-card stat-dashlet">
+                        <div className="stat-dashlet__icon" aria-hidden>
+                          <IconStatTax />
+                        </div>
+                        <div className="stat-dashlet__body">
+                          <span className="stat-label">Total tax</span>
+                          <span className="stat-value">{formatIndianRupee(summary.totalTax)}</span>
+                          <span className="stat-hint">Open reports →</span>
+                        </div>
+                      </div>
+                    </Link>
+                  </>
+                ) : null}
+                {expensePerm.viewVouchers ? (
+                  <>
+                    <Link className="stat-link" href="/vouchers">
+                      <div className="card stat-card stat-dashlet">
+                        <div className="stat-dashlet__icon" aria-hidden>
+                          <IconStatVouchers />
+                        </div>
+                        <div className="stat-dashlet__body">
+                          <span className="stat-label">Vouchers</span>
+                          <span className="stat-value">
+                            {summary ? summary.voucherCount : expenseVouchers.length}
+                          </span>
+                          <span className="stat-hint">View vouchers →</span>
+                        </div>
+                      </div>
+                    </Link>
+                    <Link className="stat-link" href="/vouchers?dateRange=yesterday">
+                      <div className="card stat-card stat-dashlet stat-dashlet--yesterday">
+                        <div className="stat-dashlet__icon stat-dashlet__icon--yesterday" aria-hidden>
+                          <IconStatYesterday />
+                        </div>
+                        <div className="stat-dashlet__body">
+                          <span className="stat-label">Yesterday expense</span>
+                          <span className="stat-value">{formatIndianRupee(expenseVoucherDerived.yesterdayTotal)}</span>
+                          <span className="stat-hint">Vouchers of previous day →</span>
+                        </div>
+                      </div>
+                    </Link>
+                    <Link className="stat-link" href="/vouchers?dateRange=month">
+                      <div className="card stat-card stat-dashlet stat-dashlet--month">
+                        <div className="stat-dashlet__icon stat-dashlet__icon--month" aria-hidden>
+                          <IconStatMonth />
+                        </div>
+                        <div className="stat-dashlet__body">
+                          <span className="stat-label">Current month expense</span>
+                          <span className="stat-value">{formatIndianRupee(expenseVoucherDerived.currentMonthTotal)}</span>
+                          <span className="stat-hint">Vouchers of this month →</span>
+                        </div>
+                      </div>
+                    </Link>
+                  </>
+                ) : null}
               </div>
-              <div className="dashboard-expense-charts-row__cell">
-                <RawMaterialSpendPie
-                  vouchers={expenseVouchers}
-                  materialsCatalog={expenseMaterialsCatalog}
-                  year={rawMatPieYear}
-                  monthIndex={rawMatPieMonth}
-                  onYearChange={setRawMatPieYear}
-                  onMonthChange={setRawMatPieMonth}
-                />
+            </section>
+          ) : null}
+          {expensePerm.viewVouchers ? (
+            <section className="saas-section dashboard-expense-charts-section" aria-label="Monthly voucher spend and raw materials">
+              <div className="dashboard-expense-charts-row">
+                <div className="dashboard-expense-charts-row__cell">
+                  <ExpenseMonthlyChart
+                    year={expenseChartYear}
+                    monthlyTotals={expenseVoucherDerived.monthlyTotals}
+                    onYearChange={setExpenseChartYear}
+                  />
+                </div>
+                {expensePerm.viewMaterials ? (
+                  <div className="dashboard-expense-charts-row__cell">
+                    <RawMaterialSpendPie
+                      vouchers={expenseVouchers}
+                      materialsCatalog={expenseMaterialsCatalog}
+                      year={rawMatPieYear}
+                      monthIndex={rawMatPieMonth}
+                      onYearChange={setRawMatPieYear}
+                      onMonthChange={setRawMatPieMonth}
+                    />
+                  </div>
+                ) : null}
               </div>
-            </div>
-          </section>
+            </section>
+          ) : null}
         </>
       ) : null}
 
@@ -1751,19 +1878,18 @@ export default function DashboardPage() {
                 <span className="stat-hint">{contributionSummary.entryCount} record(s) →</span>
               </div>
             </Link>
-            <div className="stat-link" role="group" aria-label="Balance available in bank">
+            <Link className="stat-link" href="/contributions/cash-withdrawals" aria-label="Balance available in bank">
               <div className="card stat-card">
                 <span className="stat-label">Balance available in bank</span>
                 <span className="stat-value">
                   {formatIndianRupee(contributionSummary.balanceAvailableInBank ?? 0)}
                 </span>
                 <span className="stat-hint">
-                  Routed total − paid vouchers (Payment made from: Company Account):{" "}
-                  {formatIndianRupee(contributionSummary.totalExpensePaidFromCompanyAccount ?? 0)} ·{" "}
-                  {contributionSummary.companyAccountPaidVoucherCount ?? 0} voucher(s)
+                  Routed total − Company Account paid − cash in hand (
+                  {formatIndianRupee(contributionSummary.cashInHand ?? 0)}) → Cash withdrawals
                 </span>
               </div>
-            </div>
+            </Link>
             <Link className="stat-link" href="/contributions">
               <div className="card stat-card">
                 <span className="stat-label">{"Sunil's Contribution (Sunil + contributors)"}</span>
@@ -1879,10 +2005,11 @@ export default function DashboardPage() {
             </div>
             <p className="page-lead" style={{ marginTop: 16, fontSize: 13 }}>
               Bank contribution module (routed to bank): {formatIndianRupee(contributionSummary.totalContributions)} ·{" "}
-              {contributionSummary.entryCount} record(s). Balance available in bank (routed total minus paid expenses from
-              Company Account): {formatIndianRupee(contributionSummary.balanceAvailableInBank ?? 0)} (
-              {formatIndianRupee(contributionSummary.totalExpensePaidFromCompanyAccount ?? 0)} on{" "}
-              {contributionSummary.companyAccountPaidVoucherCount ?? 0} paid voucher(s)). Direct expense (voucher paid
+              {contributionSummary.entryCount} record(s). Balance available in bank (routed total − Company Account paid
+              vouchers − cash in hand from Cash withdrawals): {formatIndianRupee(contributionSummary.balanceAvailableInBank ?? 0)}{" "}
+              (Company Account paid {formatIndianRupee(contributionSummary.totalExpensePaidFromCompanyAccount ?? 0)} on{" "}
+              {contributionSummary.companyAccountPaidVoucherCount ?? 0} voucher(s); cash in hand{" "}
+              {formatIndianRupee(contributionSummary.cashInHand ?? 0)}). Direct expense (voucher paid
               totals by person): {formatIndianRupee(contributionSummary.totalExpenseContribution ?? 0)}. Combined:{" "}
               {formatIndianRupee(
                 contributionSummary.totalContributionCombined ?? contributionSummary.totalContributions
@@ -1967,7 +2094,7 @@ export default function DashboardPage() {
         </div>
       ) : null}
 
-      {(workMode === "expense" || workMode === "admin") && vendors.length ? (
+      {(workMode === "expense" || workMode === "admin") && expensePerm.viewReports && vendors.length ? (
         <section className="saas-section" aria-label="Top vendors and materials">
           <div className="grid grid-2">
         <div className="dashboard-table-block">
@@ -2021,7 +2148,7 @@ export default function DashboardPage() {
         </section>
       ) : null}
 
-      {(workMode === "expense" || workMode === "admin") ? <div className="card">
+      {(workMode === "expense" || workMode === "admin") && expensePerm.viewReports ? <div className="card">
         <h3 className="panel-title">Payment summary</h3>
         {tax ? (
           <div className="panel-inset panel-inset--strong section-stack">

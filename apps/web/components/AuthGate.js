@@ -52,8 +52,8 @@ export default function AuthGate({ children }) {
       if (
         mode === "contributions" &&
         pathname !== "/dashboard" &&
-        pathname !== "/contributions" &&
-        pathname !== "/profile"
+        pathname !== "/profile" &&
+        !pathname.startsWith("/contributions")
       ) {
         router.replace("/dashboard");
         return;
@@ -66,7 +66,7 @@ export default function AuthGate({ children }) {
         pathname !== "/plant-operations" &&
         !pathname.startsWith("/plant-operations/") &&
         pathname !== "/sales" &&
-        pathname !== "/contributions" &&
+        !pathname.startsWith("/contributions") &&
         !(pathname === "/admin" || pathname.startsWith("/admin/"))
       ) {
         router.replace("/dashboard");

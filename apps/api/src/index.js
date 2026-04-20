@@ -15,6 +15,7 @@ import settingsRoutes from "./routes/settings.js";
 import changeLogRoutes from "./routes/changeLogs.js";
 import tunnelBunkerRoutes from "./routes/tunnelBunker.js";
 import plantOpsRoutes from "./routes/plantOps.js";
+import growingRoomRoutes from "./routes/growingRoom.js";
 import salesRoutes from "./routes/sales.js";
 import contributionsRoutes from "./routes/contributions.js";
 
@@ -42,6 +43,7 @@ api.use("/settings", settingsRoutes);
 api.use("/change-logs", changeLogRoutes);
 api.use("/tunnel-bunker", tunnelBunkerRoutes);
 api.use("/plant-ops", plantOpsRoutes);
+api.use("/growing-room", growingRoomRoutes);
 api.use("/sales", salesRoutes);
 api.use("/contributions", contributionsRoutes);
 

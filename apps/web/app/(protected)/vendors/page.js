@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
@@ -14,6 +15,7 @@ import {
   validateOptionalIndianMobile
 } from "../../../lib/indianValidators.js";
 import VendorBulkImport from "../../../components/VendorBulkImport.js";
+import { canViewModule, canCreateInModule, canEditInModule } from "../../../lib/modulePermissions.js";
 
 function collectVendorFieldErrors(f) {
   const errors = {};
@@ -44,6 +46,7 @@ const initialForm = {
 };
 
 export default function VendorsPage() {
+  const router = useRouter();
   const [vendors, setVendors] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [editingId, setEditingId] = useState(null);
@@ -57,6 +60,8 @@ export default function VendorsPage() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const selectAllCheckboxRef = useRef(null);
   const [vendorModalOpen, setVendorModalOpen] = useState(false);
+  const [canCreateVendor, setCanCreateVendor] = useState(false);
+  const [canEditVendor, setCanEditVendor] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
   const fileInputRef = useRef(null);
 
@@ -81,18 +86,24 @@ export default function VendorsPage() {
 
   async function load() {
     try {
-      const [data, me, permData] = await Promise.all([
-        apiFetch("/vendors"),
+      const [me, permData] = await Promise.all([
         apiFetch("/auth/me"),
         apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
       ]);
-      setVendors(data);
       const admin = me?.user?.role === "admin";
       setIsAdmin(admin);
       const p = permData.permissions;
       const all = p === "all";
+      if (!admin && !all && !canViewModule(p, "vendors")) {
+        router.replace("/dashboard");
+        return;
+      }
+      setCanCreateVendor(admin || all || canCreateInModule(p, "vendors"));
+      setCanEditVendor(admin || all || canEditInModule(p, "vendors"));
       setCanBulkDelete(admin || all || Boolean(p?.vendors?.bulkDelete));
       setCanBulkUpload(admin || all || Boolean(p?.vendors?.bulkUpload));
+      const data = await apiFetch("/vendors");
+      setVendors(data);
     } catch (err) {
       setError(err.message);
     }
@@ -356,9 +367,11 @@ export default function VendorsPage() {
         <div className="card-header-row card-header-row--voucher-toolbar">
           <h3 className="panel-title">All vendors</h3>
           <div className="voucher-table-toolbar-actions">
-            <button className="btn" type="button" onClick={openAddVendorModal}>
-              Add vendor
-            </button>
+            {canCreateVendor ? (
+              <button className="btn" type="button" onClick={openAddVendorModal}>
+                Add vendor
+              </button>
+            ) : null}
             {canBulkDelete ? (
               <DeleteIconButton
                 disabled={!selectedIds.size}
@@ -447,7 +460,7 @@ export default function VendorsPage() {
                   </td>
                   <td>
                     <div className="row-actions">
-                      <EditIconButton onClick={() => startEdit(vendor)} />
+                      {canEditVendor ? <EditIconButton onClick={() => startEdit(vendor)} /> : null}
                       {isAdmin ? <DeleteIconButton onClick={() => void deleteVendor(vendor)} /> : null}
                     </div>
                   </td>

@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
+import { canViewModule, canCreateInModule, canEditInModule } from "../../../lib/modulePermissions.js";
 import { apiFetch, apiFetchForm, downloadAttachment } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import AttachmentListCell from "../../../components/AttachmentListCell.js";
@@ -14,7 +15,7 @@ import {
 } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import VoucherBulkImport from "../../../components/VoucherBulkImport.js";
-import { PAYMENT_MADE_FROM_CHOICES } from "../../../lib/paymentMadeFrom.js";
+import { isPaymentMadeFromVelocity, PAYMENT_MADE_FROM_CHOICES } from "../../../lib/paymentMadeFrom.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
 import IndianAmountField from "../../../components/IndianAmountField.js";
 
@@ -144,6 +145,8 @@ function VouchersPageContent() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [canBulkUpload, setCanBulkUpload] = useState(false);
   const [canBulkDelete, setCanBulkDelete] = useState(false);
+  const [canCreateVoucher, setCanCreateVoucher] = useState(false);
+  const [canEditVoucher, setCanEditVoucher] = useState(false);
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const selectAllCheckboxRef = useRef(null);
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
@@ -275,22 +278,30 @@ function VouchersPageContent() {
 
   async function load() {
     try {
-      const [voucherData, vendorData, materialData, meData, permData] = await Promise.all([
-        apiFetch("/vouchers"),
-        apiFetch("/vendors"),
-        apiFetch("/materials"),
+      const [meData, permData] = await Promise.all([
         apiFetch("/auth/me"),
         apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
       ]);
-      setVouchers(voucherData);
-      setVendors(vendorData);
-      setMaterials(materialData);
       const admin = meData?.user?.role === "admin";
       setIsAdmin(admin);
       const p = permData.permissions;
       const all = p === "all";
+      if (!admin && !all && !canViewModule(p, "vouchers")) {
+        router.replace("/dashboard");
+        return;
+      }
+      setCanCreateVoucher(admin || all || canCreateInModule(p, "vouchers"));
+      setCanEditVoucher(admin || all || canEditInModule(p, "vouchers"));
       setCanBulkUpload(admin || all || Boolean(p?.vouchers?.bulkUpload));
       setCanBulkDelete(admin || all || Boolean(p?.vouchers?.bulkDelete));
+      const [voucherData, vendorData, materialData] = await Promise.all([
+        apiFetch("/vouchers"),
+        apiFetch("/vendors"),
+        apiFetch("/materials")
+      ]);
+      setVouchers(voucherData);
+      setVendors(vendorData);
+      setMaterials(materialData);
     } catch (err) {
       setError(err.message);
     }
@@ -339,15 +350,26 @@ function VouchersPageContent() {
     });
   }, [vouchers, vendors, materials, columnFilters]);
 
+  const vendorColumnFilterActive = Boolean((columnFilters.vendor || "").trim());
+  const paymentMadeFromFilterActive = Boolean((columnFilters.madeFrom || "").trim());
+
   const filteredListTotals = useMemo(() => {
+    const excludeVelocityFromTotals =
+      !vendorColumnFilterActive && !paymentMadeFromFilterActive;
     let voucherSum = 0;
     let paidSum = 0;
     for (const v of filteredVouchers) {
+      if (excludeVelocityFromTotals && isPaymentMadeFromVelocity(v)) continue;
       voucherSum += Number(v.finalAmount) || 0;
       paidSum += Number(v.paidAmount ?? v.finalAmount ?? 0) || 0;
     }
     return { voucherSum, paidSum };
-  }, [filteredVouchers]);
+  }, [filteredVouchers, vendorColumnFilterActive, paymentMadeFromFilterActive]);
+
+  const velocityRowsInFilteredList = useMemo(
+    () => filteredVouchers.filter((v) => isPaymentMadeFromVelocity(v)),
+    [filteredVouchers]
+  );
 
   const filteredIdsKey = useMemo(
     () => filteredVouchers.map((v) => String(v._id)).join(","),
@@ -702,9 +724,11 @@ function VouchersPageContent() {
         <div className="card-header-row card-header-row--voucher-toolbar">
           <h3 className="panel-title">All vouchers</h3>
           <div className="voucher-table-toolbar-actions">
-            <button className="btn" type="button" onClick={openCreateVoucherModal}>
-              Create voucher
-            </button>
+            {canCreateVoucher ? (
+              <button className="btn" type="button" onClick={openCreateVoucherModal}>
+                Create voucher
+              </button>
+            ) : null}
             <ClearFiltersIconButton
               onClick={() => {
                 setColumnFilters({ ...defaultColumnFilters });
@@ -752,6 +776,16 @@ function VouchersPageContent() {
             {filteredVouchers.length} voucher{filteredVouchers.length === 1 ? "" : "s"}
             {vouchers.length !== filteredVouchers.length ? ` (of ${vouchers.length})` : ""}
           </span>
+          {!vendorColumnFilterActive &&
+          !paymentMadeFromFilterActive &&
+          velocityRowsInFilteredList.length > 0 ? (
+            <span className="text-muted" style={{ display: "block", fontSize: 12, marginTop: 6, width: "100%" }}>
+              Totals exclude {velocityRowsInFilteredList.length} voucher
+              {velocityRowsInFilteredList.length === 1 ? "" : "s"} with <strong>Payment made from: Velocity</strong>. Use the{" "}
+              <strong>Vendor</strong> or <strong>Payment made from</strong> column filters to include those amounts in the
+              totals above.
+            </span>
+          ) : null}
         </div>
         <div className="table-wrap">
           <table className="table table--voucher-filters">
@@ -941,7 +975,7 @@ function VouchersPageContent() {
                   <td>{voucher.createdByName || "-"}</td>
                   <td className="col-actions">
                     <div className="row-actions">
-                      <EditIconButton onClick={() => startEdit(voucher)} />
+                      {canEditVoucher ? <EditIconButton onClick={() => startEdit(voucher)} /> : null}
                       {isAdmin ? <DeleteIconButton onClick={() => void deleteVoucher(voucher)} /> : null}
                     </div>
                   </td>

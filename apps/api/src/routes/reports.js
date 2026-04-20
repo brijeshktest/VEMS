@@ -1,7 +1,7 @@
 import express from "express";
 import Voucher from "../models/Voucher.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
-import { PAYMENT_MADE_FROM_CHOICES } from "../utils/paymentMadeFrom.js";
+import { matchExcludePaymentMadeFromVelocity, PAYMENT_MADE_FROM_CHOICES } from "../utils/paymentMadeFrom.js";
 
 const router = express.Router();
 
@@ -14,6 +14,11 @@ function buildDateMatch(start, end) {
     match.$lte = new Date(end);
   }
   return Object.keys(match).length ? { dateOfPurchase: match } : {};
+}
+
+function expenseReportMatch(start, end) {
+  const dateMatch = buildDateMatch(start, end);
+  return { ...dateMatch, ...matchExcludePaymentMadeFromVelocity() };
 }
 
 router.get("/vendor-expenses", requireAuth, requirePermission("reports", "view"), async (req, res) => {
@@ -86,7 +91,7 @@ router.get("/material-summary", requireAuth, requirePermission("reports", "view"
 });
 
 router.get("/expenses", requireAuth, requirePermission("reports", "view"), async (req, res) => {
-  const dateMatch = buildDateMatch(req.query.start, req.query.end);
+  const dateMatch = expenseReportMatch(req.query.start, req.query.end);
   const [summary] = await Voucher.aggregate([
     { $match: dateMatch },
     {
@@ -152,7 +157,7 @@ router.get("/payment-made-from-aggregate", requireAuth, requirePermission("repor
 });
 
 router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), async (req, res) => {
-  const dateMatch = buildDateMatch(req.query.start, req.query.end);
+  const dateMatch = expenseReportMatch(req.query.start, req.query.end);
   const taxSummary = await Voucher.aggregate([
     { $match: dateMatch },
     {

@@ -2,9 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, apiFetch, getToken, setToken } from "../lib/api.js";
 import { getWorkMode, setWorkMode } from "../lib/workMode.js";
+import {
+  canAccessTunnelOps,
+  canViewModule,
+  isPermissionsAll
+} from "../lib/modulePermissions.js";
 
 const DEFAULT_BRAND_LOGO = "https://shroomagritech.com/images/shroom.png";
 
@@ -12,6 +17,14 @@ function linkClass(pathname, href) {
   const path = pathname ?? "";
   if (href === "/admin") {
     return path === "/admin" || path.startsWith("/admin/") ? "nav-link nav-link--active" : "nav-link";
+  }
+  if (href === "/contributions/cash-withdrawals") {
+    return path === href || path.startsWith("/contributions/cash-withdrawals")
+      ? "nav-link nav-link--active"
+      : "nav-link";
+  }
+  if (href === "/contributions") {
+    return path === "/contributions" ? "nav-link nav-link--active" : "nav-link";
   }
   return path === href ? "nav-link nav-link--active" : "nav-link";
 }
@@ -61,6 +74,8 @@ export default function Nav() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
+  /** @type {[{ isAdmin: boolean, permissions: unknown } | null, function]} */
+  const [permPayload, setPermPayload] = useState(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -125,6 +140,30 @@ export default function Nav() {
   useEffect(() => {
     void loadUserProfile();
   }, [loadUserProfile]);
+
+  useEffect(() => {
+    if (!isAuthenticated || pathname === "/work-mode" || pathname === "/login") {
+      setPermPayload(null);
+      return undefined;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const [me, perm] = await Promise.all([apiFetch("/auth/me"), apiFetch("/auth/permissions")]);
+        if (!cancelled) {
+          setPermPayload({
+            isAdmin: me?.user?.role === "admin",
+            permissions: perm?.permissions
+          });
+        }
+      } catch {
+        if (!cancelled) setPermPayload({ isAdmin: false, permissions: {} });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, pathname]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -194,38 +233,76 @@ export default function Nav() {
 
   const closeMobileNav = () => setMobileNavOpen(false);
 
-  const links =
-    pathname === "/work-mode"
-      ? []
-      : workMode === "room"
-        ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/room-ops", label: "Room ops" }]
-        : workMode === "tunnel"
-          ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" }]
-          : workMode === "plant"
-            ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/plant-operations", label: "Plant operations" }]
-          : workMode === "sales"
-            ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/sales", label: "Sales" }]
-            : workMode === "contributions"
-              ? [{ href: "/dashboard", label: "Dashboard" }, { href: "/contributions", label: "Contributions" }]
-            : workMode === "admin"
-            ? [
-                { href: "/dashboard", label: "Dashboard" },
-                { href: "/sales", label: "Sales" },
-                { href: "/contributions", label: "Contributions" },
-                { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" },
-                { href: "/plant-operations", label: "Plant operations" },
-                { href: "/admin", label: "Admin" },
-                { href: "/admin/rooms", label: "Resources" },
-                { href: "/admin/stages", label: "Stages" },
-                { href: "/admin/tunnel-bunker", label: "Tunnel settings" }
-              ]
-            : [
-                { href: "/dashboard", label: "Dashboard" },
-                { href: "/vendors", label: "Vendors" },
-                { href: "/materials", label: "Materials" },
-                { href: "/vouchers", label: "Vouchers" },
-                { href: "/reports", label: "Reports" }
-              ];
+  const links = useMemo(() => {
+    if (pathname === "/work-mode") return [];
+    const p = permPayload?.permissions;
+    if (p == null && isAuthenticated) {
+      return [{ href: "/dashboard", label: "Dashboard" }];
+    }
+    const canSalesNav = isPermissionsAll(p) || canViewModule(p, "sales") || Boolean(p?.sales?.edit);
+    const canContrNav =
+      isPermissionsAll(p) || canViewModule(p, "contributions") || Boolean(p?.contributions?.edit);
+    const canGrowingNav =
+      isPermissionsAll(p) ||
+      canViewModule(p, "growingRoomOps") ||
+      Boolean(p?.growingRoomOps?.edit || p?.growingRoomOps?.create);
+
+    if (workMode === "room") {
+      return [{ href: "/dashboard", label: "Dashboard" }, { href: "/room-ops", label: "Room ops" }];
+    }
+    if (workMode === "tunnel") {
+      return [{ href: "/dashboard", label: "Dashboard" }, { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" }];
+    }
+    if (workMode === "plant") {
+      const out = [{ href: "/dashboard", label: "Dashboard" }, { href: "/plant-operations", label: "Plant operations" }];
+      if (canGrowingNav) {
+        out.push({ href: "/plant-operations/growing-rooms", label: "Growing rooms" });
+      }
+      return out;
+    }
+    if (workMode === "sales") {
+      return [{ href: "/dashboard", label: "Dashboard" }, { href: "/sales", label: "Sales" }];
+    }
+    if (workMode === "contributions") {
+      return [
+        { href: "/dashboard", label: "Dashboard" },
+        { href: "/contributions", label: "Contributions" },
+        { href: "/contributions/cash-withdrawals", label: "Cash withdrawals" }
+      ];
+    }
+    if (workMode === "admin") {
+      const out = [{ href: "/dashboard", label: "Dashboard" }];
+      if (canSalesNav) out.push({ href: "/sales", label: "Sales" });
+      if (canContrNav) {
+        out.push({ href: "/contributions", label: "Contributions" });
+        out.push({ href: "/contributions/cash-withdrawals", label: "Cash withdrawals" });
+      }
+      if (canAccessTunnelOps(p)) out.push({ href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" });
+      const canPlantNav =
+        isPermissionsAll(p) ||
+        canViewModule(p, "plantOperations") ||
+        Boolean(p?.plantOperations?.edit || p?.plantOperations?.create);
+      if (canPlantNav || canGrowingNav) {
+        out.push({ href: "/plant-operations", label: "Plant operations" });
+      }
+      if (canGrowingNav) {
+        out.push({ href: "/plant-operations/growing-rooms", label: "Growing rooms" });
+      }
+      out.push(
+        { href: "/admin", label: "Admin" },
+        { href: "/admin/rooms", label: "Resources" },
+        { href: "/admin/stages", label: "Stages" },
+        { href: "/admin/tunnel-bunker", label: "Tunnel settings" }
+      );
+      return out;
+    }
+    const out = [{ href: "/dashboard", label: "Dashboard" }];
+    if (canViewModule(p, "vendors")) out.push({ href: "/vendors", label: "Vendors" });
+    if (canViewModule(p, "materials")) out.push({ href: "/materials", label: "Materials" });
+    if (canViewModule(p, "vouchers")) out.push({ href: "/vouchers", label: "Vouchers" });
+    if (canViewModule(p, "reports")) out.push({ href: "/reports", label: "Reports" });
+    return out;
+  }, [pathname, workMode, permPayload, isAuthenticated]);
 
   const menuDrawerClass = isAuthenticated
     ? "nav-links nav-links--mobile-drawer" + (mobileNavOpen ? " nav-links--mobile-drawer--open" : "")

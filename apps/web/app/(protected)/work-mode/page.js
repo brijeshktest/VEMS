@@ -5,10 +5,18 @@ import { useRouter } from "next/navigation";
 import { apiFetch } from "../../../lib/api.js";
 import { setWorkMode } from "../../../lib/workMode.js";
 import PageHeader from "../../../components/PageHeader.js";
+import {
+  hasExpenseAreaAccess,
+  canAccessTunnelOps,
+  canAccessRoomOps,
+  canViewModule,
+  isPermissionsAll
+} from "../../../lib/modulePermissions.js";
 
 export default function WorkModePage() {
   const router = useRouter();
   const [isAdmin, setIsAdmin] = useState(false);
+  const [allowExpense, setAllowExpense] = useState(false);
   const [allowRoomOps, setAllowRoomOps] = useState(false);
   const [allowTunnelOps, setAllowTunnelOps] = useState(false);
   const [allowPlantOps, setAllowPlantOps] = useState(false);
@@ -21,8 +29,10 @@ export default function WorkModePage() {
       try {
         const [meData, permData] = await Promise.all([apiFetch("/auth/me"), apiFetch("/auth/permissions")]);
         const admin = meData.user?.role === "admin";
+        const p = permData.permissions;
         setIsAdmin(admin);
-        if (admin || permData.permissions === "all") {
+        if (admin || isPermissionsAll(p)) {
+          setAllowExpense(true);
           setAllowRoomOps(true);
           setAllowTunnelOps(true);
           setAllowPlantOps(true);
@@ -30,25 +40,18 @@ export default function WorkModePage() {
           setAllowContributions(true);
           return;
         }
-        const canRoomStages = Boolean(permData.permissions?.roomStages?.view || permData.permissions?.roomStages?.edit);
-        const canRoomActivities = Boolean(
-          permData.permissions?.roomActivities?.view || permData.permissions?.roomActivities?.edit
-        );
-        const canTunnelOps = Boolean(permData.permissions?.tunnelBunkerOps?.view || permData.permissions?.tunnelBunkerOps?.edit);
+        setAllowExpense(hasExpenseAreaAccess(p));
+        setAllowRoomOps(canAccessRoomOps(p));
+        setAllowTunnelOps(canAccessTunnelOps(p));
         const canPlantOps = Boolean(
-          permData.permissions?.plantOperations?.view ||
-            permData.permissions?.plantOperations?.edit ||
-            permData.permissions?.plantOperations?.create
+          p?.plantOperations?.view || p?.plantOperations?.edit || p?.plantOperations?.create
         );
-        const canSales = Boolean(permData.permissions?.sales?.view || permData.permissions?.sales?.edit);
-        const canContributions = Boolean(
-          permData.permissions?.contributions?.view || permData.permissions?.contributions?.edit
+        const canGrowingRoomOps = Boolean(
+          p?.growingRoomOps?.view || p?.growingRoomOps?.edit || p?.growingRoomOps?.create
         );
-        setAllowRoomOps(canRoomStages || canRoomActivities);
-        setAllowTunnelOps(canTunnelOps);
-        setAllowPlantOps(canPlantOps);
-        setAllowSales(canSales);
-        setAllowContributions(canContributions);
+        setAllowPlantOps(canPlantOps || canGrowingRoomOps);
+        setAllowSales(canViewModule(p, "sales") || Boolean(p?.sales?.edit));
+        setAllowContributions(canViewModule(p, "contributions") || Boolean(p?.contributions?.edit));
       } catch (err) {
         setError(err.message);
       }
@@ -72,59 +75,68 @@ export default function WorkModePage() {
       {error ? <div className="alert alert-error">{error}</div> : null}
 
       <div className="grid grid-3" style={{ alignItems: "stretch", gap: "16px" }}>
-        <button
-          className="card stat-card mode-card mode-card--expense"
-          type="button"
-          onClick={() => chooseMode("expense")}
-        >
-          <span className="stat-value" style={{ fontSize: 22 }}>Expense</span>
-          <span className="stat-hint">Vendors, materials, vouchers, and reports</span>
-        </button>
-        <button
-          className="card stat-card mode-card mode-card--sales"
-          type="button"
-          disabled={!allowSales}
-          onClick={() => chooseMode("sales")}
-        >
-          <span className="stat-value" style={{ fontSize: 22 }}>Sales</span>
-          <span className="stat-hint">Sales invoices for mushrooms and compost</span>
-        </button>
-        <button
-          className="card stat-card mode-card mode-card--contributions"
-          type="button"
-          disabled={!allowContributions}
-          onClick={() => chooseMode("contributions")}
-        >
-          <span className="stat-value" style={{ fontSize: 22 }}>Contribution</span>
-          <span className="stat-hint">Track contributions: primary recipient and transfer mode on every record</span>
-        </button>
-        <button
-          className="card stat-card mode-card mode-card--room"
-          type="button"
-          disabled={!allowRoomOps}
-          onClick={() => chooseMode("room")}
-        >
-          <span className="stat-value" style={{ fontSize: 22 }}>Room operations</span>
-          <span className="stat-hint">Room stage and activity operations summary</span>
-        </button>
-        <button
-          className="card stat-card mode-card mode-card--tunnel"
-          type="button"
-          disabled={!allowTunnelOps}
-          onClick={() => chooseMode("tunnel")}
-        >
-          <span className="stat-value" style={{ fontSize: 22 }}>Tunnel &amp; Bunker Ops</span>
-          <span className="stat-hint">Bunkers, one tunnel per batch, then growing rooms; movement alerts</span>
-        </button>
-        <button
-          className="card stat-card mode-card mode-card--plant"
-          type="button"
-          disabled={!allowPlantOps}
-          onClick={() => chooseMode("plant")}
-        >
-          <span className="stat-value" style={{ fontSize: 22 }}>Plant operations</span>
-          <span className="stat-hint">Compost lifecycle, lagoon/bunker/tunnel allocation, raw materials</span>
-        </button>
+        {allowExpense ? (
+          <button
+            className="card stat-card mode-card mode-card--expense"
+            type="button"
+            onClick={() => chooseMode("expense")}
+          >
+            <span className="stat-value" style={{ fontSize: 22 }}>Expense</span>
+            <span className="stat-hint">Vendors, materials, vouchers, and reports</span>
+          </button>
+        ) : null}
+        {allowSales ? (
+          <button
+            className="card stat-card mode-card mode-card--sales"
+            type="button"
+            onClick={() => chooseMode("sales")}
+          >
+            <span className="stat-value" style={{ fontSize: 22 }}>Sales</span>
+            <span className="stat-hint">Sales invoices for mushrooms and compost</span>
+          </button>
+        ) : null}
+        {allowContributions ? (
+          <button
+            className="card stat-card mode-card mode-card--contributions"
+            type="button"
+            onClick={() => chooseMode("contributions")}
+          >
+            <span className="stat-value" style={{ fontSize: 22 }}>Contribution</span>
+            <span className="stat-hint">Track contributions: primary recipient and transfer mode on every record</span>
+          </button>
+        ) : null}
+        {allowRoomOps ? (
+          <button
+            className="card stat-card mode-card mode-card--room"
+            type="button"
+            onClick={() => chooseMode("room")}
+          >
+            <span className="stat-value" style={{ fontSize: 22 }}>Room operations</span>
+            <span className="stat-hint">Room stage and activity operations summary</span>
+          </button>
+        ) : null}
+        {allowTunnelOps ? (
+          <button
+            className="card stat-card mode-card mode-card--tunnel"
+            type="button"
+            onClick={() => chooseMode("tunnel")}
+          >
+            <span className="stat-value" style={{ fontSize: 22 }}>Tunnel &amp; Bunker Ops</span>
+            <span className="stat-hint">Bunkers, one tunnel per batch, then growing rooms; movement alerts</span>
+          </button>
+        ) : null}
+        {allowPlantOps ? (
+          <button
+            className="card stat-card mode-card mode-card--plant"
+            type="button"
+            onClick={() => chooseMode("plant")}
+          >
+            <span className="stat-value" style={{ fontSize: 22 }}>Plant operations</span>
+            <span className="stat-hint">
+              Compost lifecycle, lagoon/bunker/tunnel allocation, raw materials, and growing room crop cycles
+            </span>
+          </button>
+        ) : null}
         {isAdmin ? (
           <button className="card stat-card mode-card mode-card--admin" type="button" onClick={() => chooseMode("admin")}>
             <span className="stat-value" style={{ fontSize: 22 }}>Admin</span>
@@ -132,6 +144,19 @@ export default function WorkModePage() {
           </button>
         ) : null}
       </div>
+
+      {!isAdmin &&
+      !allowExpense &&
+      !allowSales &&
+      !allowContributions &&
+      !allowRoomOps &&
+      !allowTunnelOps &&
+      !allowPlantOps ? (
+        <p className="page-lead" style={{ marginTop: 16 }}>
+          No work areas are available for your account. Ask an administrator to assign roles under{" "}
+          <strong>Admin → Users</strong> so you receive access to the modules you need.
+        </p>
+      ) : null}
     </div>
   );
 }

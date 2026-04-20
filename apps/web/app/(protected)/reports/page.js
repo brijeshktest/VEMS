@@ -1,11 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "../../../lib/api.js";
+import { canViewModule } from "../../../lib/modulePermissions.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
 
 export default function ReportsPage() {
+  const router = useRouter();
   const [range, setRange] = useState({ start: "", end: "" });
   const [vendorData, setVendorData] = useState([]);
   const [materialData, setMaterialData] = useState([]);
@@ -14,11 +17,25 @@ export default function ReportsPage() {
   const [paymentByPerson, setPaymentByPerson] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const reportsAccessChecked = useRef(false);
 
   const fetchReports = useCallback(async (rangeArg) => {
     setError("");
     setLoading(true);
     try {
+      if (!reportsAccessChecked.current) {
+        const [me, permData] = await Promise.all([
+          apiFetch("/auth/me"),
+          apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
+        ]);
+        const admin = me?.user?.role === "admin";
+        const p = permData.permissions;
+        if (!admin && p !== "all" && !canViewModule(p, "reports")) {
+          router.replace("/dashboard");
+          return;
+        }
+        reportsAccessChecked.current = true;
+      }
       const query = new URLSearchParams();
       if (rangeArg.start) query.set("start", rangeArg.start);
       if (rangeArg.end) query.set("end", rangeArg.end);
@@ -40,7 +57,7 @@ export default function ReportsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     void fetchReports({ start: "", end: "" });

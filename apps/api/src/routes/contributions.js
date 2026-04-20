@@ -1,5 +1,6 @@
 import express from "express";
 import mongoose from "mongoose";
+import CashWithdrawalEntry from "../models/CashWithdrawalEntry.js";
 import ContributionEntry from "../models/ContributionEntry.js";
 import Voucher from "../models/Voucher.js";
 import {
@@ -19,6 +20,37 @@ import { requireFields } from "../utils/validators.js";
 import { expensePaidTotalsByContributionMember } from "../utils/expensePaidByMemberAgg.js";
 
 const router = express.Router();
+
+/** Paid vouchers: Company Account + Paid by mode Cash (same rules as cash-withdrawals dashlets). */
+const VOUCHER_MATCH_PAID_COMPANY_ACCOUNT_CASH_MODE = {
+  paymentStatus: "Paid",
+  $expr: {
+    $and: [
+      { $eq: [{ $toLower: { $trim: { input: { $ifNull: ["$paymentMadeBy", ""] } } } }, "company account"] },
+      { $eq: [{ $toLower: { $trim: { input: { $ifNull: ["$paidByMode", ""] } } } }, "cash"] }
+    ]
+  }
+};
+
+/** Totals used on cash-withdrawals page and in contribution bank balance. */
+async function computeCashWithdrawalDashMetrics() {
+  const [withdrawalSumAgg, companyCashVoucherAgg] = await Promise.all([
+    CashWithdrawalEntry.aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }]),
+    Voucher.aggregate([
+      { $match: VOUCHER_MATCH_PAID_COMPANY_ACCOUNT_CASH_MODE },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } }
+        }
+      }
+    ])
+  ]);
+  const totalWithdrawal = Number(withdrawalSumAgg[0]?.total) || 0;
+  const totalCashSpent = Number(companyCashVoucherAgg[0]?.total) || 0;
+  const cashInHand = totalWithdrawal - totalCashSpent;
+  return { totalWithdrawal, totalCashSpent, cashInHand };
+}
 
 /** Mongoose pluralized collection name for the removed ContributionTransfer model. */
 const LEGACY_TRANSFER_COLLECTION = "contributiontransfers";
@@ -198,37 +230,39 @@ router.get("/meta", requireAuth, requirePermission("contributions", "view"), (_r
 });
 
 router.get("/summary", requireAuth, requirePermission("contributions", "view"), async (_req, res) => {
-  const [entryAgg, byMemberAndHolder, entryCount, expensePaidByMember, companyAccountPaidAgg] = await Promise.all([
-    ContributionEntry.aggregate([
-      { $group: { _id: "$member", totalAmount: { $sum: "$amount" }, count: { $sum: 1 } } }
-    ]),
-    ContributionEntry.aggregate([
-      {
-        $group: {
-          _id: { member: "$member", toPrimaryHolder: "$toPrimaryHolder" },
-          totalAmount: { $sum: "$amount" },
-          count: { $sum: 1 }
+  const [entryAgg, byMemberAndHolder, entryCount, expensePaidByMember, companyAccountPaidAgg, cashDash] =
+    await Promise.all([
+      ContributionEntry.aggregate([
+        { $group: { _id: "$member", totalAmount: { $sum: "$amount" }, count: { $sum: 1 } } }
+      ]),
+      ContributionEntry.aggregate([
+        {
+          $group: {
+            _id: { member: "$member", toPrimaryHolder: "$toPrimaryHolder" },
+            totalAmount: { $sum: "$amount" },
+            count: { $sum: 1 }
+          }
         }
-      }
-    ]),
-    ContributionEntry.countDocuments(),
-    expensePaidTotalsByContributionMember({}),
-    Voucher.aggregate([
-      {
-        $match: {
-          paymentStatus: "Paid",
-          paymentMadeBy: "Company Account"
+      ]),
+      ContributionEntry.countDocuments(),
+      expensePaidTotalsByContributionMember({}),
+      Voucher.aggregate([
+        {
+          $match: {
+            paymentStatus: "Paid",
+            paymentMadeBy: "Company Account"
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
+            voucherCount: { $sum: 1 }
+          }
         }
-      },
-      {
-        $group: {
-          _id: null,
-          totalPaidAmount: { $sum: { $ifNull: ["$paidAmount", "$finalAmount"] } },
-          voucherCount: { $sum: 1 }
-        }
-      }
-    ])
-  ]);
+      ]),
+      computeCashWithdrawalDashMetrics()
+    ]);
 
   const contributionByMember = {};
   const routedSunil = {};
@@ -302,7 +336,9 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
   const companyPaidRow = companyAccountPaidAgg[0];
   const totalExpensePaidFromCompanyAccount = Number(companyPaidRow?.totalPaidAmount) || 0;
   const companyAccountPaidVoucherCount = Number(companyPaidRow?.voucherCount) || 0;
-  const balanceAvailableInBank = totalContributions - totalExpensePaidFromCompanyAccount;
+  const { totalWithdrawal, totalCashSpent, cashInHand } = cashDash;
+  const balanceAvailableInBank =
+    totalContributions - totalExpensePaidFromCompanyAccount - cashInHand;
 
   return res.json({
     members,
@@ -313,6 +349,9 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
     entryCount,
     totalExpensePaidFromCompanyAccount,
     companyAccountPaidVoucherCount,
+    totalWithdrawal,
+    totalCashSpent,
+    cashInHand,
     balanceAvailableInBank
   });
 });
@@ -539,6 +578,35 @@ router.delete("/entries/:entryId", requireAuth, requirePermission("contributions
   const doc = await ContributionEntry.findByIdAndDelete(req.params.entryId);
   if (!doc) return res.status(404).json({ error: "Entry not found" });
   return res.json({ ok: true });
+});
+
+/** Cash withdrawals from the contribution bank picture (list + create). */
+router.get("/cash-withdrawals", requireAuth, requirePermission("contributions", "view"), async (_req, res) => {
+  const [rows, { totalWithdrawal, totalCashSpent, cashInHand }] = await Promise.all([
+    CashWithdrawalEntry.find().sort({ withdrawnAt: -1 }).lean(),
+    computeCashWithdrawalDashMetrics()
+  ]);
+  return res.json({
+    entries: rows,
+    totalWithdrawal,
+    totalCashSpent,
+    cashInHand
+  });
+});
+
+router.post("/cash-withdrawals", requireAuth, requirePermission("contributions", "create"), async (req, res) => {
+  const body = req.body || {};
+  const amt = parseAmount(body.amount);
+  if (!amt.ok) return res.status(400).json({ error: amt.error });
+  const dt = parseDate(body.withdrawnAt, "withdrawnAt");
+  if (!dt.ok) return res.status(400).json({ error: dt.error });
+  const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 2000) : "";
+  const doc = await CashWithdrawalEntry.create({
+    withdrawnAt: dt.value,
+    amount: amt.value,
+    notes
+  });
+  return res.status(201).json(doc);
 });
 
 export default router;

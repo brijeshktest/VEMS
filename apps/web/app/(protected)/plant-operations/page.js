@@ -34,7 +34,10 @@ function postCompostOutcomeSubtext(batch) {
   if (name) {
     return { text: `Used in ${name}`, pending: false };
   }
-  return { text: "Dispatch recorded", pending: false };
+  return {
+    text: "Ready for growing room — shows room name after a crop cycle starts with this batch in Growing rooms",
+    pending: false
+  };
 }
 
 function newRawMaterialLineId() {
@@ -218,16 +221,35 @@ export default function PlantOperationsPage() {
 
   const load = useCallback(async () => {
     try {
-      const [meData, permData, batchData, rawSummary, apr, wetting] = await Promise.all([
+      const [meData, permData] = await Promise.all([
         apiFetch("/auth/me").catch(() => ({})),
-        apiFetch("/auth/permissions").catch(() => ({ permissions: {} })),
+        apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
+      ]);
+      setIsAdmin(meData.user?.role === "admin");
+      const perms = permData.permissions ?? {};
+      setPermissions(perms);
+      const canPlant =
+        perms === "all" ||
+        Boolean(perms?.plantOperations?.view || perms?.plantOperations?.edit || perms?.plantOperations?.create);
+      const canGrowing =
+        perms === "all" ||
+        Boolean(
+          perms?.growingRoomOps?.view || perms?.growingRoomOps?.edit || perms?.growingRoomOps?.create
+        );
+      if (!canPlant && canGrowing) {
+        router.replace("/plant-operations/growing-rooms");
+        return;
+      }
+      if (!canPlant) {
+        router.replace("/work-mode");
+        return;
+      }
+      const [batchData, rawSummary, apr, wetting] = await Promise.all([
         apiFetch("/plant-ops/compost-batches"),
         apiFetch("/plant-ops/raw-materials-expense-summary").catch(() => []),
         apiFetch("/plant-ops/available-plant-resources").catch(() => null),
         apiFetch("/plant-ops/resource-options?status=wetting").catch(() => ({ resources: [] }))
       ]);
-      setIsAdmin(meData.user?.role === "admin");
-      setPermissions(permData.permissions ?? {});
       setBatches(Array.isArray(batchData) ? batchData : []);
       setRawExpenseSummary(Array.isArray(rawSummary) ? rawSummary : []);
       setAvailablePlant(apr && apr.byType ? apr : null);
@@ -448,6 +470,12 @@ export default function PlantOperationsPage() {
         <Link href="/dashboard" className="btn btn-ghost">
           ← Dashboard
         </Link>
+        {permissions === "all" ||
+        Boolean(permissions?.growingRoomOps?.view || permissions?.growingRoomOps?.edit) ? (
+          <Link href="/plant-operations/growing-rooms" className="btn btn-secondary">
+            Growing rooms
+          </Link>
+        ) : null}
         <button type="button" className="btn" onClick={openCreateModal}>
           Create compost batch
         </button>

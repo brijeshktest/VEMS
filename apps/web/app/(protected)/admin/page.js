@@ -19,6 +19,7 @@ const modules = [
   "roomActivities",
   "tunnelBunkerOps",
   "plantOperations",
+  "growingRoomOps",
   "sales",
   "contributions",
   "roles",
@@ -36,6 +37,7 @@ const MODULE_LABELS = {
   roomActivities: "Room activities",
   tunnelBunkerOps: "Tunnel & bunker ops",
   plantOperations: "Plant operations (compost lifecycle)",
+  growingRoomOps: "Growing room crop cycles & interventions",
   sales: "Sales management",
   contributions: "Contribution management",
   roles: "Roles",
@@ -66,6 +68,29 @@ function emptyPermissions() {
     };
   });
   return perms;
+}
+
+function mergeRolePermissions(roleList, roleIds) {
+  const merged = {};
+  for (const rid of roleIds || []) {
+    const role = roleList.find((r) => String(r._id) === String(rid));
+    if (!role?.permissions) continue;
+    const raw = role.permissions;
+    const permsObj =
+      raw && typeof raw === "object"
+        ? typeof raw.entries === "function"
+          ? Object.fromEntries(raw.entries())
+          : raw
+        : {};
+    for (const [moduleKey, actions] of Object.entries(permsObj)) {
+      merged[moduleKey] = merged[moduleKey] || {};
+      const a = actions && typeof actions === "object" ? actions : {};
+      for (const act of ["view", "create", "edit", "delete", "bulkUpload", "bulkDelete"]) {
+        merged[moduleKey][act] = merged[moduleKey][act] || Boolean(a[act]);
+      }
+    }
+  }
+  return merged;
 }
 
 function normalizePermissions(input = {}) {
@@ -118,6 +143,11 @@ export default function AdminPage() {
     });
     return lookup;
   }, [roles]);
+
+  const effectiveUserFormPermissions = useMemo(
+    () => mergeRolePermissions(roles, userForm.roleIds),
+    [roles, userForm.roleIds]
+  );
 
   async function load() {
     try {
@@ -417,7 +447,7 @@ export default function AdminPage() {
       <PageHeader
         eyebrow="Administration"
         title="Admin console"
-        description="Define custom roles, map module permissions, and manage who can sign in. Configure growing infrastructure from the shortcuts below."
+        description="Define roles with module actions (View, Create, Edit, and more), assign one or more roles to each user, and manage sign-in. Users only see work areas and menus their roles allow. Use Create on Vendors, Materials, and Vouchers to control who may add records."
       />
 
       <div className="card">
@@ -703,6 +733,11 @@ export default function AdminPage() {
             />
             <div className="panel-inset">
               <h4>Assign roles</h4>
+              <p className="page-lead" style={{ marginBottom: 12, fontSize: 13 }}>
+                Permissions from every checked role are combined for that user. To let someone add vendors, materials,
+                or vouchers, ensure at least one assigned role has <strong>Create</strong> enabled for that module (and
+                usually <strong>View</strong> so they can open the screen).
+              </p>
               <div className="grid grid-2">
                 {roles.map((role) => (
                   <label key={role._id}>
@@ -715,6 +750,29 @@ export default function AdminPage() {
                   </label>
                 ))}
               </div>
+              {editingUserId ? (
+                <div style={{ marginTop: 14 }}>
+                  <h4 style={{ marginBottom: 8 }}>Effective access from current role selection</h4>
+                  <ul className="text-sm" style={{ margin: 0, paddingLeft: 18, color: "var(--muted)" }}>
+                    {modules
+                      .filter((key) => key !== "dashboard" && key !== "roles" && key !== "users")
+                      .map((key) => {
+                        const m = effectiveUserFormPermissions[key];
+                        if (!m || (!m.view && !m.create && !m.edit)) return null;
+                        const parts = [
+                          m.view ? "View" : null,
+                          m.create ? "Create" : null,
+                          m.edit ? "Edit" : null
+                        ].filter(Boolean);
+                        return (
+                          <li key={key}>
+                            <strong>{MODULE_LABELS[key] || key}:</strong> {parts.join(", ")}
+                          </li>
+                        );
+                      })}
+                  </ul>
+                </div>
+              ) : null}
             </div>
             <button className="btn" type="submit">
               {editingUserId ? "Update User" : "Create User"}

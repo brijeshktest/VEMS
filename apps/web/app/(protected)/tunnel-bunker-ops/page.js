@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "../../../lib/api.js";
+import {
+  canAccessTunnelOps,
+  canCreateTunnelBatch,
+  canEditTunnelBatch
+} from "../../../lib/modulePermissions.js";
 import PageHeader from "../../../components/PageHeader.js";
 
 const newBatchDefault = { batchCode: "", compostType: "Mushroom compost", notes: "" };
@@ -26,15 +32,24 @@ function ConfiguredFlowLead({ config }) {
 }
 
 export default function TunnelBunkerOpsPage() {
+  const router = useRouter();
   const [config, setConfig] = useState(null);
   const [batches, setBatches] = useState([]);
   const [form, setForm] = useState(newBatchDefault);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [tunnelSelections, setTunnelSelections] = useState({});
+  const [perm, setPerm] = useState(null);
 
   async function load() {
     try {
+      const permData = await apiFetch("/auth/permissions").catch(() => ({ permissions: {} }));
+      const p = permData.permissions;
+      setPerm(p);
+      if (!canAccessTunnelOps(p)) {
+        router.replace("/dashboard");
+        return;
+      }
       const data = await apiFetch("/tunnel-bunker/batches");
       setConfig(data.config);
       setBatches(data.batches || []);
@@ -120,6 +135,7 @@ export default function TunnelBunkerOpsPage() {
         </div>
       ) : null}
 
+      {perm != null && canCreateTunnelBatch(perm) ? (
       <div className="card">
         <h3 className="panel-title">Start new compost batch</h3>
         <form className="grid grid-3" onSubmit={createBatch}>
@@ -152,11 +168,14 @@ export default function TunnelBunkerOpsPage() {
           <button className="btn" type="submit">
             Start batch
           </button>
-          <button className="btn btn-secondary" type="button" onClick={() => void autoAdvanceDue()}>
-            Run auto-advance now
-          </button>
+          {canEditTunnelBatch(perm) ? (
+            <button className="btn btn-secondary" type="button" onClick={() => void autoAdvanceDue()}>
+              Run auto-advance now
+            </button>
+          ) : null}
         </form>
       </div>
+      ) : null}
 
       <div className="card card-soft">
         <h3 className="panel-title">Active batches</h3>
@@ -213,9 +232,13 @@ export default function TunnelBunkerOpsPage() {
                     </td>
                     <td>{batch.nextStageLabel}</td>
                     <td>
-                      <button className="btn btn-secondary" type="button" onClick={() => moveNext(batch)}>
-                        Move next
-                      </button>
+                      {perm != null && canEditTunnelBatch(perm) ? (
+                        <button className="btn btn-secondary" type="button" onClick={() => moveNext(batch)}>
+                          Move next
+                        </button>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                   </tr>
                 ))

@@ -2,6 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import CompostLifecycleBatch from "../models/CompostLifecycleBatch.js";
 import GrowingRoom from "../models/GrowingRoom.js";
+import GrowingRoomCycle from "../models/GrowingRoomCycle.js";
 import Material from "../models/Material.js";
 import Vendor from "../models/Vendor.js";
 import Voucher from "../models/Voucher.js";
@@ -495,6 +496,26 @@ async function applyRawMaterialsForStage(batch, stageKey, rawMaterials, note) {
 }
 
 router.get("/compost-batches", requireAuth, requirePermission("plantOperations", "view"), async (req, res) => {
+  const activeCycles = await GrowingRoomCycle.find({
+    status: { $in: ["active", "cleaning"] },
+    compostLifecycleBatchId: { $ne: null }
+  })
+    .select("compostLifecycleBatchId growingRoomId")
+    .lean();
+  for (const c of activeCycles) {
+    const bid = c.compostLifecycleBatchId;
+    const rid = c.growingRoomId;
+    if (!bid || !rid) continue;
+    await CompostLifecycleBatch.updateOne(
+      {
+        _id: bid,
+        postCompostRecordedAt: { $ne: null },
+        postCompostReadyToSell: { $ne: true },
+        $or: [{ postCompostGrowingRoomId: null }, { postCompostGrowingRoomId: { $exists: false } }]
+      },
+      { $set: { postCompostGrowingRoomId: rid } }
+    );
+  }
   const rows = await CompostLifecycleBatch.find().sort({ startDate: -1 });
   const out = [];
   for (const row of rows) {
@@ -640,7 +661,8 @@ router.get(
 );
 
 /**
- * Record final step after compost ready: send compost to an empty growing room (Room), or mark ready to sell.
+ * Record final step after compost ready: mark ready for growing room (any room — room is chosen when starting a crop),
+ * or mark ready to sell. No room selection at this step.
  */
 router.post(
   "/compost-batches/:id/post-compost-dispatch",
@@ -671,37 +693,14 @@ router.post(
       return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
     }
     if (destination === "growing_room") {
-      const gid = body.growingRoomId;
-      if (!gid || !mongoose.Types.ObjectId.isValid(String(gid))) {
-        return res.status(400).json({ error: "growingRoomId is required for destination growing_room" });
-      }
-      const room = await GrowingRoom.findById(gid);
-      if (!room) {
-        return res.status(404).json({ error: "Growing room not found" });
-      }
-      if (String(room.resourceType || "") !== "Room") {
-        return res.status(400).json({
-          error: `Only plant resources of type Room can receive compost after compost ready. “${room.name}” is ${room.resourceType}.`
-        });
-      }
-      const booked = await assertResourceNotDoubleBooked(room._id, batch._id);
-      if (!booked.ok) {
-        return res.status(400).json({ error: booked.error });
-      }
       batch.postCompostReadyToSell = false;
-      batch.postCompostGrowingRoomId = room._id;
+      batch.postCompostGrowingRoomId = null;
       batch.postCompostRecordedAt = now;
-      batch.resourceAllocations.push({
-        growingRoomId: room._id,
-        stageKey: "done",
-        startDate: now,
-        endDate: null
-      });
       await batch.save();
       return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
     }
     return res.status(400).json({
-      error: 'destination must be "growing_room" (with growingRoomId) or "ready_to_sell".'
+      error: 'destination must be "growing_room" or "ready_to_sell".'
     });
   }
 );

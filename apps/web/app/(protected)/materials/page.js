@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { apiFetch } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton, ExcelDownloadIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
 import MaterialBulkImport from "../../../components/MaterialBulkImport.js";
+import { canViewModule, canCreateInModule, canEditInModule } from "../../../lib/modulePermissions.js";
 
 const initialForm = {
   name: "",
@@ -27,6 +29,7 @@ function normalizeMaterialVendorIds(ids) {
 }
 
 export default function MaterialsPage() {
+  const router = useRouter();
   const [materials, setMaterials] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [form, setForm] = useState(initialForm);
@@ -38,6 +41,8 @@ export default function MaterialsPage() {
   const [selectedIds, setSelectedIds] = useState(() => new Set());
   const selectAllCheckboxRef = useRef(null);
   const [materialModalOpen, setMaterialModalOpen] = useState(false);
+  const [canCreateMaterial, setCanCreateMaterial] = useState(false);
+  const [canEditMaterial, setCanEditMaterial] = useState(false);
   const { confirm, dialog } = useConfirmDialog();
   const categoryOptions = Array.from(
     new Set(materials.map((material) => (material.category || "").trim()).filter(Boolean))
@@ -50,20 +55,25 @@ export default function MaterialsPage() {
 
   async function load() {
     try {
-      const [materialData, vendorData, meData, permData] = await Promise.all([
-        apiFetch("/materials"),
-        apiFetch("/vendors"),
+      const [meData, permData] = await Promise.all([
         apiFetch("/auth/me"),
         apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
       ]);
-      setMaterials(materialData);
-      setVendors(vendorData);
       const admin = meData?.user?.role === "admin";
       setIsAdmin(admin);
       const p = permData.permissions;
       const all = p === "all";
+      if (!admin && !all && !canViewModule(p, "materials")) {
+        router.replace("/dashboard");
+        return;
+      }
+      setCanCreateMaterial(admin || all || canCreateInModule(p, "materials"));
+      setCanEditMaterial(admin || all || canEditInModule(p, "materials"));
       setCanBulkDelete(admin || all || Boolean(p?.materials?.bulkDelete));
       setCanBulkUpload(admin || all || Boolean(p?.materials?.bulkUpload));
+      const [materialData, vendorData] = await Promise.all([apiFetch("/materials"), apiFetch("/vendors")]);
+      setMaterials(materialData);
+      setVendors(vendorData);
     } catch (err) {
       setError(err.message);
     }
@@ -293,9 +303,11 @@ export default function MaterialsPage() {
         <div className="card-header-row card-header-row--voucher-toolbar">
           <h3 className="panel-title">All materials</h3>
           <div className="voucher-table-toolbar-actions">
-            <button className="btn" type="button" onClick={openAddMaterialModal}>
-              Add material
-            </button>
+            {canCreateMaterial ? (
+              <button className="btn" type="button" onClick={openAddMaterialModal}>
+                Add material
+              </button>
+            ) : null}
             {canBulkDelete ? (
               <DeleteIconButton
                 disabled={!selectedIds.size}
@@ -373,7 +385,7 @@ export default function MaterialsPage() {
                 <td>{normalizeMaterialVendorIds(material.vendorIds).length}</td>
                 <td>
                   <div className="row-actions">
-                    <EditIconButton onClick={() => startEdit(material)} />
+                    {canEditMaterial ? <EditIconButton onClick={() => startEdit(material)} /> : null}
                     {isAdmin ? <DeleteIconButton onClick={() => void deleteMaterial(material)} /> : null}
                   </div>
                 </td>

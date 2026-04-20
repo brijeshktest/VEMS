@@ -150,9 +150,7 @@ export default function CompostBatchDetailPage() {
   const [advanceNote, setAdvanceNote] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
-  const [dispatchRoomOptions, setDispatchRoomOptions] = useState([]);
   const [dispatchDestination, setDispatchDestination] = useState("growing_room");
-  const [dispatchRoomId, setDispatchRoomId] = useState("");
   const [dispatchSubmitting, setDispatchSubmitting] = useState(false);
 
   const loadBatch = useCallback(async () => {
@@ -178,23 +176,6 @@ export default function CompostBatchDetailPage() {
     const data = await apiFetch("/plant-ops/raw-materials-expense-summary");
     setRawMaterialStock(Array.isArray(data) ? data : []);
   }, []);
-
-  const loadDispatchRoomOptions = useCallback(async () => {
-    if (!batchId) return;
-    try {
-      const d = await apiFetch(`/plant-ops/compost-batches/${batchId}/growing-room-dispatch-options`);
-      const list = Array.isArray(d.resources) ? d.resources : [];
-      setDispatchRoomOptions(list);
-      const firstAvail = list.find((r) => r.available);
-      setDispatchRoomId((prev) => {
-        if (prev && list.some((r) => String(r._id) === prev && r.available)) return prev;
-        return firstAvail ? String(firstAvail._id) : "";
-      });
-    } catch {
-      setDispatchRoomOptions([]);
-      setDispatchRoomId("");
-    }
-  }, [batchId]);
 
   useEffect(() => {
     if (!batchId) return;
@@ -246,43 +227,16 @@ export default function CompostBatchDetailPage() {
     };
   }, [loadRawMaterialStock]);
 
-  useEffect(() => {
-    if (!batchId || !batch || batch.operationalStageKey !== "done") return;
-    if (batch.postCompostRecordedAt) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        await loadDispatchRoomOptions();
-      } catch {
-        if (!cancelled) setDispatchRoomOptions([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [batchId, batch, loadDispatchRoomOptions]);
-
   async function submitPostCompostDispatch(e) {
     e.preventDefault();
     setError("");
     setMessage("");
-    if (dispatchDestination === "growing_room") {
-      if (!dispatchRoomId) {
-        setError("Select an available growing room, or choose Ready to sell.");
-        return;
-      }
-      const sel = dispatchRoomOptions.find((r) => String(r._id) === dispatchRoomId);
-      if (!sel?.available) {
-        setError("That growing room is not available. Pick another room or Ready to sell.");
-        return;
-      }
-    }
     setDispatchSubmitting(true);
     try {
       const body =
         dispatchDestination === "ready_to_sell"
           ? { destination: "ready_to_sell" }
-          : { destination: "growing_room", growingRoomId: dispatchRoomId };
+          : { destination: "growing_room" };
       await apiFetch(`/plant-ops/compost-batches/${batchId}/post-compost-dispatch`, {
         method: "POST",
         body: JSON.stringify(body)
@@ -290,7 +244,7 @@ export default function CompostBatchDetailPage() {
       setMessage(
         dispatchDestination === "ready_to_sell"
           ? "Recorded as ready to sell."
-          : "Recorded: compost sent to the selected growing room."
+          : "Recorded as ready for growing room. Choose the room and batch under Growing rooms when you start a cycle."
       );
       await loadBatch();
     } catch (err) {
@@ -629,9 +583,10 @@ export default function CompostBatchDetailPage() {
         <div className="card compost-dispatch-card">
           <h3 className="panel-title">Final step: growing room or ready to sell</h3>
           <p className="page-lead" style={{ marginTop: 0, marginBottom: 14, fontSize: 13 }}>
-            After compost is ready, record whether the batch is moved into an empty <strong>Room</strong> plant resource for
-            growing, or marked <strong>ready to sell</strong>. Only rooms that are not already tied to an open compost allocation
-            are listed as available.
+            After compost is ready, choose whether this batch is intended for a <strong>growing room crop</strong> or{" "}
+            <strong>ready to sell</strong>. You do <strong>not</strong> pick a room here — go to{" "}
+            <Link href="/plant-operations/growing-rooms">Growing rooms</Link>, choose an available room, then select this batch
+            when you start the cycle.
           </p>
           {batch.postCompostRecordedAt ? (
             <div className="panel-inset panel-inset--strong">
@@ -643,7 +598,7 @@ export default function CompostBatchDetailPage() {
                 typeof batch.postCompostGrowingRoomId === "object" &&
                 batch.postCompostGrowingRoomId.name ? (
                 <p className="page-lead" style={{ marginBottom: 0 }}>
-                  <strong>Sent to growing room:</strong> {batch.postCompostGrowingRoomId.name}
+                  <strong>Legacy — sent to room:</strong> {batch.postCompostGrowingRoomId.name}
                   {batch.postCompostGrowingRoomId.locationInPlant
                     ? ` · ${batch.postCompostGrowingRoomId.locationInPlant}`
                     : ""}{" "}
@@ -651,7 +606,8 @@ export default function CompostBatchDetailPage() {
                 </p>
               ) : (
                 <p className="page-lead" style={{ marginBottom: 0 }}>
-                  Dispatch recorded {formatDateTime(batch.postCompostRecordedAt)}.
+                  <strong>Ready for growing room</strong> — recorded {formatDateTime(batch.postCompostRecordedAt)}. Start the
+                  crop from <Link href="/plant-operations/growing-rooms">Growing rooms</Link> (pick room, then batch).
                 </p>
               )}
             </div>
@@ -666,7 +622,7 @@ export default function CompostBatchDetailPage() {
                     checked={dispatchDestination === "growing_room"}
                     onChange={() => setDispatchDestination("growing_room")}
                   />
-                  <span>Send to growing room (Room)</span>
+                  <span>Ready for growing room</span>
                 </label>
                 <label className="compost-dispatch-radio">
                   <input
@@ -679,61 +635,13 @@ export default function CompostBatchDetailPage() {
                 </label>
               </fieldset>
               {dispatchDestination === "growing_room" ? (
-                <div className="table-wrap">
-                  <table className="table compost-dispatch-rooms-table">
-                    <thead>
-                      <tr>
-                        <th>Growing room</th>
-                        <th>Location</th>
-                        <th>Status</th>
-                        <th>Select</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dispatchRoomOptions.length === 0 ? (
-                        <tr>
-                          <td colSpan={4}>
-                            <span className="cell-empty">No Room-type plant resources found. Add rooms in admin or choose Ready to sell.</span>
-                          </td>
-                        </tr>
-                      ) : (
-                        dispatchRoomOptions.map((r) => (
-                          <tr key={String(r._id)} className={!r.available ? "compost-dispatch-rooms-table__row--busy" : undefined}>
-                            <td>
-                              <strong>{r.name}</strong>
-                              {r.capacityTons != null ? (
-                                <span className="text-muted" style={{ display: "block", fontSize: 12, marginTop: 2 }}>
-                                  Capacity: {r.capacityTons} t
-                                </span>
-                              ) : null}
-                            </td>
-                            <td>{r.locationInPlant || "—"}</td>
-                            <td>
-                              {r.available ? (
-                                <span className="status-pill status-pill--active">Available</span>
-                              ) : (
-                                <span className="status-pill status-pill--pending">In use</span>
-                              )}
-                            </td>
-                            <td>
-                              <input
-                                type="radio"
-                                name="dispatch-room"
-                                checked={dispatchRoomId === String(r._id)}
-                                disabled={!r.available}
-                                onChange={() => setDispatchRoomId(String(r._id))}
-                                aria-label={`Select ${r.name}`}
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <p className="page-lead" style={{ marginBottom: 0, fontSize: 13 }}>
+                  This batch will appear when you <strong>Start cycle</strong> on any available room. Room and batch are chosen
+                  there, not on this screen.
+                </p>
               ) : (
                 <p className="page-lead" style={{ marginBottom: 0, fontSize: 13 }}>
-                  Use this when compost is sold or leaves the plant without occupying a growing room. No room allocation is
+                  Use this when compost is sold or leaves the plant without occupying a growing room. No growing cycle is
                   created.
                 </p>
               )}
@@ -821,7 +729,8 @@ export default function CompostBatchDetailPage() {
             {atDone ? (
               <p className="page-lead" style={{ marginBottom: 0 }}>
                 This batch has reached <strong>compost ready</strong>. No further stage movements are available. Use{" "}
-                <strong>Final step: growing room or ready to sell</strong> above to record where the compost goes next.
+                <strong>Final step: growing room or ready to sell</strong> above for <strong>Ready for growing room</strong> or{" "}
+                <strong>Ready to sell</strong> — you choose the actual room later under Growing rooms when starting a cycle.
               </p>
             ) : (
               <>

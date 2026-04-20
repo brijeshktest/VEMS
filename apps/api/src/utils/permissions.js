@@ -9,6 +9,7 @@ export const MODULES = [
   "roomActivities",
   "tunnelBunkerOps",
   "plantOperations",
+  "growingRoomOps",
   "sales",
   "contributions",
   "roles",
