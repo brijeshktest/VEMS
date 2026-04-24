@@ -1,6 +1,8 @@
 import express from "express";
+import mongoose from "mongoose";
 import Sale, { SALE_PRODUCT_CATEGORIES, SALE_PAYMENT_MODES } from "../models/Sale.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { requireFields } from "../utils/validators.js";
 import { logChange } from "../utils/changeLog.js";
 import {
@@ -144,12 +146,14 @@ function collectSaleInvoiceFieldErrors(body) {
   return errors;
 }
 
-router.get("/summary", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router.get("/summary", requireAuth, requireTenantContext, requirePermission("sales", "view"), async (req, res) => {
   const yest = istYesterdayRangeUtc();
   const curMo = istCurrentMonthRangeUtc();
+  const tenant = { companyId: req.companyId };
 
   const [facetRows, yestAgg, monthAgg] = await Promise.all([
     Sale.aggregate([
+      { $match: tenant },
       {
         $facet: {
           overall: [{ $group: { _id: null, totalAmount: { $sum: "$totalAmount" }, count: { $sum: 1 } } }],
@@ -166,11 +170,11 @@ router.get("/summary", requireAuth, requirePermission("sales", "view"), async (r
       }
     ]),
     Sale.aggregate([
-      { $match: { soldAt: { $gte: yest.start, $lt: yest.end } } },
+      { $match: { ...tenant, soldAt: { $gte: yest.start, $lt: yest.end } } },
       { $group: { _id: null, totalAmount: { $sum: "$totalAmount" } } }
     ]),
     Sale.aggregate([
-      { $match: { soldAt: { $gte: curMo.start, $lt: curMo.end } } },
+      { $match: { ...tenant, soldAt: { $gte: curMo.start, $lt: curMo.end } } },
       { $group: { _id: null, totalAmount: { $sum: "$totalAmount" } } }
     ])
   ]);
@@ -194,7 +198,7 @@ router.get("/summary", requireAuth, requirePermission("sales", "view"), async (r
 });
 
 /** Monthly totals (IST), YoY comparison, and cash vs non-cash for one month. */
-router.get("/dashboard-charts", requireAuth, requirePermission("sales", "view"), async (req, res) => {
+router.get("/dashboard-charts", requireAuth, requireTenantContext, requirePermission("sales", "view"), async (req, res) => {
   const istNow = istCalendarPartsFromDate(new Date());
   const comparisonYear = clampYear(Number(req.query.comparisonYear) || istNow.y);
   const prevYear = comparisonYear - 1;
@@ -207,10 +211,11 @@ router.get("/dashboard-charts", requireAuth, requirePermission("sales", "view"),
   const pStart = istDayStartUtc(prevYear, 1, 1);
   const pEnd = istDayStartUtc(prevYear + 1, 1, 1);
   const pieR = istMonthRangeUtc(pieYear, pieMonth);
+  const tenant = { companyId: req.companyId };
 
   const [thisYearRows, prevYearRows, pieAgg] = await Promise.all([
     Sale.aggregate([
-      { $match: { soldAt: { $gte: yStart, $lt: yEnd } } },
+      { $match: { ...tenant, soldAt: { $gte: yStart, $lt: yEnd } } },
       {
         $addFields: {
           m: { $month: { date: "$soldAt", timezone: IST_TZ } }
@@ -219,7 +224,7 @@ router.get("/dashboard-charts", requireAuth, requirePermission("sales", "view"),
       { $group: { _id: "$m", totalAmount: { $sum: "$totalAmount" } } }
     ]),
     Sale.aggregate([
-      { $match: { soldAt: { $gte: pStart, $lt: pEnd } } },
+      { $match: { ...tenant, soldAt: { $gte: pStart, $lt: pEnd } } },
       {
         $addFields: {
           m: { $month: { date: "$soldAt", timezone: IST_TZ } }
@@ -228,7 +233,7 @@ router.get("/dashboard-charts", requireAuth, requirePermission("sales", "view"),
       { $group: { _id: "$m", totalAmount: { $sum: "$totalAmount" } } }
     ]),
     Sale.aggregate([
-      { $match: { soldAt: { $gte: pieR.start, $lt: pieR.end } } },
+      { $match: { ...tenant, soldAt: { $gte: pieR.start, $lt: pieR.end } } },
       {
         $group: {
           _id: null,
@@ -271,20 +276,25 @@ router.get("/dashboard-charts", requireAuth, requirePermission("sales", "view"),
   });
 });
 
-router.get("/", requireAuth, requirePermission("sales", "view"), async (req, res) => {
-  const sales = await Sale.find().sort({ soldAt: -1, createdAt: -1 }).limit(500);
+router.get("/", requireAuth, requireTenantContext, requirePermission("sales", "view"), async (req, res) => {
+  const sales = await Sale.find({ companyId: req.companyId })
+    .sort({ soldAt: -1, createdAt: -1 })
+    .limit(500);
   return res.json(sales);
 });
 
-router.get("/:id", requireAuth, requirePermission("sales", "view"), async (req, res) => {
-  const sale = await Sale.findById(req.params.id);
+router.get("/:id", requireAuth, requireTenantContext, requirePermission("sales", "view"), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid sale id" });
+  }
+  const sale = await Sale.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!sale) {
     return res.status(404).json({ error: "Sale not found" });
   }
   return res.json(sale);
 });
 
-router.post("/", requireAuth, requirePermission("sales", "create"), async (req, res) => {
+router.post("/", requireAuth, requireTenantContext, requirePermission("sales", "create"), async (req, res) => {
   const missing = requireFields(req.body, [
     "productCategory",
     "quantity",
@@ -343,6 +353,7 @@ router.post("/", requireAuth, requirePermission("sales", "create"), async (req, 
     typeof req.body.customerAddress === "string" ? req.body.customerAddress.trim().slice(0, 4000) : "";
 
   const sale = await Sale.create({
+    companyId: req.companyId,
     productCategory: req.body.productCategory,
     productName: req.body.productName || "",
     quantity,
@@ -366,6 +377,7 @@ router.post("/", requireAuth, requirePermission("sales", "create"), async (req, 
     notes: req.body.notes || ""
   });
   await logChange({
+    companyId: req.companyId,
     entityType: "sale",
     entityId: sale._id,
     action: "create",
@@ -376,8 +388,11 @@ router.post("/", requireAuth, requirePermission("sales", "create"), async (req, 
   return res.status(201).json(sale);
 });
 
-router.put("/:id", requireAuth, requirePermission("sales", "edit"), async (req, res) => {
-  const sale = await Sale.findById(req.params.id);
+router.put("/:id", requireAuth, requireTenantContext, requirePermission("sales", "edit"), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid sale id" });
+  }
+  const sale = await Sale.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!sale) {
     return res.status(404).json({ error: "Sale not found" });
   }
@@ -514,6 +529,7 @@ router.put("/:id", requireAuth, requirePermission("sales", "edit"), async (req, 
 
   await sale.save();
   await logChange({
+    companyId: req.companyId,
     entityType: "sale",
     entityId: sale._id,
     action: "update",
@@ -524,14 +540,18 @@ router.put("/:id", requireAuth, requirePermission("sales", "edit"), async (req, 
   return res.json(sale);
 });
 
-router.delete("/:id", requireAuth, requirePermission("sales", "delete"), async (req, res) => {
-  const sale = await Sale.findById(req.params.id);
+router.delete("/:id", requireAuth, requireTenantContext, requirePermission("sales", "delete"), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid sale id" });
+  }
+  const sale = await Sale.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!sale) {
     return res.status(404).json({ error: "Sale not found" });
   }
   const before = sale.toObject();
   await sale.deleteOne();
   await logChange({
+    companyId: req.companyId,
     entityType: "sale",
     entityId: req.params.id,
     action: "delete",

@@ -13,6 +13,7 @@ const VoucherItemSchema = new mongoose.Schema(
 
 const VoucherSchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     vendorId: { type: mongoose.Schema.Types.ObjectId, ref: "Vendor", required: true },
     voucherNumber: { type: String, trim: true, default: "" },
     items: { type: [VoucherItemSchema], required: true },

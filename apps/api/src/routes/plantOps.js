@@ -7,6 +7,7 @@ import Material from "../models/Material.js";
 import Vendor from "../models/Vendor.js";
 import Voucher from "../models/Voucher.js";
 import { requireAuth, requireAdmin, requirePermission } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { requireFields, ensurePositive } from "../utils/validators.js";
 import {
   COMPOST_STATUS_KEYS,
@@ -33,9 +34,10 @@ function allocationIsOpen(a) {
   return a == null || a.endDate == null;
 }
 
-async function buildBusyGrowingRoomIdSet(excludeBatchId) {
+async function buildBusyGrowingRoomIdSet(companyId, excludeBatchId) {
   const now = new Date();
   const batches = await CompostLifecycleBatch.find({
+    companyId,
     resourceAllocations: { $elemMatch: { endDate: null } }
   })
     .select("_id operationalStageKey manualStatus startDate resourceAllocations")
@@ -53,16 +55,18 @@ async function buildBusyGrowingRoomIdSet(excludeBatchId) {
 }
 
 /** Rooms not used by another batch's open allocation and not the current batch's own open allocation (next stage must pick a different resource). */
-async function countFreeRoomsOfTypes(types, excludeBatchId) {
-  const busy = await buildBusyGrowingRoomIdSet(excludeBatchId);
+async function countFreeRoomsOfTypes(companyId, types, excludeBatchId) {
+  const busy = await buildBusyGrowingRoomIdSet(companyId, excludeBatchId);
   const selfOpenRooms = new Set();
   if (excludeBatchId) {
-    const self = await CompostLifecycleBatch.findById(excludeBatchId).select("resourceAllocations").lean();
+    const self = await CompostLifecycleBatch.findOne({ _id: excludeBatchId, companyId })
+      .select("resourceAllocations")
+      .lean();
     for (const a of self?.resourceAllocations || []) {
       if (allocationIsOpen(a)) selfOpenRooms.add(String(a.growingRoomId));
     }
   }
-  const rooms = await GrowingRoom.find({ resourceType: { $in: types } }).select("_id").lean();
+  const rooms = await GrowingRoom.find({ companyId, resourceType: { $in: types } }).select("_id").lean();
   let n = 0;
   for (const r of rooms) {
     const id = String(r._id);
@@ -75,10 +79,11 @@ async function countFreeRoomsOfTypes(types, excludeBatchId) {
  * For each growing room id with an open allocation on an active batch (excluding excludeBatchId),
  * planned ISO date when that allocation's stage ends on the batch calendar, plus holding batch name.
  */
-async function buildRoomAvailabilityMeta(excludeBatchId) {
+async function buildRoomAvailabilityMeta(companyId, excludeBatchId) {
   const now = new Date();
   const meta = new Map();
   const batches = await CompostLifecycleBatch.find({
+    companyId,
     resourceAllocations: { $elemMatch: { endDate: null } }
   })
     .select("batchName startDate operationalStageKey manualStatus resourceAllocations")
@@ -109,8 +114,8 @@ function usageKey(materialId, vendorId) {
 }
 
 /** Sum compost batch raw lines with vendor (materialId + vendorId). */
-async function getCompostRawMaterialUsageByVendor() {
-  const batches = await CompostLifecycleBatch.find()
+async function getCompostRawMaterialUsageByVendor(companyId) {
+  const batches = await CompostLifecycleBatch.find({ companyId })
     .select("rawMaterialLines")
     .lean();
   const map = new Map();
@@ -125,9 +130,9 @@ async function getCompostRawMaterialUsageByVendor() {
   return map;
 }
 
-async function getVoucherPurchasedByMaterialVendor(dateMatch) {
+async function getVoucherPurchasedByMaterialVendor(companyId, dateMatch) {
   const matVendorRows = await Voucher.aggregate([
-    { $match: dateMatch },
+    { $match: { companyId, ...dateMatch } },
     { $unwind: "$items" },
     {
       $group: {
@@ -179,11 +184,11 @@ async function getVoucherPurchasedByMaterialVendor(dateMatch) {
   return byMaterial;
 }
 
-async function computeRawMaterialStockSummary(dateMatch) {
+async function computeRawMaterialStockSummary(companyId, dateMatch) {
   const [catalogMaterials, purchasedByMaterial, usageMap] = await Promise.all([
-    Material.find().select("name unit category").sort({ name: 1 }).lean(),
-    getVoucherPurchasedByMaterialVendor(dateMatch),
-    getCompostRawMaterialUsageByVendor()
+    Material.find({ companyId }).select("name unit category").sort({ name: 1 }).lean(),
+    getVoucherPurchasedByMaterialVendor(companyId, dateMatch),
+    getCompostRawMaterialUsageByVendor(companyId)
   ]);
   const rawCatalog = catalogMaterials.filter((m) =>
     RAW_MATERIAL_CATEGORY.test((m.category || "").trim())
@@ -295,12 +300,13 @@ async function toBatchView(doc, { populate = true } = {}) {
   };
 }
 
-async function assertResourceNotDoubleBooked(growingRoomId, excludeBatchId) {
-  const busy = await buildBusyGrowingRoomIdSet(excludeBatchId);
+async function assertResourceNotDoubleBooked(companyId, growingRoomId, excludeBatchId) {
+  const busy = await buildBusyGrowingRoomIdSet(companyId, excludeBatchId);
   const gid = String(growingRoomId);
   if (busy.has(gid)) {
     const gidObj = new mongoose.Types.ObjectId(gid);
     const other = await CompostLifecycleBatch.findOne({
+      companyId,
       ...(excludeBatchId ? { _id: { $ne: excludeBatchId } } : {}),
       resourceAllocations: { $elemMatch: { growingRoomId: gidObj, endDate: null } }
     })
@@ -346,7 +352,7 @@ async function validateAndPushResourceAllocations(batch, stageKey, resources, st
       return { ok: false, error: "Duplicate resource in request" };
     }
     seen.add(idStr);
-    const room = await GrowingRoom.findById(gid);
+    const room = await GrowingRoom.findOne({ _id: gid, companyId: batch.companyId });
     if (!room) {
       return { ok: false, error: "Resource not found" };
     }
@@ -356,7 +362,7 @@ async function validateAndPushResourceAllocations(batch, stageKey, resources, st
         error: `Stage ${stageKey} allows only: ${allowedTypes.join(", ")}. “${room.name}” is ${room.resourceType}.`
       };
     }
-    const check = await assertResourceNotDoubleBooked(room._id, batch._id);
+    const check = await assertResourceNotDoubleBooked(batch.companyId, room._id, batch._id);
     if (!check.ok) {
       return { ok: false, error: check.error };
     }
@@ -427,8 +433,8 @@ async function applyRawMaterialsForStage(batch, stageKey, rawMaterials, note) {
 
   const dateMatch = buildVoucherDateMatch();
   const [usageMap, purchasedByMaterial] = await Promise.all([
-    getCompostRawMaterialUsageByVendor(),
-    getVoucherPurchasedByMaterialVendor(dateMatch)
+    getCompostRawMaterialUsageByVendor(batch.companyId),
+    getVoucherPurchasedByMaterialVendor(batch.companyId, dateMatch)
   ]);
 
   const rawMaterialsUsed = [];
@@ -436,7 +442,7 @@ async function applyRawMaterialsForStage(batch, stageKey, rawMaterials, note) {
   const pendingLines = [];
 
   for (const [midStr, vendorMap] of byMaterial) {
-    const material = await Material.findById(midStr);
+    const material = await Material.findOne({ _id: midStr, companyId: batch.companyId });
     if (!material) {
       return { ok: false, error: "Material not found" };
     }
@@ -451,7 +457,7 @@ async function applyRawMaterialsForStage(batch, stageKey, rawMaterials, note) {
       if (!mongoose.Types.ObjectId.isValid(String(vendorIdStr))) {
         return { ok: false, error: "Invalid vendorId" };
       }
-      const vendor = await Vendor.findById(vendorIdStr);
+      const vendor = await Vendor.findOne({ _id: vendorIdStr, companyId: batch.companyId });
       if (!vendor) {
         return { ok: false, error: "Vendor not found" };
       }
@@ -495,8 +501,9 @@ async function applyRawMaterialsForStage(batch, stageKey, rawMaterials, note) {
   return { ok: true, rawMaterialsUsed };
 }
 
-router.get("/compost-batches", requireAuth, requirePermission("plantOperations", "view"), async (req, res) => {
+router.get("/compost-batches", requireAuth, requireTenantContext, requirePermission("plantOperations", "view"), async (req, res) => {
   const activeCycles = await GrowingRoomCycle.find({
+    companyId: req.companyId,
     status: { $in: ["active", "cleaning"] },
     compostLifecycleBatchId: { $ne: null }
   })
@@ -509,6 +516,7 @@ router.get("/compost-batches", requireAuth, requirePermission("plantOperations",
     await CompostLifecycleBatch.updateOne(
       {
         _id: bid,
+        companyId: req.companyId,
         postCompostRecordedAt: { $ne: null },
         postCompostReadyToSell: { $ne: true },
         $or: [{ postCompostGrowingRoomId: null }, { postCompostGrowingRoomId: { $exists: false } }]
@@ -516,7 +524,7 @@ router.get("/compost-batches", requireAuth, requirePermission("plantOperations",
       { $set: { postCompostGrowingRoomId: rid } }
     );
   }
-  const rows = await CompostLifecycleBatch.find().sort({ startDate: -1 });
+  const rows = await CompostLifecycleBatch.find({ companyId: req.companyId }).sort({ startDate: -1 });
   const out = [];
   for (const row of rows) {
     out.push(await toBatchView(row, { populate: false }));
@@ -530,9 +538,10 @@ const SH_COMPOST_BATCH_CODE_RE = /^SH-C-#(\d+)$/i;
 router.get(
   "/compost-batches/next-batch-code",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "create"),
   async (req, res) => {
-    const rows = await CompostLifecycleBatch.find().select("batchName").lean();
+    const rows = await CompostLifecycleBatch.find({ companyId: req.companyId }).select("batchName").lean();
     let max = 0;
     for (const row of rows) {
       const m = SH_COMPOST_BATCH_CODE_RE.exec(String(row.batchName || "").trim());
@@ -546,7 +555,7 @@ router.get(
   }
 );
 
-router.post("/compost-batches", requireAuth, requirePermission("plantOperations", "create"), async (req, res) => {
+router.post("/compost-batches", requireAuth, requireTenantContext, requirePermission("plantOperations", "create"), async (req, res) => {
   const body = req.body || {};
   const missing = requireFields(body, ["batchName", "startDate", "resources", "rawMaterials"]);
   if (missing.length) {
@@ -572,7 +581,7 @@ router.post("/compost-batches", requireAuth, requirePermission("plantOperations"
     }
     quantity = q.value;
   }
-  const lagoonFree = await countFreeRoomsOfTypes(["Lagoon"], null);
+  const lagoonFree = await countFreeRoomsOfTypes(req.companyId, ["Lagoon"], null);
   if (lagoonFree < 1) {
     return res.status(400).json({
       error: "No Lagoon plant resources are available; cannot create a new batch until capacity frees up."
@@ -581,6 +590,7 @@ router.post("/compost-batches", requireAuth, requirePermission("plantOperations"
   const rawNote = body.rawMaterialNote ? String(body.rawMaterialNote).trim() : "";
   try {
     const batch = await CompostLifecycleBatch.create({
+      companyId: req.companyId,
       batchName: String(body.batchName).trim(),
       startDate,
       quantity,
@@ -590,12 +600,12 @@ router.post("/compost-batches", requireAuth, requirePermission("plantOperations"
     });
     const resPush = await validateAndPushResourceAllocations(batch, "wetting", resources, startDate);
     if (!resPush.ok) {
-      await CompostLifecycleBatch.deleteOne({ _id: batch._id });
+      await CompostLifecycleBatch.deleteOne({ _id: batch._id, companyId: req.companyId });
       return res.status(400).json({ error: resPush.error });
     }
     const rawRes = await applyRawMaterialsForStage(batch, "wetting", rawMaterials, rawNote);
     if (!rawRes.ok) {
-      await CompostLifecycleBatch.deleteOne({ _id: batch._id });
+      await CompostLifecycleBatch.deleteOne({ _id: batch._id, companyId: req.companyId });
       return res.status(400).json({ error: rawRes.error });
     }
     batch.stageMovements.push({
@@ -615,11 +625,11 @@ router.post("/compost-batches", requireAuth, requirePermission("plantOperations"
   }
 });
 
-router.get("/compost-batches/:id", requireAuth, requirePermission("plantOperations", "view"), async (req, res) => {
+router.get("/compost-batches/:id", requireAuth, requireTenantContext, requirePermission("plantOperations", "view"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid batch id" });
   }
-  const batch = await CompostLifecycleBatch.findById(req.params.id);
+  const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!batch) {
     return res.status(404).json({ error: "Batch not found" });
   }
@@ -630,12 +640,15 @@ router.get("/compost-batches/:id", requireAuth, requirePermission("plantOperatio
 router.get(
   "/compost-batches/:id/growing-room-dispatch-options",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "view"),
   async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: "Invalid batch id" });
     }
-    const batch = await CompostLifecycleBatch.findById(req.params.id).select("operationalStageKey manualStatus startDate");
+    const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId }).select(
+      "operationalStageKey manualStatus startDate"
+    );
     if (!batch) {
       return res.status(404).json({ error: "Batch not found" });
     }
@@ -643,8 +656,8 @@ router.get(
     if (operationalStageFromDoc(batch, now) !== "done") {
       return res.status(400).json({ error: "Batch must be compost ready before choosing a dispatch destination." });
     }
-    const busy = await buildBusyGrowingRoomIdSet(req.params.id);
-    const rooms = await GrowingRoom.find({ resourceType: "Room" })
+    const busy = await buildBusyGrowingRoomIdSet(req.companyId, req.params.id);
+    const rooms = await GrowingRoom.find({ companyId: req.companyId, resourceType: "Room" })
       .sort({ name: 1 })
       .select("name resourceType locationInPlant capacityTons maxBagCapacity")
       .lean();
@@ -667,12 +680,13 @@ router.get(
 router.post(
   "/compost-batches/:id/post-compost-dispatch",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "edit"),
   async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: "Invalid batch id" });
     }
-    const batch = await CompostLifecycleBatch.findById(req.params.id);
+    const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!batch) {
       return res.status(404).json({ error: "Batch not found" });
     }
@@ -690,14 +704,14 @@ router.post(
       batch.postCompostGrowingRoomId = null;
       batch.postCompostRecordedAt = now;
       await batch.save();
-      return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+      return res.json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
     }
     if (destination === "growing_room") {
       batch.postCompostReadyToSell = false;
       batch.postCompostGrowingRoomId = null;
       batch.postCompostRecordedAt = now;
       await batch.save();
-      return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+      return res.json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
     }
     return res.status(400).json({
       error: 'destination must be "growing_room" or "ready_to_sell".'
@@ -708,12 +722,13 @@ router.post(
 router.post(
   "/compost-batches/:id/daily-parameter-logs",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "edit"),
   async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: "Invalid batch id" });
     }
-    const batch = await CompostLifecycleBatch.findById(req.params.id);
+    const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!batch) {
       return res.status(404).json({ error: "Batch not found" });
     }
@@ -777,15 +792,15 @@ router.post(
       allocatedResources
     });
     await batch.save();
-    return res.status(201).json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+    return res.status(201).json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
   }
 );
 
-router.patch("/compost-batches/:id", requireAuth, requirePermission("plantOperations", "edit"), async (req, res) => {
+router.patch("/compost-batches/:id", requireAuth, requireTenantContext, requirePermission("plantOperations", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid batch id" });
   }
-  const batch = await CompostLifecycleBatch.findById(req.params.id);
+  const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!batch) {
     return res.status(404).json({ error: "Batch not found" });
   }
@@ -829,18 +844,19 @@ router.patch("/compost-batches/:id", requireAuth, requirePermission("plantOperat
     }
     throw err;
   }
-  return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+  return res.json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
 });
 
 router.post(
   "/compost-batches/:id/advance-stage",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "edit"),
   async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: "Invalid batch id" });
     }
-    const batch = await CompostLifecycleBatch.findById(req.params.id);
+    const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!batch) {
       return res.status(404).json({ error: "Batch not found" });
     }
@@ -855,7 +871,7 @@ router.post(
     }
     const typesNeeded = resourceTypesForCompostStatus(nextKey);
     if (nextKey !== "done" && typesNeeded.length) {
-      const free = await countFreeRoomsOfTypes(typesNeeded, batch._id);
+      const free = await countFreeRoomsOfTypes(req.companyId, typesNeeded, batch._id);
       if (free < 1) {
         return res.status(400).json({
           error: `No available ${typesNeeded.join(" / ")} plant resources for the next stage. Advance is blocked until capacity frees up.`
@@ -906,7 +922,7 @@ router.post(
       });
       batch.operationalStageKey = nextKey;
       await batch.save();
-      return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+      return res.json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
     }
 
     const resPush = await validateAndPushResourceAllocations(batch, nextKey, resources || [], now);
@@ -947,15 +963,15 @@ router.post(
       }
       throw err;
     }
-    return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+    return res.json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
   }
 );
 
-router.delete("/compost-batches/:id", requireAuth, requireAdmin, async (req, res) => {
+router.delete("/compost-batches/:id", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid batch id" });
   }
-  const batch = await CompostLifecycleBatch.findById(req.params.id);
+  const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!batch) {
     return res.status(404).json({ error: "Batch not found" });
   }
@@ -972,6 +988,7 @@ router.delete("/compost-batches/:id", requireAuth, requireAdmin, async (req, res
 router.post(
   "/compost-batches/:id/resources",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "edit"),
   async (req, res) => {
     return res.status(400).json({
@@ -984,12 +1001,13 @@ router.post(
 router.delete(
   "/compost-batches/:id/resources/:allocationId",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "edit"),
   async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: "Invalid batch id" });
     }
-    const batch = await CompostLifecycleBatch.findById(req.params.id);
+    const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!batch) {
       return res.status(404).json({ error: "Batch not found" });
     }
@@ -999,13 +1017,14 @@ router.delete(
     }
     sub.deleteOne();
     await batch.save();
-    return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+    return res.json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
   }
 );
 
 router.post(
   "/compost-batches/:id/raw-materials",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "edit"),
   async (req, res) => {
     return res.status(400).json({
@@ -1018,12 +1037,13 @@ router.post(
 router.delete(
   "/compost-batches/:id/raw-materials/:lineId",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "edit"),
   async (req, res) => {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: "Invalid batch id" });
     }
-    const batch = await CompostLifecycleBatch.findById(req.params.id);
+    const batch = await CompostLifecycleBatch.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!batch) {
       return res.status(404).json({ error: "Batch not found" });
     }
@@ -1033,12 +1053,14 @@ router.delete(
     }
     sub.deleteOne();
     await batch.save();
-    return res.json(await toBatchView(await CompostLifecycleBatch.findById(batch._id)));
+    return res.json(await toBatchView(await CompostLifecycleBatch.findOne({ _id: batch._id, companyId: req.companyId })));
   }
 );
 
-router.get("/raw-materials", requireAuth, requirePermission("plantOperations", "view"), async (req, res) => {
-  const all = await Material.find().sort({ name: 1 }).select("name unit category description");
+router.get("/raw-materials", requireAuth, requireTenantContext, requirePermission("plantOperations", "view"), async (req, res) => {
+  const all = await Material.find({ companyId: req.companyId })
+    .sort({ name: 1 })
+    .select("name unit category description");
   const materials = all.filter((m) => RAW_MATERIAL_CATEGORY.test((m.category || "").trim()));
   return res.json(materials);
 });
@@ -1050,10 +1072,11 @@ router.get("/raw-materials", requireAuth, requirePermission("plantOperations", "
 router.get(
   "/raw-materials-expense-summary",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "view"),
   async (req, res) => {
     const dateMatch = buildVoucherDateMatch(req.query.start, req.query.end);
-    const rows = await computeRawMaterialStockSummary(dateMatch);
+    const rows = await computeRawMaterialStockSummary(req.companyId, dateMatch);
     return res.json(rows);
   }
 );
@@ -1061,15 +1084,16 @@ router.get(
 router.get(
   "/available-plant-resources",
   requireAuth,
+  requireTenantContext,
   requirePermission("plantOperations", "view"),
   async (req, res) => {
     const excludeBatchId =
       req.query.excludeBatchId && mongoose.Types.ObjectId.isValid(String(req.query.excludeBatchId))
         ? new mongoose.Types.ObjectId(String(req.query.excludeBatchId))
         : null;
-    const busy = await buildBusyGrowingRoomIdSet(excludeBatchId);
-    const roomMeta = await buildRoomAvailabilityMeta(excludeBatchId);
-    const rooms = await GrowingRoom.find()
+    const busy = await buildBusyGrowingRoomIdSet(req.companyId, excludeBatchId);
+    const roomMeta = await buildRoomAvailabilityMeta(req.companyId, excludeBatchId);
+    const rooms = await GrowingRoom.find({ companyId: req.companyId })
       .sort({ name: 1 })
       .select("name resourceType locationInPlant capacityTons maxBagCapacity")
       .lean();
@@ -1096,13 +1120,13 @@ router.get(
   }
 );
 
-router.get("/resource-options", requireAuth, requirePermission("plantOperations", "view"), async (req, res) => {
+router.get("/resource-options", requireAuth, requireTenantContext, requirePermission("plantOperations", "view"), async (req, res) => {
   const status = String(req.query.status || "").trim();
   if (!COMPOST_STATUS_KEYS.includes(status)) {
     return res.status(400).json({ error: "Query status must be a valid compost lifecycle status" });
   }
   const types = resourceTypesForCompostStatus(status);
-  const rooms = await GrowingRoom.find({ resourceType: { $in: types } })
+  const rooms = await GrowingRoom.find({ companyId: req.companyId, resourceType: { $in: types } })
     .sort({ name: 1 })
     .select("name resourceType locationInPlant capacityTons maxBagCapacity");
   const currentBatchId = req.query.excludeBatchId ? String(req.query.excludeBatchId) : null;
@@ -1110,10 +1134,12 @@ router.get("/resource-options", requireAuth, requirePermission("plantOperations"
     currentBatchId && mongoose.Types.ObjectId.isValid(currentBatchId)
       ? new mongoose.Types.ObjectId(currentBatchId)
       : null;
-  const busy = await buildBusyGrowingRoomIdSet(excludeOid);
+  const busy = await buildBusyGrowingRoomIdSet(req.companyId, excludeOid);
   const selfOpenRooms = new Set();
   if (excludeOid) {
-    const self = await CompostLifecycleBatch.findById(excludeOid).select("resourceAllocations").lean();
+    const self = await CompostLifecycleBatch.findOne({ _id: excludeOid, companyId: req.companyId })
+      .select("resourceAllocations")
+      .lean();
     if (self) {
       for (const a of self.resourceAllocations || []) {
         if (allocationIsOpen(a)) {

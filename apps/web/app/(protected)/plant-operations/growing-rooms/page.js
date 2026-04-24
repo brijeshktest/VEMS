@@ -186,7 +186,7 @@ export default function GrowingRoomsPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Plant operations"
+        eyebrow="Compost Units"
         title="Growing rooms"
         description="Scan every configured growing room in one place — like All compost batches on the main plant screen. Each row shows occupancy, the compost batch in crop (when applicable), and progress through the grow calendar."
       >
@@ -227,7 +227,7 @@ export default function GrowingRoomsPage() {
       <div className="card">
         <h3 className="panel-title">All growing rooms</h3>
         <p className="page-lead" style={{ marginTop: 0, marginBottom: 14, fontSize: 13 }}>
-          Only <strong>Room</strong> resources from the catalogue appear here. In Plant operations, the batch must be{" "}
+          Only <strong>Room</strong> resources from the catalogue appear here. In Compost Units, the batch must be{" "}
           <strong>compost ready</strong> and the final step set to <strong>Ready for growing room</strong> (not a specific room).
           Then <strong>Start cycle</strong> on an available room and pick the batch. <strong>Open cycle</strong> is the live crop
           (tasks, logs, harvest, cleaning).
@@ -470,7 +470,7 @@ export default function GrowingRoomsPage() {
                 </h3>
                 <p id="gr-start-cycle-desc" className="gr-start-hero__desc">
                   Pick the room first, then a <strong>compost-ready</strong> batch marked <strong>Ready for growing room</strong> in
-                  Plant operations. Room choice happens only here — not on the batch final step.
+                  Compost Units. Room choice happens only here — not on the batch final step.
                 </p>
               </div>
               <div className="gr-start-hero__mark" aria-hidden="true">
@@ -572,14 +572,14 @@ export default function GrowingRoomsPage() {
                     <span className="gr-start-panel__tag gr-start-panel__tag--req">Required</span>
                   </div>
                   <p className="gr-start-panel__lead">
-                    Batches marked <strong>Ready for growing room</strong> in Plant operations (final step). Not tied to a room
+                    Batches marked <strong>Ready for growing room</strong> in Compost Units (final step). Not tied to a room
                     until you start the cycle here — same batch can be listed for every empty room until one claims it.
                   </p>
 
                   {!modalRoomId ? (
                     <div className="gr-start-gate">
                       <p className="gr-start-gate__title">Choose a room first</p>
-                      <p className="gr-start-gate__text">Then we load compost batches marked ready for growing room (final step in Plant operations).</p>
+                      <p className="gr-start-gate__text">Then we load compost batches marked ready for growing room (final step in Compost Units).</p>
                     </div>
                   ) : null}
 
@@ -599,11 +599,11 @@ export default function GrowingRoomsPage() {
                       <div className="gr-start-empty__icon" aria-hidden="true" />
                       <p className="gr-start-empty__title">No eligible batches for this room</p>
                       <p className="gr-start-empty__text">
-                        In Plant operations, open the batch → set final step to <strong>Ready for growing room</strong> (you do not
+                        In Compost Units, open the batch → set final step to <strong>Ready for growing room</strong> (you do not
                         pick a room there). Then return here and start the cycle for <strong>{selectedRoom?.name || "this room"}</strong>.
                       </p>
                       <Link href="/plant-operations" className="btn btn-secondary">
-                        Go to plant operations
+                        Go to Compost Units
                       </Link>
                     </div>
                   ) : null}
@@ -667,7 +667,7 @@ export default function GrowingRoomsPage() {
                     if (!modalRoomId) return "Select a room to continue.";
                     if (eligibleLoading) return "Loading batches…";
                     if (eligibleBatches.length === 0 && !eligibleError)
-                      return "No eligible batch yet — compost ready + final step Ready for growing room in Plant operations.";
+                      return "No eligible batch yet — compost ready + final step Ready for growing room in Compost Units.";
                     if (!modalBatchId) return "Select the compost batch for this cycle.";
                     return "Ready when you are.";
                   })()}

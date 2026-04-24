@@ -12,7 +12,8 @@ const ActivitySchema = new mongoose.Schema(
 
 const StageSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, unique: true, trim: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    name: { type: String, required: true, trim: true },
     sequenceOrder: { type: Number, required: true },
     intervalDays: { type: Number, required: true },
     humidity: { type: Number, default: 0 },
@@ -23,5 +24,7 @@ const StageSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+StageSchema.index({ companyId: 1, name: 1 }, { unique: true });
 
 export default mongoose.model("Stage", StageSchema);

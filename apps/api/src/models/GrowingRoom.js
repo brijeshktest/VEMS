@@ -4,7 +4,8 @@ export const PLANT_RESOURCE_TYPES = ["Lagoon", "Tunnel", "Bunker", "Room"];
 
 const GrowingRoomSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true, unique: true, trim: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    name: { type: String, required: true, trim: true },
     /** Legacy field; kept in sync with capacityTons for existing logic. */
     maxBagCapacity: { type: Number, required: true },
     /** Capacity in metric tons (same numeric value synced to maxBagCapacity). */
@@ -37,5 +38,7 @@ const GrowingRoomSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+GrowingRoomSchema.index({ companyId: 1, name: 1 }, { unique: true });
 
 export default mongoose.model("GrowingRoom", GrowingRoomSchema);

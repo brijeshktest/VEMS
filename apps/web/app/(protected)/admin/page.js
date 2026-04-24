@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { apiFetch, apiFetchForm, API_URL } from "../../../lib/api.js";
+import { apiFetch, apiFetchForm, API_URL, getActiveCompanyId } from "../../../lib/api.js";
 import PageHeader from "../../../components/PageHeader.js";
 import { EditIconButton, DeleteIconButton } from "../../../components/EditDeleteIconButtons.js";
 import { useConfirmDialog } from "../../../components/ConfirmDialog.js";
@@ -36,7 +36,7 @@ const MODULE_LABELS = {
   roomStages: "Room stages",
   roomActivities: "Room activities",
   tunnelBunkerOps: "Tunnel & bunker ops",
-  plantOperations: "Plant operations (compost lifecycle)",
+  plantOperations: "Compost Units (compost lifecycle)",
   growingRoomOps: "Growing room crop cycles & interventions",
   sales: "Sales management",
   contributions: "Contribution management",
@@ -189,7 +189,9 @@ export default function AdminPage() {
 
   async function refreshBranding() {
     try {
-      const res = await fetch(`${API_URL}/settings/branding`);
+      const cid = getActiveCompanyId();
+      const q = cid ? `?companyId=${encodeURIComponent(cid)}` : "";
+      const res = await fetch(`${API_URL}/settings/branding${q}`);
       const data = await res.json().catch(() => ({}));
       if (data?.hasLogo && typeof data.updatedAt === "number") {
         setBrandingTs(data.updatedAt);
@@ -203,6 +205,17 @@ export default function AdminPage() {
 
   useEffect(() => {
     refreshBranding();
+    function onBrand() {
+      void refreshBranding();
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("vems-branding-updated", onBrand);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("vems-branding-updated", onBrand);
+      }
+    };
   }, []);
 
   async function loadInvoiceLetterhead() {
@@ -469,16 +482,20 @@ export default function AdminPage() {
       </div>
 
       <div className="card">
-        <h3 className="panel-title">Organization logo</h3>
+        <h3 className="panel-title">Plant logo</h3>
         <p className="page-lead" style={{ marginBottom: 16 }}>
-          Upload a square or wide logo (PNG, JPEG, SVG, or WebP, max 2&nbsp;MB). It appears in the application header and on sales invoice PDFs when letterhead is configured.
+          Upload a square or wide logo (PNG, JPEG, SVG, or WebP, max 2&nbsp;MB) for this plant only. It appears in the
+          header while you work in this site and on sales invoice PDFs when letterhead is configured. Super Admins set a
+          separate platform logo under Plant network.
         </p>
         {brandingTs ? (
           <div style={{ marginBottom: 16 }}>
             <p style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 600, color: "var(--muted)" }}>Current logo</p>
             <img
-              src={`${API_URL}/settings/logo?t=${brandingTs}`}
-              alt="Organization logo"
+              src={`${API_URL}/settings/logo?${
+                getActiveCompanyId() ? `companyId=${encodeURIComponent(getActiveCompanyId())}&` : ""
+              }t=${brandingTs}`}
+              alt="Plant logo"
               style={{ maxHeight: 64, maxWidth: 200, objectFit: "contain", border: "1px solid var(--border)", borderRadius: 8 }}
             />
           </div>

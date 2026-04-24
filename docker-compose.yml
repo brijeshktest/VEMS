@@ -1,0 +1,19 @@
+# Local MongoDB for VEMS. Run: npm run docker:up
+services:
+  mongo:
+    image: mongo:7
+    container_name: vems-mongo
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - vems-mongo-data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+      start_period: 5s
+
+volumes:
+  vems-mongo-data:

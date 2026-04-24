@@ -10,14 +10,21 @@ Full-stack system for **Shroom Agritech LLP** (button mushroom production, compo
 
 ## Getting started (local development)
 
-1. **Start MongoDB** (local or remote URI in `.env`).
-2. **Install dependencies** (root installs all workspaces):
+1. **Install dependencies** (root installs all workspaces):
 
    ```bash
    npm install
    ```
 
-3. **Environment files**
+2. **MongoDB** — easiest path uses Docker (requires Docker Desktop or Engine):
+
+   ```bash
+   npm run docker:up
+   ```
+
+   Defaults use `mongodb://127.0.0.1:27017/vendor_expense` (see `apps/api/.env.example`). You can set `MONGO_URL` or `MONGODB_URI` in `apps/api/.env` instead.
+
+3. **Environment files** — `npm run local:prepare` creates missing files from the examples, or copy manually:
 
    | Copy from | To |
    |-----------|-----|
@@ -27,7 +34,7 @@ Full-stack system for **Shroom Agritech LLP** (button mushroom production, compo
    Typical values:
 
    - `apps/api/.env`: `MONGO_URL`, `JWT_SECRET`, `PORT` (e.g. `4000`).
-   - `apps/web/.env.local`: `NEXT_PUBLIC_API_URL` (e.g. `http://localhost:4000`).
+   - `apps/web/.env.local`: `NEXT_PUBLIC_API_URL` (e.g. `http://127.0.0.1:4000/api` for dev).
 
 4. **Run the API** (from repo root):
 
@@ -42,6 +49,16 @@ Full-stack system for **Shroom Agritech LLP** (button mushroom production, compo
    ```
 
 6. Open **http://localhost:3000**. The sign-in screen includes Shroom Agritech–specific copy and imagery.
+
+### PM2 + built Next (optional)
+
+After Mongo is up, you can build and run both processes with PM2:
+
+```bash
+npm run local:quickstart
+```
+
+This runs `docker compose` for Mongo (if needed), copies env examples when missing, builds the web app, and starts `vems-api` then `vems-web`.
 
 ## First admin user
 

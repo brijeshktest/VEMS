@@ -1,22 +1,15 @@
 import express from "express";
+import mongoose from "mongoose";
 import GrowingRoom, { PLANT_RESOURCE_TYPES } from "../models/GrowingRoom.js";
 import Stage from "../models/Stage.js";
+import Company from "../models/Company.js";
 import { requireAuth, requireAdmin, requirePermission, resolvePermissions } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { requireFields, ensurePositive } from "../utils/validators.js";
 import { logChange } from "../utils/changeLog.js";
+import { ensureDefaultRoomsForCompany } from "../utils/companySeed.js";
 
 const router = express.Router();
-
-const SEED_ROOMS = [
-  { name: "Orion", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
-  { name: "Nova", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
-  { name: "Cosmos", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
-  { name: "Nebula", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
-  { name: "Pulsar", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
-  { name: "Atlas", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
-  { name: "Apollo", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" },
-  { name: "Zenith", maxBagCapacity: 0, capacityTons: 0, resourceType: "Room", locationInPlant: "", powerBackupSource: "" }
-];
 
 function parseOptionalCoordinate(value, fieldName) {
   if (value === undefined || value === null || value === "") {
@@ -30,28 +23,32 @@ function parseOptionalCoordinate(value, fieldName) {
 }
 
 export async function ensureRoomsSeeded() {
-  const count = await GrowingRoom.countDocuments();
-  if (count === 0) {
-    await GrowingRoom.insertMany(SEED_ROOMS);
+  const companies = await Company.find({}).select("_id").lean();
+  for (const c of companies) {
+    await ensureDefaultRoomsForCompany(c._id);
   }
   await GrowingRoom.updateMany(
     { $or: [{ capacityTons: { $exists: false } }, { capacityTons: null }] },
     [{ $set: { capacityTons: "$maxBagCapacity" } }]
   );
-  await GrowingRoom.updateMany(
-    { resourceType: { $exists: false } },
-    { $set: { resourceType: "Room", locationInPlant: "" } }
-  );
 }
 
-router.get("/", requireAuth, requireAdmin, async (req, res) => {
-  const rooms = await GrowingRoom.find().populate("currentStageId").sort({ name: 1 });
+router.get("/", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const rooms = await GrowingRoom.find({ companyId: req.companyId })
+    .populate("currentStageId")
+    .sort({ name: 1 });
   return res.json(rooms);
 });
 
-router.get("/status", requireAuth, async (req, res) => {
-  if (req.user?.role !== "admin") {
-    const permissions = await resolvePermissions(req.user?.roleIds || []);
+router.get("/status", requireAuth, requireTenantContext, async (req, res) => {
+  if (req.enabledModuleKeys && typeof req.enabledModuleKeys.has === "function") {
+    const okRoom = req.enabledModuleKeys.has("roomStages") || req.enabledModuleKeys.has("roomActivities");
+    if (!okRoom) {
+      return res.status(403).json({ error: "Room operations module is not enabled for this plant" });
+    }
+  }
+  if (req.user?.role !== "admin" && req.user?.role !== "super_admin") {
+    const permissions = await resolvePermissions(req.user?.roleIds || [], req.companyId);
     const canViewStages = Boolean(permissions.roomStages?.view || permissions.roomStages?.edit);
     const canViewActivities = Boolean(permissions.roomActivities?.view || permissions.roomActivities?.edit);
     if (!canViewStages && !canViewActivities) {
@@ -62,10 +59,13 @@ router.get("/status", requireAuth, async (req, res) => {
     String(req.query.onlyRoomResources || "").trim().toLowerCase()
   );
   const roomFilter = onlyRoomResources
-    ? { $or: [{ resourceType: "Room" }, { resourceType: { $exists: false } }, { resourceType: null }] }
-    : {};
+    ? {
+        companyId: req.companyId,
+        $or: [{ resourceType: "Room" }, { resourceType: { $exists: false } }, { resourceType: null }]
+      }
+    : { companyId: req.companyId };
   const rooms = await GrowingRoom.find(roomFilter).populate("currentStageId").sort({ name: 1 });
-  const stages = await Stage.find().sort({ sequenceOrder: 1 });
+  const stages = await Stage.find({ companyId: req.companyId }).sort({ sequenceOrder: 1 });
   const stageLookup = new Map(stages.map((stage) => [stage._id.toString(), stage]));
   const orderedStages = stages.map((stage) => stage._id.toString());
   const now = Date.now();
@@ -113,7 +113,7 @@ router.get("/status", requireAuth, async (req, res) => {
   return res.json(results);
 });
 
-router.post("/", requireAuth, requireAdmin, async (req, res) => {
+router.post("/", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
   const {
     name,
     resourceType,
@@ -152,6 +152,7 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
     return res.status(400).json({ error: yCheck.message });
   }
   const createPayload = {
+    companyId: req.companyId,
     name: String(name).trim(),
     resourceType: typeStr,
     capacityTons: capacityCheck.value,
@@ -167,6 +168,7 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   }
   const room = await GrowingRoom.create(createPayload);
   await logChange({
+    companyId: req.companyId,
     entityType: "room",
     entityId: room._id,
     action: "create",
@@ -177,8 +179,11 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   return res.status(201).json(room);
 });
 
-router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
-  const room = await GrowingRoom.findById(req.params.id);
+router.put("/:id", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid room id" });
+  }
+  const room = await GrowingRoom.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
@@ -238,6 +243,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   }
   await room.save();
   await logChange({
+    companyId: req.companyId,
     entityType: "room",
     entityId: room._id,
     action: "update",
@@ -248,13 +254,16 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   return res.json(room);
 });
 
-router.post("/:id/move-stage", requireAuth, requirePermission("roomStages", "edit"), async (req, res) => {
-  const room = await GrowingRoom.findById(req.params.id);
+router.post("/:id/move-stage", requireAuth, requireTenantContext, requirePermission("roomStages", "edit"), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid room id" });
+  }
+  const room = await GrowingRoom.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
   const before = room.toObject();
-  const stages = await Stage.find().sort({ sequenceOrder: 1 });
+  const stages = await Stage.find({ companyId: req.companyId }).sort({ sequenceOrder: 1 });
   if (!stages.length) {
     return res.status(400).json({ error: "No stages configured" });
   }
@@ -282,6 +291,7 @@ router.post("/:id/move-stage", requireAuth, requirePermission("roomStages", "edi
   };
   await room.save();
   await logChange({
+    companyId: req.companyId,
     entityType: "room",
     entityId: room._id,
     action: "update",
@@ -293,13 +303,16 @@ router.post("/:id/move-stage", requireAuth, requirePermission("roomStages", "edi
   return res.json(populated);
 });
 
-router.post("/:id/init-stage", requireAuth, requirePermission("roomStages", "edit"), async (req, res) => {
-  const room = await GrowingRoom.findById(req.params.id);
+router.post("/:id/init-stage", requireAuth, requireTenantContext, requirePermission("roomStages", "edit"), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid room id" });
+  }
+  const room = await GrowingRoom.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
   const before = room.toObject();
-  const stages = await Stage.find().sort({ sequenceOrder: 1 });
+  const stages = await Stage.find({ companyId: req.companyId }).sort({ sequenceOrder: 1 });
   if (!stages.length) {
     return res.status(400).json({ error: "No stages configured" });
   }
@@ -315,6 +328,7 @@ router.post("/:id/init-stage", requireAuth, requirePermission("roomStages", "edi
   };
   await room.save();
   await logChange({
+    companyId: req.companyId,
     entityType: "room",
     entityId: room._id,
     action: "update",
@@ -326,8 +340,11 @@ router.post("/:id/init-stage", requireAuth, requirePermission("roomStages", "edi
   return res.json(populated);
 });
 
-router.post("/:id/activities", requireAuth, requirePermission("roomActivities", "edit"), async (req, res) => {
-  const room = await GrowingRoom.findById(req.params.id).populate("currentStageId");
+router.post("/:id/activities", requireAuth, requireTenantContext, requirePermission("roomActivities", "edit"), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid room id" });
+  }
+  const room = await GrowingRoom.findOne({ _id: req.params.id, companyId: req.companyId }).populate("currentStageId");
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
@@ -348,6 +365,7 @@ router.post("/:id/activities", requireAuth, requirePermission("roomActivities", 
   };
   await room.save();
   await logChange({
+    companyId: req.companyId,
     entityType: "room",
     entityId: room._id,
     action: "update",
@@ -358,14 +376,18 @@ router.post("/:id/activities", requireAuth, requirePermission("roomActivities", 
   return res.json({ ok: true, activityStatus: room.activityStatus });
 });
 
-router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
-  const room = await GrowingRoom.findById(req.params.id);
+router.delete("/:id", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid room id" });
+  }
+  const room = await GrowingRoom.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!room) {
     return res.status(404).json({ error: "Room not found" });
   }
   const before = room.toObject();
   await room.deleteOne();
   await logChange({
+    companyId: req.companyId,
     entityType: "room",
     entityId: room._id,
     action: "delete",

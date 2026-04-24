@@ -5,9 +5,11 @@ dist/
 .turbo/
 .cache/
 coverage/
-.env.*
 .env
 .env.local
+.env.*
+!.env.example
+!**/.env.example
 *.log
 *.pid
 *.seed

@@ -15,7 +15,8 @@ const StageSchema = new mongoose.Schema(
 
 const TunnelBatchSchema = new mongoose.Schema(
   {
-    batchCode: { type: String, required: true, unique: true, trim: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    batchCode: { type: String, required: true, trim: true },
     compostType: { type: String, default: "Mushroom compost", trim: true },
     status: {
       type: String,
@@ -36,5 +37,7 @@ const TunnelBatchSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+TunnelBatchSchema.index({ companyId: 1, batchCode: 1 }, { unique: true });
 
 export default mongoose.model("TunnelBatch", TunnelBatchSchema);

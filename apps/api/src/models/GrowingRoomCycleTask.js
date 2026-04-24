@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const GrowingRoomCycleTaskSchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     cycleId: { type: mongoose.Schema.Types.ObjectId, ref: "GrowingRoomCycle", required: true, index: true },
     growingRoomId: { type: mongoose.Schema.Types.ObjectId, ref: "GrowingRoom", required: true, index: true },
     compostLifecycleBatchId: {

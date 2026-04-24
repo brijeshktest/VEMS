@@ -94,12 +94,16 @@ export default function VendorsPage() {
       setIsAdmin(admin);
       const p = permData.permissions;
       const all = p === "all";
-      if (!admin && !all && !canViewModule(p, "vendors")) {
+      const pk =
+        Array.isArray(permData.plantModuleKeys) && permData.plantModuleKeys.length > 0
+          ? permData.plantModuleKeys
+          : null;
+      if (!canViewModule(p, "vendors", pk)) {
         router.replace("/dashboard");
         return;
       }
-      setCanCreateVendor(admin || all || canCreateInModule(p, "vendors"));
-      setCanEditVendor(admin || all || canEditInModule(p, "vendors"));
+      setCanCreateVendor(admin || all || canCreateInModule(p, "vendors", pk));
+      setCanEditVendor(admin || all || canEditInModule(p, "vendors", pk));
       setCanBulkDelete(admin || all || Boolean(p?.vendors?.bulkDelete));
       setCanBulkUpload(admin || all || Boolean(p?.vendors?.bulkUpload));
       const data = await apiFetch("/vendors");

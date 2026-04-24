@@ -17,6 +17,28 @@ function IconEye({ className }) {
   );
 }
 
+/** Icon-only button (e.g. open workspace). */
+export function ViewIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "View",
+  title = "View"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconEye />
+    </button>
+  );
+}
+
 /** Icon-only link (e.g. open row detail). */
 export function ViewIconLink({
   href,
@@ -92,6 +114,169 @@ export function DeleteIconButton({
       title={title}
     >
       <IconTrash />
+    </button>
+  );
+}
+
+/** Super Admin plant list: open impersonation picker for this plant. */
+function IconImpersonate({ className }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="8" cy="8" r="3" stroke="currentColor" strokeWidth="1.85" />
+      <path d="M3 20v-1c0-2.2 2.2-4 5-4h1" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" />
+      <circle cx="17" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.85" />
+      <path d="M13 20v-1c0-1.6 1.5-2.8 3.5-3" stroke="currentColor" strokeWidth="1.85" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function ImpersonateIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "Impersonate user",
+  title = "Impersonate"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconImpersonate />
+    </button>
+  );
+}
+
+function IconPlantActivate({ className }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path d="M8 12l2.5 2.5L16 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export function PlantActivateIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "Activate plant",
+  title = "Activate plant"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconPlantActivate />
+    </button>
+  );
+}
+
+function IconPlantDeactivate({ className }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path d="M9 15l6-6M15 15L9 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function PlantDeactivateIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "Deactivate plant",
+  title = "Deactivate plant"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconPlantDeactivate />
+    </button>
+  );
+}
+
+function IconLoginDefaultSet({ className }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 2.5l2.38 7.32h7.7l-6.24 4.53 2.38 7.32L12 17.14l-6.22 4.53 2.38-7.32-6.24-4.53h7.7L12 2.5z"
+        stroke="currentColor"
+        strokeWidth="1.65"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function LoginDefaultSetIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "Set login default plant",
+  title = "Set as login default"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconLoginDefaultSet />
+    </button>
+  );
+}
+
+function IconLoginDefaultClear({ className }) {
+  return (
+    <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
+      <path
+        d="M12 2.5l2.38 7.32h7.7l-6.24 4.53 2.38 7.32L12 17.14l-6.22 4.53 2.38-7.32-6.24-4.53h7.7L12 2.5z"
+        stroke="currentColor"
+        strokeWidth="1.65"
+        strokeLinejoin="round"
+        opacity="0.9"
+      />
+      <path d="M5 19L19 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function LoginDefaultClearIconButton({
+  onClick,
+  disabled,
+  className = "",
+  "aria-label": ariaLabel = "Clear login default plant",
+  title = "Clear login default"
+}) {
+  return (
+    <button
+      type="button"
+      className={`btn btn-secondary btn-icon ${className}`.trim()}
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={ariaLabel}
+      title={title}
+    >
+      <IconLoginDefaultClear />
     </button>
   );
 }

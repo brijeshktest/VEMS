@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 
 const ChangeLogSchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     entityType: { type: String, required: true, trim: true, index: true },
     entityId: { type: String, required: true, trim: true, index: true },
     action: { type: String, enum: ["create", "update", "delete"], required: true },

@@ -7,6 +7,7 @@ import {
 
 const ContributionEntrySchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     member: { type: String, required: true, enum: CONTRIBUTION_MEMBERS },
     amount: { type: Number, required: true, min: 0 },
     contributedAt: { type: Date, required: true },

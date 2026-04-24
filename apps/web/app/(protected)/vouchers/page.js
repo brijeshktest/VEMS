@@ -286,12 +286,16 @@ function VouchersPageContent() {
       setIsAdmin(admin);
       const p = permData.permissions;
       const all = p === "all";
-      if (!admin && !all && !canViewModule(p, "vouchers")) {
+      const pk =
+        Array.isArray(permData.plantModuleKeys) && permData.plantModuleKeys.length > 0
+          ? permData.plantModuleKeys
+          : null;
+      if (!canViewModule(p, "vouchers", pk)) {
         router.replace("/dashboard");
         return;
       }
-      setCanCreateVoucher(admin || all || canCreateInModule(p, "vouchers"));
-      setCanEditVoucher(admin || all || canEditInModule(p, "vouchers"));
+      setCanCreateVoucher(admin || all || canCreateInModule(p, "vouchers", pk));
+      setCanEditVoucher(admin || all || canEditInModule(p, "vouchers", pk));
       setCanBulkUpload(admin || all || Boolean(p?.vouchers?.bulkUpload));
       setCanBulkDelete(admin || all || Boolean(p?.vouchers?.bulkDelete));
       const [voucherData, vendorData, materialData] = await Promise.all([

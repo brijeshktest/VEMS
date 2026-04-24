@@ -1,6 +1,7 @@
 import express from "express";
 import Role from "../models/Role.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { MODULES } from "../utils/permissions.js";
 import { requireFields } from "../utils/validators.js";
 
@@ -26,18 +27,19 @@ function normalizePermissions(input = {}) {
   return normalized;
 }
 
-router.get("/", requireAuth, requireAdmin, async (req, res) => {
-  const roles = await Role.find().sort({ name: 1 });
+router.get("/", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const roles = await Role.find({ companyId: req.companyId }).sort({ name: 1 });
   return res.json(roles);
 });
 
-router.post("/", requireAuth, requireAdmin, async (req, res) => {
+router.post("/", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
   const missing = requireFields(req.body, ["name"]);
   if (missing.length) {
     return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
   }
   const permissions = normalizePermissions(req.body.permissions || {});
   const role = await Role.create({
+    companyId: req.companyId,
     name: req.body.name,
     description: req.body.description,
     permissions
@@ -45,8 +47,8 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   return res.status(201).json(role);
 });
 
-router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
-  const role = await Role.findById(req.params.id);
+router.put("/:id", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const role = await Role.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!role) {
     return res.status(404).json({ error: "Role not found" });
   }
@@ -57,8 +59,8 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   return res.json(role);
 });
 
-router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
-  const role = await Role.findById(req.params.id);
+router.delete("/:id", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const role = await Role.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!role) {
     return res.status(404).json({ error: "Role not found" });
   }

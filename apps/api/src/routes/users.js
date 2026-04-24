@@ -3,22 +3,23 @@ import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import Role from "../models/Role.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { requireFields } from "../utils/validators.js";
 import { validateRequiredEmail } from "../utils/indianValidators.js";
 
 const router = express.Router();
 
-async function validateRoleIds(roleIds = []) {
+async function validateRoleIds(roleIds = [], companyId) {
   if (!roleIds.length) return [];
-  const count = await Role.countDocuments({ _id: { $in: roleIds } });
+  const count = await Role.countDocuments({ _id: { $in: roleIds }, companyId });
   if (count !== roleIds.length) {
     return null;
   }
   return roleIds;
 }
 
-router.get("/", requireAuth, requireAdmin, async (req, res) => {
-  const users = await User.find().sort({ name: 1 });
+router.get("/", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const users = await User.find({ companyId: req.companyId }).sort({ name: 1 });
   const sanitized = users.map((user) => ({
     id: user._id,
     name: user.name,
@@ -29,13 +30,17 @@ router.get("/", requireAuth, requireAdmin, async (req, res) => {
   return res.json(sanitized);
 });
 
-router.post("/", requireAuth, requireAdmin, async (req, res) => {
+router.post("/", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
   const missing = requireFields(req.body, ["name", "email", "password"]);
   if (missing.length) {
     return res.status(400).json({ error: `Missing fields: ${missing.join(", ")}` });
   }
+  const nextRole = req.body.role || "viewer";
+  if (nextRole === "super_admin") {
+    return res.status(400).json({ error: "Cannot create Super Admin from plant user management" });
+  }
   const roleIds = (req.body.roleIds || []).filter(Boolean);
-  const validRoleIds = await validateRoleIds(roleIds);
+  const validRoleIds = await validateRoleIds(roleIds, req.companyId);
   if (validRoleIds === null) {
     return res.status(400).json({ error: "One or more roles not found" });
   }
@@ -48,7 +53,8 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
     name: req.body.name,
     email: emailCheck.value,
     passwordHash,
-    role: req.body.role || "viewer",
+    role: nextRole,
+    companyId: req.companyId,
     roleIds: validRoleIds
   });
   return res.status(201).json({
@@ -60,13 +66,17 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   });
 });
 
-router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
-  const user = await User.findById(req.params.id);
+router.put("/:id", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const user = await User.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!user) {
     return res.status(404).json({ error: "User not found" });
   }
+  const nextRole = req.body.role ?? user.role;
+  if (nextRole === "super_admin") {
+    return res.status(400).json({ error: "Invalid role" });
+  }
   const roleIds = req.body.roleIds ? (req.body.roleIds || []).filter(Boolean) : user.roleIds;
-  const validRoleIds = await validateRoleIds(roleIds);
+  const validRoleIds = await validateRoleIds(roleIds, req.companyId);
   if (validRoleIds === null) {
     return res.status(400).json({ error: "One or more roles not found" });
   }
@@ -78,7 +88,7 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
     }
     user.email = emailCheck.value;
   }
-  user.role = req.body.role ?? user.role;
+  user.role = nextRole;
   user.roleIds = validRoleIds;
   if (req.body.password) {
     user.passwordHash = await bcrypt.hash(req.body.password, 10);
@@ -93,8 +103,8 @@ router.put("/:id", requireAuth, requireAdmin, async (req, res) => {
   });
 });
 
-router.delete("/:id", requireAuth, requireAdmin, async (req, res) => {
-  const user = await User.findById(req.params.id);
+router.delete("/:id", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const user = await User.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!user) {
     return res.status(404).json({ error: "User not found" });
   }

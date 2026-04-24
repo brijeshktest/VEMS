@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 /** Singleton-style app settings (single row). */
 const AppSettingsSchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, unique: true, index: true },
     logoStoredName: { type: String, default: "" },
     logoMimeType: { type: String, default: "" },
     /** Sales invoice PDF letterhead (admin-maintained). */

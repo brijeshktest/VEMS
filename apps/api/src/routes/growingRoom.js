@@ -9,6 +9,7 @@ import GrowingRoomRulesOverride from "../models/GrowingRoomRulesOverride.js";
 import CompostLifecycleBatch from "../models/CompostLifecycleBatch.js";
 import User from "../models/User.js";
 import { requireAuth, requireAdmin, requirePermission } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { COMPOST_STATUS_KEYS, effectiveCompostStatus } from "../utils/compostLifecycle.js";
 import {
   DEFAULT_TASK_TEMPLATES,
@@ -39,10 +40,10 @@ const router = express.Router();
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-async function getOrCreateRulesDoc() {
-  let doc = await GrowingRoomRulesOverride.findOne();
+async function getOrCreateRulesDoc(companyId) {
+  let doc = await GrowingRoomRulesOverride.findOne({ companyId });
   if (!doc) {
-    doc = await GrowingRoomRulesOverride.create({ disabledKeys: [], additionalTemplates: [] });
+    doc = await GrowingRoomRulesOverride.create({ companyId, disabledKeys: [], additionalTemplates: [] });
   }
   return doc;
 }
@@ -54,9 +55,9 @@ const LEGACY_TASK_STAGE_KEYS = {
 };
 
 /** One-time normalize of task rows from older stage key names. */
-async function migrateLegacyTaskStageKeysForCycle(cycleId) {
+async function migrateLegacyTaskStageKeysForCycle(companyId, cycleId) {
   for (const [from, to] of Object.entries(LEGACY_TASK_STAGE_KEYS)) {
-    await GrowingRoomCycleTask.updateMany({ cycleId, stageKey: from }, { $set: { stageKey: to } });
+    await GrowingRoomCycleTask.updateMany({ companyId, cycleId, stageKey: from }, { $set: { stageKey: to } });
   }
 }
 
@@ -64,20 +65,22 @@ const SPAWN_MONITOR_LEGACY_KEYS = ["temperature_monitoring", "humidity_monitorin
 const SPAWN_MONITOR_TASK_KEY = "th_rh_co2_monitoring";
 
 /** Merge legacy three-row daily monitoring into one task per day (spawn run days 3–15). */
-async function dedupeSpawnRunMonitoringTasks(cycleId) {
+async function dedupeSpawnRunMonitoringTasks(companyId, cycleId) {
   const legacyRows = await GrowingRoomCycleTask.find({
+    companyId,
     cycleId,
     stageKey: "spawn_run",
     taskKey: { $in: SPAWN_MONITOR_LEGACY_KEYS }
   }).lean();
   if (legacyRows.length === 0) return;
 
-  const cycle = await GrowingRoomCycle.findById(cycleId).select("cycleStartedAt").lean();
+  const cycle = await GrowingRoomCycle.findOne({ _id: cycleId, companyId }).select("cycleStartedAt").lean();
   if (!cycle) return;
 
   const days = [...new Set(legacyRows.map((t) => t.scheduledDay))].filter((d) => d >= 3 && d <= 15);
   for (const day of days) {
     const rows = await GrowingRoomCycleTask.find({
+      companyId,
       cycleId,
       stageKey: "spawn_run",
       scheduledDay: day,
@@ -90,9 +93,10 @@ async function dedupeSpawnRunMonitoringTasks(cycleId) {
     if (statuses.some((s) => s === "completed")) newStatus = "completed";
     else if (statuses.length > 0 && statuses.every((s) => s === "skipped")) newStatus = "skipped";
 
-    await GrowingRoomCycleTask.deleteMany({ _id: { $in: rows.map((r) => r._id) } });
+    await GrowingRoomCycleTask.deleteMany({ _id: { $in: rows.map((r) => r._id) }, companyId });
     const sample = rows[0];
     await GrowingRoomCycleTask.create({
+      companyId,
       cycleId: sample.cycleId,
       growingRoomId: sample.growingRoomId,
       compostLifecycleBatchId: sample.compostLifecycleBatchId,
@@ -116,8 +120,9 @@ const LEGACY_CLEANING_TASK_KEYS = ["room_emptying", "cleaning_disinfection"];
 /**
  * Replace legacy two-step cleaning tasks with `room_cleaning` + `release_room` for cycles still in cleaning.
  */
-async function migrateLegacyCleaningTasksForCycle(cycleId) {
+async function migrateLegacyCleaningTasksForCycle(companyId, cycleId) {
   const legacy = await GrowingRoomCycleTask.find({
+    companyId,
     cycleId,
     stageKey: "cleaning",
     taskKey: { $in: LEGACY_CLEANING_TASK_KEYS }
@@ -125,13 +130,14 @@ async function migrateLegacyCleaningTasksForCycle(cycleId) {
   if (legacy.length === 0) return;
 
   const hasNew = await GrowingRoomCycleTask.exists({
+    companyId,
     cycleId,
     stageKey: "cleaning",
     taskKey: { $in: ["room_cleaning", "release_room"] }
   });
   if (hasNew) return;
 
-  const cycle = await GrowingRoomCycle.findById(cycleId).select("cycleStartedAt status").lean();
+  const cycle = await GrowingRoomCycle.findOne({ _id: cycleId, companyId }).select("cycleStartedAt status").lean();
   if (!cycle || cycle.status !== "cleaning") return;
 
   const statuses = legacy.map((t) => t.status);
@@ -144,9 +150,10 @@ async function migrateLegacyCleaningTasksForCycle(cycleId) {
   const due = dueDateForScheduledDay(cycle.cycleStartedAt, day);
   const sample = legacy[0];
 
-  await GrowingRoomCycleTask.deleteMany({ _id: { $in: legacy.map((l) => l._id) } });
+  await GrowingRoomCycleTask.deleteMany({ _id: { $in: legacy.map((l) => l._id) }, companyId });
 
   await GrowingRoomCycleTask.create({
+    companyId,
     cycleId,
     growingRoomId: sample.growingRoomId,
     compostLifecycleBatchId: sample.compostLifecycleBatchId || null,
@@ -163,6 +170,7 @@ async function migrateLegacyCleaningTasksForCycle(cycleId) {
   });
 
   await GrowingRoomCycleTask.create({
+    companyId,
     cycleId,
     growingRoomId: sample.growingRoomId,
     compostLifecycleBatchId: sample.compostLifecycleBatchId || null,
@@ -190,8 +198,8 @@ function endOfUtcDay(d) {
   return x;
 }
 
-async function assertRoomIsGrowingRoom(roomId) {
-  const room = await GrowingRoom.findById(roomId);
+async function assertRoomIsGrowingRoom(roomId, companyId) {
+  const room = await GrowingRoom.findOne({ _id: roomId, companyId });
   if (!room) {
     return { ok: false, error: "Growing room not found" };
   }
@@ -217,9 +225,10 @@ function operationalStageFromDoc(doc, now = new Date()) {
  * Compost ready (`done`), final step recorded for growing (not ready to sell), not already on a cycle.
  * Batches with no specific room are offered to every room; legacy batches with postCompostGrowingRoomId only match that room.
  */
-async function findEligibleCompostBatchesForRoom(roomId) {
+async function findEligibleCompostBatchesForRoom(roomId, companyId) {
   const now = new Date();
   const activeCycles = await GrowingRoomCycle.find({
+    companyId,
     status: { $in: ["active", "cleaning"] },
     compostLifecycleBatchId: { $ne: null }
   })
@@ -227,7 +236,7 @@ async function findEligibleCompostBatchesForRoom(roomId) {
     .lean();
   const claimed = new Set(activeCycles.map((c) => String(c.compostLifecycleBatchId)));
 
-  const batches = await CompostLifecycleBatch.find({})
+  const batches = await CompostLifecycleBatch.find({ companyId })
     .sort({ startDate: -1 })
     .limit(400)
     .lean();
@@ -251,8 +260,8 @@ async function findEligibleCompostBatchesForRoom(roomId) {
   return out;
 }
 
-async function assertCompostBatchEligibleForRoom(batchId, roomId) {
-  const batch = await CompostLifecycleBatch.findById(batchId).lean();
+async function assertCompostBatchEligibleForRoom(batchId, roomId, companyId) {
+  const batch = await CompostLifecycleBatch.findOne({ _id: batchId, companyId }).lean();
   if (!batch) {
     return { ok: false, error: "Compost batch not found" };
   }
@@ -264,7 +273,7 @@ async function assertCompostBatchEligibleForRoom(batchId, roomId) {
     return {
       ok: false,
       error:
-        "Record the final step in Plant operations first (Ready for growing room or Ready to sell)."
+        "Record the final step in Compost Units first (Ready for growing room or Ready to sell)."
     };
   }
   if (batch.postCompostReadyToSell) {
@@ -278,6 +287,7 @@ async function assertCompostBatchEligibleForRoom(batchId, roomId) {
     };
   }
   const inUse = await GrowingRoomCycle.findOne({
+    companyId,
     status: { $in: ["active", "cleaning"] },
     compostLifecycleBatchId: batch._id
   })
@@ -289,8 +299,8 @@ async function assertCompostBatchEligibleForRoom(batchId, roomId) {
   return { ok: true, batch };
 }
 
-async function assertNoConflictingCycle(roomId, excludeCycleId) {
-  const q = { growingRoomId: roomId, status: { $in: ["active", "cleaning"] } };
+async function assertNoConflictingCycle(roomId, excludeCycleId, companyId) {
+  const q = { companyId, growingRoomId: roomId, status: { $in: ["active", "cleaning"] } };
   if (excludeCycleId) {
     q._id = { $ne: excludeCycleId };
   }
@@ -301,13 +311,13 @@ async function assertNoConflictingCycle(roomId, excludeCycleId) {
   return { ok: true };
 }
 
-async function buildMergedTemplates() {
-  const rules = await getOrCreateRulesDoc();
+async function buildMergedTemplates(companyId) {
+  const rules = await getOrCreateRulesDoc(companyId);
   return mergeTemplatesWithOverride(DEFAULT_TASK_TEMPLATES, rules.additionalTemplates || [], rules.disabledKeys || []);
 }
 
-async function generateGrowPhaseTasks(cycleDoc, roomId, batchId, opts) {
-  const templates = await buildMergedTemplates();
+async function generateGrowPhaseTasks(cycleDoc, roomId, batchId, opts, companyId) {
+  const templates = await buildMergedTemplates(companyId);
   const instances = expandTemplatesToInstances(templates, {
     thirdFlushEnabled: Boolean(opts.thirdFlushEnabled)
   });
@@ -315,6 +325,7 @@ async function generateGrowPhaseTasks(cycleDoc, roomId, batchId, opts) {
   for (const inst of instances) {
     const due = dueDateForScheduledDay(cycleDoc.cycleStartedAt, inst.scheduledDay);
     tasks.push({
+      companyId,
       cycleId: cycleDoc._id,
       growingRoomId: roomId,
       compostLifecycleBatchId: batchId || null,
@@ -337,6 +348,7 @@ async function generateGrowPhaseTasks(cycleDoc, roomId, batchId, opts) {
 
 async function appendIntervention(cycle, roomId, batchId, taskId, action, detail, user) {
   await GrowingRoomInterventionLog.create({
+    companyId: cycle.companyId,
     cycleId: cycle._id,
     growingRoomId: roomId,
     compostLifecycleBatchId: batchId || null,
@@ -357,8 +369,9 @@ function cycleDayBoundsForQuery(now, cycleStartedAt) {
 
 async function toCycleView(cycle, { includeTaskStats = false } = {}) {
   const c = cycle.toObject ? cycle.toObject() : cycle;
+  const tenantCo = c.companyId;
   if (c.status === "cleaning") {
-    await migrateLegacyCleaningTasksForCycle(c._id);
+    await migrateLegacyCleaningTasksForCycle(tenantCo, c._id);
   }
   const now = new Date();
   const cycleDay = computeCycleDay(c.cycleStartedAt, now);
@@ -372,7 +385,7 @@ async function toCycleView(cycle, { includeTaskStats = false } = {}) {
   let overdueCount = 0;
   let taskLean = [];
   if (c.status === "active" || c.status === "cleaning" || includeTaskStats) {
-    taskLean = await GrowingRoomCycleTask.find({ cycleId: c._id })
+    taskLean = await GrowingRoomCycleTask.find({ companyId: tenantCo, cycleId: c._id })
       .select("status dueDate scheduledDay stageKey")
       .lean();
     if (includeTaskStats && c.status === "active") {
@@ -391,12 +404,12 @@ async function toCycleView(cycle, { includeTaskStats = false } = {}) {
   if (c.status === "active") {
     if (!recorded) {
       recorded = "spawn_run";
-      await GrowingRoomCycle.updateOne({ _id: c._id }, { $set: { recordedGrowStageKey: "spawn_run" } });
+      await GrowingRoomCycle.updateOne({ _id: c._id, companyId: tenantCo }, { $set: { recordedGrowStageKey: "spawn_run" } });
     }
     recorded = normalizeGrowStageKey(recorded);
     const prior = c.recordedGrowStageKey ? String(c.recordedGrowStageKey).trim() : "";
     if (prior !== recorded) {
-      await GrowingRoomCycle.updateOne({ _id: c._id }, { $set: { recordedGrowStageKey: recorded } });
+      await GrowingRoomCycle.updateOne({ _id: c._id, companyId: tenantCo }, { $set: { recordedGrowStageKey: recorded } });
     }
   } else if (c.status === "cleaning") {
     recorded = "cleaning";
@@ -428,7 +441,7 @@ async function toCycleView(cycle, { includeTaskStats = false } = {}) {
 
   let lastParameterLoggedAt = null;
   if (c.status === "active" || c.status === "cleaning") {
-    const lastPl = await GrowingRoomParameterLog.findOne({ cycleId: c._id })
+    const lastPl = await GrowingRoomParameterLog.findOne({ companyId: tenantCo, cycleId: c._id })
       .sort({ loggedAt: -1 })
       .select("loggedAt")
       .lean();
@@ -467,29 +480,35 @@ async function toCycleView(cycle, { includeTaskStats = false } = {}) {
 }
 
 /** User pickers for assignment (internal directory). */
-router.get("/user-options", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
-  const users = await User.find().select("name email").sort({ name: 1 }).limit(400).lean();
+router.get("/user-options", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+  const users = await User.find({ companyId: req.companyId }).select("name email").sort({ name: 1 }).limit(400).lean();
   return res.json(users);
 });
 
 /** GET /growing-room/dashboard-summary */
-router.get("/dashboard-summary", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/dashboard-summary", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   const now = new Date();
   const todayStart = startOfUtcDay(now);
   const todayEnd = endOfUtcDay(now);
-  const activeCycles = await GrowingRoomCycle.find({ status: { $in: ["active", "cleaning"] } })
+  const activeCycles = await GrowingRoomCycle.find({
+    companyId: req.companyId,
+    status: { $in: ["active", "cleaning"] }
+  })
     .populate("growingRoomId", "name locationInPlant growingOperationalState")
     .sort({ updatedAt: -1 })
     .lean();
   const dueToday = await GrowingRoomCycleTask.countDocuments({
+    companyId: req.companyId,
     status: { $in: ["pending", "in_progress"] },
     dueDate: { $gte: todayStart, $lte: todayEnd }
   });
   const overdue = await GrowingRoomCycleTask.countDocuments({
+    companyId: req.companyId,
     status: { $in: ["pending", "in_progress"] },
     dueDate: { $lt: todayStart }
   });
   const completedToday = await GrowingRoomCycleTask.countDocuments({
+    companyId: req.companyId,
     status: "completed",
     completedAt: { $gte: todayStart, $lte: todayEnd }
   });
@@ -521,8 +540,8 @@ router.get("/dashboard-summary", requireAuth, requirePermission("growingRoomOps"
 });
 
 /** GET /growing-room/rules */
-router.get("/rules", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
-  const doc = await getOrCreateRulesDoc();
+router.get("/rules", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
+  const doc = await getOrCreateRulesDoc(req.companyId);
   return res.json({
     disabledKeys: doc.disabledKeys || [],
     additionalTemplates: doc.additionalTemplates || [],
@@ -531,9 +550,9 @@ router.get("/rules", requireAuth, requirePermission("growingRoomOps", "view"), a
 });
 
 /** PUT /growing-room/rules */
-router.put("/rules", requireAuth, requireAdmin, async (req, res) => {
+router.put("/rules", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
   const body = req.body || {};
-  const doc = await getOrCreateRulesDoc();
+  const doc = await getOrCreateRulesDoc(req.companyId);
   if (Array.isArray(body.disabledKeys)) {
     doc.disabledKeys = body.disabledKeys.map((k) => String(k || "").trim()).filter(Boolean);
   }
@@ -553,23 +572,23 @@ router.put("/rules", requireAuth, requireAdmin, async (req, res) => {
  * Compost batches eligible to start a crop in this room: compost ready, marked for growing (not sell),
  * not already on a cycle. Batches without a specific room apply to all rooms; legacy room-specific dispatch still matches one room.
  */
-router.get("/eligible-compost-batches", requireAuth, requirePermission("growingRoomOps", "create"), async (req, res) => {
+router.get("/eligible-compost-batches", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "create"), async (req, res) => {
   const roomId = req.query.growingRoomId;
   if (!roomId || !mongoose.Types.ObjectId.isValid(String(roomId))) {
     return res.status(400).json({ error: "growingRoomId is required" });
   }
-  const roomCheck = await assertRoomIsGrowingRoom(roomId);
+  const roomCheck = await assertRoomIsGrowingRoom(roomId, req.companyId);
   if (!roomCheck.ok) {
     return res.status(400).json({ error: roomCheck.error });
   }
-  const rows = await findEligibleCompostBatchesForRoom(roomId);
+  const rows = await findEligibleCompostBatchesForRoom(roomId, req.companyId);
   return res.json(rows);
 });
 
 /** GET /growing-room/rooms */
-router.get("/rooms", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
-  const rooms = await GrowingRoom.find({ resourceType: "Room" }).sort({ name: 1 }).lean();
-  const cycles = await GrowingRoomCycle.find({ status: { $in: ["active", "cleaning"] } })
+router.get("/rooms", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
+  const rooms = await GrowingRoom.find({ companyId: req.companyId, resourceType: "Room" }).sort({ name: 1 }).lean();
+  const cycles = await GrowingRoomCycle.find({ companyId: req.companyId, status: { $in: ["active", "cleaning"] } })
     .select("growingRoomId status cycleStartedAt compostLifecycleBatchId thirdFlushEnabled")
     .populate("compostLifecycleBatchId", "batchName")
     .lean();
@@ -622,8 +641,8 @@ router.get("/rooms", requireAuth, requirePermission("growingRoomOps", "view"), a
 });
 
 /** GET /growing-room/cycles */
-router.get("/cycles", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
-  const q = {};
+router.get("/cycles", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
+  const q = { companyId: req.companyId };
   if (req.query.roomId && mongoose.Types.ObjectId.isValid(String(req.query.roomId))) {
     q.growingRoomId = req.query.roomId;
   }
@@ -655,17 +674,17 @@ router.get("/cycles", requireAuth, requirePermission("growingRoomOps", "view"), 
 });
 
 /** POST /growing-room/cycles */
-router.post("/cycles", requireAuth, requirePermission("growingRoomOps", "create"), async (req, res) => {
+router.post("/cycles", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "create"), async (req, res) => {
   const body = req.body || {};
   const roomId = body.growingRoomId;
   if (!roomId || !mongoose.Types.ObjectId.isValid(String(roomId))) {
     return res.status(400).json({ error: "growingRoomId is required" });
   }
-  const roomCheck = await assertRoomIsGrowingRoom(roomId);
+  const roomCheck = await assertRoomIsGrowingRoom(roomId, req.companyId);
   if (!roomCheck.ok) {
     return res.status(400).json({ error: roomCheck.error });
   }
-  const conflict = await assertNoConflictingCycle(roomId);
+  const conflict = await assertNoConflictingCycle(roomId, null, req.companyId);
   if (!conflict.ok) {
     return res.status(400).json({ error: conflict.error });
   }
@@ -677,7 +696,7 @@ router.post("/cycles", requireAuth, requirePermission("growingRoomOps", "create"
     return res.status(400).json({ error: "compostLifecycleBatchId is required" });
   }
   const batchId = new mongoose.Types.ObjectId(String(body.compostLifecycleBatchId));
-  const batchCheck = await assertCompostBatchEligibleForRoom(batchId, roomId);
+  const batchCheck = await assertCompostBatchEligibleForRoom(batchId, roomId, req.companyId);
   if (!batchCheck.ok) {
     return res.status(400).json({ error: batchCheck.error });
   }
@@ -688,6 +707,7 @@ router.post("/cycles", requireAuth, requirePermission("growingRoomOps", "create"
   cycleStartedAt = startOfUtcDay(cycleStartedAt);
 
   const cycle = await GrowingRoomCycle.create({
+    companyId: req.companyId,
     growingRoomId: roomId,
     compostLifecycleBatchId: batchId,
     cycleStartedAt,
@@ -697,24 +717,29 @@ router.post("/cycles", requireAuth, requirePermission("growingRoomOps", "create"
     notes: body.notes ? String(body.notes).trim() : ""
   });
   await CompostLifecycleBatch.updateOne(
-    { _id: batchId, postCompostReadyToSell: { $ne: true }, postCompostRecordedAt: { $ne: null } },
+    {
+      _id: batchId,
+      companyId: req.companyId,
+      postCompostReadyToSell: { $ne: true },
+      postCompostRecordedAt: { $ne: null }
+    },
     { $set: { postCompostGrowingRoomId: roomId } }
   );
-  await generateGrowPhaseTasks(cycle, roomId, batchId, { thirdFlushEnabled: cycle.thirdFlushEnabled });
+  await generateGrowPhaseTasks(cycle, roomId, batchId, { thirdFlushEnabled: cycle.thirdFlushEnabled }, req.companyId);
   roomCheck.room.growingOperationalState = "active_growing";
   await roomCheck.room.save();
-  const populated = await GrowingRoomCycle.findById(cycle._id)
+  const populated = await GrowingRoomCycle.findOne({ _id: cycle._id, companyId: req.companyId })
     .populate("growingRoomId", "name locationInPlant")
     .populate("compostLifecycleBatchId", "batchName");
   return res.status(201).json(await toCycleView(populated, { includeTaskStats: true }));
 });
 
 /** GET /growing-room/cycles/:id */
-router.get("/cycles/:id", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/cycles/:id", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id)
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId })
     .populate("growingRoomId", "name locationInPlant capacityTons growingOperationalState")
     .populate("compostLifecycleBatchId", "batchName startDate");
   if (!cycle) {
@@ -728,11 +753,11 @@ router.get("/cycles/:id", requireAuth, requirePermission("growingRoomOps", "view
  *  Scheduled cleaning requires every grow-phase task completed or skipped.
  *  Emergency cleaning requires a non-trivial reason (e.g. damaged bags, contamination).
  */
-router.post("/cycles/:id/begin-cleaning", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.post("/cycles/:id/begin-cleaning", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id);
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!cycle) {
     return res.status(404).json({ error: "Cycle not found" });
   }
@@ -745,6 +770,7 @@ router.post("/cycles/:id/begin-cleaning", requireAuth, requirePermission("growin
 
   if (!emergency) {
     const pendingGrow = await GrowingRoomCycleTask.countDocuments({
+      companyId: req.companyId,
       cycleId: cycle._id,
       stageKey: { $ne: "cleaning" },
       status: { $in: ["pending", "in_progress"] }
@@ -772,6 +798,7 @@ router.post("/cycles/:id/begin-cleaning", requireAuth, requirePermission("growin
   for (const inst of instances) {
     const due = dueDateForScheduledDay(cycle.cycleStartedAt, inst.scheduledDay);
     await GrowingRoomCycleTask.create({
+      companyId: req.companyId,
       cycleId: cycle._id,
       growingRoomId: roomId,
       compostLifecycleBatchId: batchId || null,
@@ -790,7 +817,7 @@ router.post("/cycles/:id/begin-cleaning", requireAuth, requirePermission("growin
   cycle.cleaningStartedAt = now;
   cycle.recordedGrowStageKey = "cleaning";
   await cycle.save();
-  const room = await GrowingRoom.findById(roomId);
+  const room = await GrowingRoom.findOne({ _id: roomId, companyId: req.companyId });
   if (room) {
     room.growingOperationalState = "cleaning";
     await room.save();
@@ -798,18 +825,18 @@ router.post("/cycles/:id/begin-cleaning", requireAuth, requirePermission("growin
   const actionLabel = emergency ? "Emergency clean & release started" : "Clean & release phase started";
   const detail = emergency ? reason : "";
   await appendIntervention(cycle, roomId, batchId, null, actionLabel, detail, req.user);
-  const populated = await GrowingRoomCycle.findById(cycle._id)
+  const populated = await GrowingRoomCycle.findOne({ _id: cycle._id, companyId: req.companyId })
     .populate("growingRoomId", "name locationInPlant")
     .populate("compostLifecycleBatchId", "batchName");
   return res.json(await toCycleView(populated, { includeTaskStats: true }));
 });
 
 /** POST /growing-room/cycles/:id/complete-cleaning */
-router.post("/cycles/:id/complete-cleaning", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.post("/cycles/:id/complete-cleaning", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id);
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!cycle) {
     return res.status(404).json({ error: "Cycle not found" });
   }
@@ -817,6 +844,7 @@ router.post("/cycles/:id/complete-cleaning", requireAuth, requirePermission("gro
     return res.status(400).json({ error: "Cycle is not in cleaning status." });
   }
   const pending = await GrowingRoomCycleTask.countDocuments({
+    companyId: req.companyId,
     cycleId: cycle._id,
     status: { $in: ["pending", "in_progress"] }
   });
@@ -827,7 +855,7 @@ router.post("/cycles/:id/complete-cleaning", requireAuth, requirePermission("gro
   cycle.status = "completed";
   cycle.completedAt = now;
   await cycle.save();
-  const room = await GrowingRoom.findById(cycle.growingRoomId);
+  const room = await GrowingRoom.findOne({ _id: cycle.growingRoomId, companyId: req.companyId });
   if (room) {
     room.growingOperationalState = "available";
     await room.save();
@@ -841,18 +869,18 @@ router.post("/cycles/:id/complete-cleaning", requireAuth, requirePermission("gro
     "",
     req.user
   );
-  const populated = await GrowingRoomCycle.findById(cycle._id)
+  const populated = await GrowingRoomCycle.findOne({ _id: cycle._id, companyId: req.companyId })
     .populate("growingRoomId", "name locationInPlant")
     .populate("compostLifecycleBatchId", "batchName");
   return res.json(await toCycleView(populated, { includeTaskStats: false }));
 });
 
 /** PATCH /growing-room/cycles/:id */
-router.patch("/cycles/:id", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.patch("/cycles/:id", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id);
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!cycle) {
     return res.status(404).json({ error: "Cycle not found" });
   }
@@ -862,8 +890,8 @@ router.patch("/cycles/:id", requireAuth, requirePermission("growingRoomOps", "ed
   }
   if (body.status === "cancelled" && cycle.status === "active") {
     cycle.status = "cancelled";
-    await GrowingRoomCycleTask.deleteMany({ cycleId: cycle._id });
-    const room = await GrowingRoom.findById(cycle.growingRoomId);
+    await GrowingRoomCycleTask.deleteMany({ companyId: req.companyId, cycleId: cycle._id });
+    const room = await GrowingRoom.findOne({ _id: cycle.growingRoomId, companyId: req.companyId });
     if (room) {
       room.growingOperationalState = "available";
       await room.save();
@@ -872,6 +900,7 @@ router.patch("/cycles/:id", requireAuth, requirePermission("growingRoomOps", "ed
       await CompostLifecycleBatch.updateOne(
         {
           _id: cycle.compostLifecycleBatchId,
+          companyId: req.companyId,
           postCompostGrowingRoomId: cycle.growingRoomId
         },
         { $set: { postCompostGrowingRoomId: null } }
@@ -879,25 +908,25 @@ router.patch("/cycles/:id", requireAuth, requirePermission("growingRoomOps", "ed
     }
   }
   await cycle.save();
-  const populated = await GrowingRoomCycle.findById(cycle._id)
+  const populated = await GrowingRoomCycle.findOne({ _id: cycle._id, companyId: req.companyId })
     .populate("growingRoomId", "name locationInPlant")
     .populate("compostLifecycleBatchId", "batchName");
   return res.json(await toCycleView(populated, { includeTaskStats: true }));
 });
 
 /** GET /growing-room/cycles/:id/tasks */
-router.get("/cycles/:id/tasks", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/cycles/:id/tasks", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id).select("_id thirdFlushEnabled").lean();
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId }).select("_id thirdFlushEnabled").lean();
   if (!cycle) {
     return res.status(404).json({ error: "Cycle not found" });
   }
-  await migrateLegacyTaskStageKeysForCycle(cycle._id);
-  await dedupeSpawnRunMonitoringTasks(cycle._id);
-  await migrateLegacyCleaningTasksForCycle(cycle._id);
-  const tasks = await GrowingRoomCycleTask.find({ cycleId: cycle._id })
+  await migrateLegacyTaskStageKeysForCycle(req.companyId, cycle._id);
+  await dedupeSpawnRunMonitoringTasks(req.companyId, cycle._id);
+  await migrateLegacyCleaningTasksForCycle(req.companyId, cycle._id);
+  const tasks = await GrowingRoomCycleTask.find({ companyId: req.companyId, cycleId: cycle._id })
     .populate("assignedUserId", "name email")
     .sort({ scheduledDay: 1, stageKey: 1, title: 1 })
     .lean();
@@ -918,16 +947,16 @@ router.get("/cycles/:id/tasks", requireAuth, requirePermission("growingRoomOps",
 });
 
 /** PATCH /growing-room/tasks/:id */
-router.patch("/tasks/:id", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.patch("/tasks/:id", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid task id" });
   }
   const body = req.body || {};
-  const task = await GrowingRoomCycleTask.findById(req.params.id);
+  const task = await GrowingRoomCycleTask.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!task) {
     return res.status(404).json({ error: "Task not found" });
   }
-  const cycle = await GrowingRoomCycle.findById(task.cycleId);
+  const cycle = await GrowingRoomCycle.findOne({ _id: task.cycleId, companyId: req.companyId });
   if (!cycle || (cycle.status !== "active" && cycle.status !== "cleaning")) {
     return res.status(400).json({ error: "Cannot update tasks for this cycle state." });
   }
@@ -1004,12 +1033,15 @@ router.patch("/tasks/:id", requireAuth, requirePermission("growingRoomOps", "edi
     task.yieldKg = Number.isFinite(y) ? y : null;
   }
   await task.save();
-  const populated = await GrowingRoomCycleTask.findById(task._id).populate("assignedUserId", "name email");
+  const populated = await GrowingRoomCycleTask.findOne({ _id: task._id, companyId: req.companyId }).populate(
+    "assignedUserId",
+    "name email"
+  );
   return res.json(populated);
 });
 
 /** GET /growing-room/grow-stage-param-targets — reference ranges for UI and alerts */
-router.get("/grow-stage-param-targets", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/grow-stage-param-targets", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   return res.json({
     withThirdFlush: buildGrowStageParamTargets(true),
     withoutThirdFlush: buildGrowStageParamTargets(false)
@@ -1017,15 +1049,17 @@ router.get("/grow-stage-param-targets", requireAuth, requirePermission("growingR
 });
 
 /** POST /growing-room/cycles/:id/advance-grow-stage — after all tasks + stage activities in current stage are done */
-router.post("/cycles/:id/advance-grow-stage", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.post("/cycles/:id/advance-grow-stage", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id);
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!cycle || cycle.status !== "active") {
     return res.status(400).json({ error: "Only an active grow cycle can advance operational stages." });
   }
-  const taskLean = await GrowingRoomCycleTask.find({ cycleId: cycle._id }).select("status stageKey").lean();
+  const taskLean = await GrowingRoomCycleTask.find({ companyId: req.companyId, cycleId: cycle._id })
+    .select("status stageKey")
+    .lean();
   const third = Boolean(cycle.thirdFlushEnabled);
   const boundsMap = buildGrowingStageBounds(third);
   if (!cycle.recordedGrowStageKey) {
@@ -1066,18 +1100,18 @@ router.post("/cycles/:id/advance-grow-stage", requireAuth, requirePermission("gr
     "",
     req.user
   );
-  const populated = await GrowingRoomCycle.findById(cycle._id)
+  const populated = await GrowingRoomCycle.findOne({ _id: cycle._id, companyId: req.companyId })
     .populate("growingRoomId", "name locationInPlant capacityTons growingOperationalState")
     .populate("compostLifecycleBatchId", "batchName startDate");
   return res.json(await toCycleView(populated, { includeTaskStats: true }));
 });
 
 /** POST /growing-room/cycles/:id/stage-activities — mark manual activity checklist items for the current operational stage */
-router.post("/cycles/:id/stage-activities", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.post("/cycles/:id/stage-activities", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id);
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!cycle || cycle.status !== "active") {
     return res.status(400).json({ error: "Only an active cycle can update stage activities." });
   }
@@ -1121,18 +1155,18 @@ router.post("/cycles/:id/stage-activities", requireAuth, requirePermission("grow
     "",
     req.user
   );
-  const populated = await GrowingRoomCycle.findById(cycle._id)
+  const populated = await GrowingRoomCycle.findOne({ _id: cycle._id, companyId: req.companyId })
     .populate("growingRoomId", "name locationInPlant capacityTons growingOperationalState")
     .populate("compostLifecycleBatchId", "batchName startDate");
   return res.json(await toCycleView(populated, { includeTaskStats: true }));
 });
 
 /** POST /growing-room/cycles/:id/parameter-logs */
-router.post("/cycles/:id/parameter-logs", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.post("/cycles/:id/parameter-logs", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id);
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!cycle || cycle.status === "cancelled" || cycle.status === "completed") {
     return res.status(400).json({ error: "Cannot log parameters for this cycle." });
   }
@@ -1169,7 +1203,7 @@ router.post("/cycles/:id/parameter-logs", requireAuth, requirePermission("growin
   let taskId = null;
   if (body.taskId && mongoose.Types.ObjectId.isValid(String(body.taskId))) {
     taskId = new mongoose.Types.ObjectId(String(body.taskId));
-    const t = await GrowingRoomCycleTask.findOne({ _id: taskId, cycleId: cycle._id });
+    const t = await GrowingRoomCycleTask.findOne({ _id: taskId, companyId: req.companyId, cycleId: cycle._id });
     if (!t) {
       return res.status(400).json({ error: "Task not part of this cycle" });
     }
@@ -1185,6 +1219,7 @@ router.post("/cycles/:id/parameter-logs", requireAuth, requirePermission("growin
   );
   const uid = req.user?.id && mongoose.Types.ObjectId.isValid(String(req.user.id)) ? req.user.id : null;
   const log = await GrowingRoomParameterLog.create({
+    companyId: req.companyId,
     cycleId: cycle._id,
     growingRoomId: cycle.growingRoomId,
     compostLifecycleBatchId: cycle.compostLifecycleBatchId || null,
@@ -1214,29 +1249,35 @@ router.post("/cycles/:id/parameter-logs", requireAuth, requirePermission("growin
 });
 
 /** GET /growing-room/cycles/:id/parameter-logs */
-router.get("/cycles/:id/parameter-logs", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/cycles/:id/parameter-logs", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const logs = await GrowingRoomParameterLog.find({ cycleId: req.params.id }).sort({ loggedAt: -1 }).limit(500).lean();
+  const logs = await GrowingRoomParameterLog.find({ companyId: req.companyId, cycleId: req.params.id })
+    .sort({ loggedAt: -1 })
+    .limit(500)
+    .lean();
   return res.json(logs);
 });
 
 /** GET /growing-room/cycles/:id/intervention-logs */
-router.get("/cycles/:id/intervention-logs", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/cycles/:id/intervention-logs", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const logs = await GrowingRoomInterventionLog.find({ cycleId: req.params.id }).sort({ performedAt: -1 }).limit(500).lean();
+  const logs = await GrowingRoomInterventionLog.find({ companyId: req.companyId, cycleId: req.params.id })
+    .sort({ performedAt: -1 })
+    .limit(500)
+    .lean();
   return res.json(logs);
 });
 
 /** POST /growing-room/cycles/:id/intervention-logs — free-form note */
-router.post("/cycles/:id/intervention-logs", requireAuth, requirePermission("growingRoomOps", "edit"), async (req, res) => {
+router.post("/cycles/:id/intervention-logs", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });
   }
-  const cycle = await GrowingRoomCycle.findById(req.params.id);
+  const cycle = await GrowingRoomCycle.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!cycle) {
     return res.status(404).json({ error: "Cycle not found" });
   }
@@ -1244,6 +1285,7 @@ router.post("/cycles/:id/intervention-logs", requireAuth, requirePermission("gro
   const action = String(body.action || "").trim() || "Note";
   const detail = String(body.detail || "").trim();
   const log = await GrowingRoomInterventionLog.create({
+    companyId: req.companyId,
     cycleId: cycle._id,
     growingRoomId: cycle.growingRoomId,
     compostLifecycleBatchId: cycle.compostLifecycleBatchId || null,
@@ -1257,8 +1299,8 @@ router.post("/cycles/:id/intervention-logs", requireAuth, requirePermission("gro
 });
 
 /** Reports */
-router.get("/reports/room-performance", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
-  const match = {};
+router.get("/reports/room-performance", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
+  const match = { companyId: req.companyId };
   if (req.query.roomId && mongoose.Types.ObjectId.isValid(String(req.query.roomId))) {
     match.growingRoomId = new mongoose.Types.ObjectId(String(req.query.roomId));
   }
@@ -1267,21 +1309,19 @@ router.get("/reports/room-performance", requireAuth, requirePermission("growingR
     if (req.query.from) match.cycleStartedAt.$gte = new Date(req.query.from);
     if (req.query.to) match.cycleStartedAt.$lte = new Date(req.query.to);
   }
-  const cycles = await GrowingRoomCycle.find(
-    Object.keys(match).length ? match : {}
-  )
+  const cycles = await GrowingRoomCycle.find(match)
     .select("growingRoomId cycleStartedAt status completedAt compostLifecycleBatchId")
     .sort({ cycleStartedAt: -1 })
     .limit(500)
     .lean();
   const roomIds = [...new Set(cycles.map((c) => String(c.growingRoomId)))];
-  const rooms = await GrowingRoom.find({ _id: { $in: roomIds } })
+  const rooms = await GrowingRoom.find({ companyId: req.companyId, _id: { $in: roomIds } })
     .select("name")
     .lean();
   const roomName = Object.fromEntries(rooms.map((r) => [String(r._id), r.name]));
   const cycleIds = cycles.map((c) => c._id);
   const yields = await GrowingRoomCycleTask.aggregate([
-    { $match: { cycleId: { $in: cycleIds }, yieldKg: { $gt: 0 } } },
+    { $match: { companyId: req.companyId, cycleId: { $in: cycleIds }, yieldKg: { $gt: 0 } } },
     { $group: { _id: "$cycleId", totalYield: { $sum: "$yieldKg" } } }
   ]);
   const yieldByCycle = Object.fromEntries(yields.map((y) => [String(y._id), y.totalYield]));
@@ -1299,9 +1339,9 @@ router.get("/reports/room-performance", requireAuth, requirePermission("growingR
   );
 });
 
-router.get("/reports/batch-yield", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/reports/batch-yield", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   const rows = await GrowingRoomCycleTask.aggregate([
-    { $match: { compostLifecycleBatchId: { $ne: null }, yieldKg: { $gt: 0 } } },
+    { $match: { companyId: req.companyId, compostLifecycleBatchId: { $ne: null }, yieldKg: { $gt: 0 } } },
     {
       $group: {
         _id: "$compostLifecycleBatchId",
@@ -1311,7 +1351,7 @@ router.get("/reports/batch-yield", requireAuth, requirePermission("growingRoomOp
     }
   ]);
   const batchIds = rows.map((r) => r._id).filter(Boolean);
-  const batches = await CompostLifecycleBatch.find({ _id: { $in: batchIds } })
+  const batches = await CompostLifecycleBatch.find({ companyId: req.companyId, _id: { $in: batchIds } })
     .select("batchName startDate")
     .lean();
   const bn = Object.fromEntries(batches.map((b) => [String(b._id), b]));
@@ -1326,12 +1366,13 @@ router.get("/reports/batch-yield", requireAuth, requirePermission("growingRoomOp
   );
 });
 
-router.get("/reports/monthly-production", requireAuth, requirePermission("growingRoomOps", "view"), async (req, res) => {
+router.get("/reports/monthly-production", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "view"), async (req, res) => {
   const year = Number(req.query.year) || new Date().getFullYear();
   const month = Number(req.query.month);
   const start = new Date(year, Number.isFinite(month) ? month - 1 : 0, 1);
   const end = new Date(year, Number.isFinite(month) ? month : 12, 0, 23, 59, 59, 999);
   const tasks = await GrowingRoomCycleTask.find({
+    companyId: req.companyId,
     yieldKg: { $gt: 0 },
     completedAt: { $gte: start, $lte: end }
   })

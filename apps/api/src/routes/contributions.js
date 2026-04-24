@@ -16,6 +16,7 @@ import {
   requireContributionsBulkUpload,
   requireContributionsBulkDelete
 } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { requireFields } from "../utils/validators.js";
 import { expensePaidTotalsByContributionMember } from "../utils/expensePaidByMemberAgg.js";
 
@@ -33,11 +34,14 @@ const VOUCHER_MATCH_PAID_COMPANY_ACCOUNT_CASH_MODE = {
 };
 
 /** Totals used on cash-withdrawals page and in contribution bank balance. */
-async function computeCashWithdrawalDashMetrics() {
+async function computeCashWithdrawalDashMetrics(companyId) {
   const [withdrawalSumAgg, companyCashVoucherAgg] = await Promise.all([
-    CashWithdrawalEntry.aggregate([{ $group: { _id: null, total: { $sum: "$amount" } } }]),
+    CashWithdrawalEntry.aggregate([
+      { $match: { companyId } },
+      { $group: { _id: null, total: { $sum: "$amount" } } }
+    ]),
     Voucher.aggregate([
-      { $match: VOUCHER_MATCH_PAID_COMPANY_ACCOUNT_CASH_MODE },
+      { $match: { companyId, ...VOUCHER_MATCH_PAID_COMPANY_ACCOUNT_CASH_MODE } },
       {
         $group: {
           _id: null,
@@ -218,7 +222,7 @@ router.use(async (_req, _res, next) => {
   }
 });
 
-router.get("/meta", requireAuth, requirePermission("contributions", "view"), (_req, res) => {
+router.get("/meta", requireAuth, requireTenantContext, requirePermission("contributions", "view"), (_req, res) => {
   return res.json({
     members: CONTRIBUTION_MEMBERS.map((name) => ({
       name,
@@ -229,13 +233,16 @@ router.get("/meta", requireAuth, requirePermission("contributions", "view"), (_r
   });
 });
 
-router.get("/summary", requireAuth, requirePermission("contributions", "view"), async (_req, res) => {
+router.get("/summary", requireAuth, requireTenantContext, requirePermission("contributions", "view"), async (req, res) => {
+  const companyId = req.companyId;
   const [entryAgg, byMemberAndHolder, entryCount, expensePaidByMember, companyAccountPaidAgg, cashDash] =
     await Promise.all([
       ContributionEntry.aggregate([
+        { $match: { companyId } },
         { $group: { _id: "$member", totalAmount: { $sum: "$amount" }, count: { $sum: 1 } } }
       ]),
       ContributionEntry.aggregate([
+        { $match: { companyId } },
         {
           $group: {
             _id: { member: "$member", toPrimaryHolder: "$toPrimaryHolder" },
@@ -244,11 +251,12 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
           }
         }
       ]),
-      ContributionEntry.countDocuments(),
-      expensePaidTotalsByContributionMember({}),
+      ContributionEntry.countDocuments({ companyId }),
+      expensePaidTotalsByContributionMember({ companyId }),
       Voucher.aggregate([
         {
           $match: {
+            companyId,
             paymentStatus: "Paid",
             paymentMadeBy: "Company Account"
           }
@@ -261,7 +269,7 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
           }
         }
       ]),
-      computeCashWithdrawalDashMetrics()
+      computeCashWithdrawalDashMetrics(companyId)
     ]);
 
   const contributionByMember = {};
@@ -359,15 +367,16 @@ router.get("/summary", requireAuth, requirePermission("contributions", "view"), 
 /**
  * Month × member bank totals from contribution entries; pie uses per-member bank + direct expense (table Total contribution).
  */
-router.get("/dashboard-charts", requireAuth, requirePermission("contributions", "view"), async (req, res) => {
+router.get("/dashboard-charts", requireAuth, requireTenantContext, requirePermission("contributions", "view"), async (req, res) => {
   const y = Number(req.query.year);
   const year = Number.isFinite(y) ? Math.min(2100, Math.max(1990, Math.floor(y))) : new Date().getUTCFullYear();
   const start = new Date(Date.UTC(year, 0, 1));
   const end = new Date(Date.UTC(year + 1, 0, 1));
+  const companyId = req.companyId;
 
   const [byMonthMember, totalsByMember, expenseByMember] = await Promise.all([
     ContributionEntry.aggregate([
-      { $match: { contributedAt: { $gte: start, $lt: end } } },
+      { $match: { companyId, contributedAt: { $gte: start, $lt: end } } },
       {
         $group: {
           _id: {
@@ -378,8 +387,11 @@ router.get("/dashboard-charts", requireAuth, requirePermission("contributions", 
         }
       }
     ]),
-    ContributionEntry.aggregate([{ $group: { _id: "$member", total: { $sum: "$amount" } } }]),
-    expensePaidTotalsByContributionMember({})
+    ContributionEntry.aggregate([
+      { $match: { companyId } },
+      { $group: { _id: "$member", total: { $sum: "$amount" } } }
+    ]),
+    expensePaidTotalsByContributionMember({ companyId })
   ]);
 
   const members = [...CONTRIBUTION_MEMBERS];
@@ -411,8 +423,8 @@ router.get("/dashboard-charts", requireAuth, requirePermission("contributions", 
   return res.json({ year, members, monthly, totalsTillDate });
 });
 
-router.get("/entries", requireAuth, requirePermission("contributions", "view"), async (req, res) => {
-  const q = {};
+router.get("/entries", requireAuth, requireTenantContext, requirePermission("contributions", "view"), async (req, res) => {
+  const q = { companyId: req.companyId };
   if (req.query.member && CONTRIBUTION_MEMBERS.includes(req.query.member)) {
     q.member = req.query.member;
   }
@@ -441,7 +453,7 @@ router.get("/entries", requireAuth, requirePermission("contributions", "view"), 
   return res.json(entries);
 });
 
-router.post("/bulk", requireAuth, requireContributionsBulkUpload, async (req, res) => {
+router.post("/bulk", requireAuth, requireTenantContext, requireContributionsBulkUpload, async (req, res) => {
   const entries = req.body?.entries;
   if (!Array.isArray(entries)) {
     return res.status(400).json({ error: "Request body must include entries array" });
@@ -460,7 +472,7 @@ router.post("/bulk", requireAuth, requireContributionsBulkUpload, async (req, re
       continue;
     }
     try {
-      const doc = await ContributionEntry.create(parsed.value);
+      const doc = await ContributionEntry.create({ ...parsed.value, companyId: req.companyId });
       results.push({ index: i, ok: true, id: String(doc._id) });
     } catch (e) {
       results.push({ index: i, ok: false, error: e.message || "Create failed" });
@@ -474,7 +486,7 @@ router.post("/bulk", requireAuth, requireContributionsBulkUpload, async (req, re
   });
 });
 
-router.post("/bulk-delete", requireAuth, requireContributionsBulkDelete, async (req, res) => {
+router.post("/bulk-delete", requireAuth, requireTenantContext, requireContributionsBulkDelete, async (req, res) => {
   const ids = req.body?.ids;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids must be a non-empty array" });
@@ -493,7 +505,7 @@ router.post("/bulk-delete", requireAuth, requireContributionsBulkDelete, async (
       results.push({ id: idStr, ok: false, error: "Invalid id" });
       continue;
     }
-    const doc = await ContributionEntry.findByIdAndDelete(idStr);
+    const doc = await ContributionEntry.findOneAndDelete({ _id: idStr, companyId: req.companyId });
     if (!doc) {
       results.push({ id: idStr, ok: false, error: "Entry not found" });
     } else {
@@ -504,20 +516,20 @@ router.post("/bulk-delete", requireAuth, requireContributionsBulkDelete, async (
   return res.json({ results, deleted, failed: results.length - deleted });
 });
 
-router.post("/entries", requireAuth, requirePermission("contributions", "create"), async (req, res) => {
+router.post("/entries", requireAuth, requireTenantContext, requirePermission("contributions", "create"), async (req, res) => {
   const parsed = parseContributionEntryPayload(req.body);
   if (!parsed.ok) {
     return res.status(400).json({ error: parsed.error });
   }
-  const doc = await ContributionEntry.create(parsed.value);
+  const doc = await ContributionEntry.create({ ...parsed.value, companyId: req.companyId });
   return res.status(201).json(doc);
 });
 
-router.put("/entries/:entryId", requireAuth, requirePermission("contributions", "edit"), async (req, res) => {
+router.put("/entries/:entryId", requireAuth, requireTenantContext, requirePermission("contributions", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.entryId)) {
     return res.status(400).json({ error: "Invalid id" });
   }
-  const doc = await ContributionEntry.findById(req.params.entryId);
+  const doc = await ContributionEntry.findOne({ _id: req.params.entryId, companyId: req.companyId });
   if (!doc) return res.status(404).json({ error: "Entry not found" });
   if (req.body.member !== undefined) {
     if (!CONTRIBUTION_MEMBERS.includes(req.body.member)) {
@@ -571,20 +583,20 @@ router.put("/entries/:entryId", requireAuth, requirePermission("contributions", 
   return res.json(doc);
 });
 
-router.delete("/entries/:entryId", requireAuth, requirePermission("contributions", "delete"), async (req, res) => {
+router.delete("/entries/:entryId", requireAuth, requireTenantContext, requirePermission("contributions", "delete"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.entryId)) {
     return res.status(400).json({ error: "Invalid id" });
   }
-  const doc = await ContributionEntry.findByIdAndDelete(req.params.entryId);
+  const doc = await ContributionEntry.findOneAndDelete({ _id: req.params.entryId, companyId: req.companyId });
   if (!doc) return res.status(404).json({ error: "Entry not found" });
   return res.json({ ok: true });
 });
 
 /** Cash withdrawals from the contribution bank picture (list + create). */
-router.get("/cash-withdrawals", requireAuth, requirePermission("contributions", "view"), async (_req, res) => {
+router.get("/cash-withdrawals", requireAuth, requireTenantContext, requirePermission("contributions", "view"), async (req, res) => {
   const [rows, { totalWithdrawal, totalCashSpent, cashInHand }] = await Promise.all([
-    CashWithdrawalEntry.find().sort({ withdrawnAt: -1 }).lean(),
-    computeCashWithdrawalDashMetrics()
+    CashWithdrawalEntry.find({ companyId: req.companyId }).sort({ withdrawnAt: -1 }).lean(),
+    computeCashWithdrawalDashMetrics(req.companyId)
   ]);
   return res.json({
     entries: rows,
@@ -594,7 +606,7 @@ router.get("/cash-withdrawals", requireAuth, requirePermission("contributions", 
   });
 });
 
-router.post("/cash-withdrawals", requireAuth, requirePermission("contributions", "create"), async (req, res) => {
+router.post("/cash-withdrawals", requireAuth, requireTenantContext, requirePermission("contributions", "create"), async (req, res) => {
   const body = req.body || {};
   const amt = parseAmount(body.amount);
   if (!amt.ok) return res.status(400).json({ error: amt.error });
@@ -602,6 +614,7 @@ router.post("/cash-withdrawals", requireAuth, requirePermission("contributions",
   if (!dt.ok) return res.status(400).json({ error: dt.error });
   const notes = typeof body.notes === "string" ? body.notes.trim().slice(0, 2000) : "";
   const doc = await CashWithdrawalEntry.create({
+    companyId: req.companyId,
     withdrawnAt: dt.value,
     amount: amt.value,
     notes

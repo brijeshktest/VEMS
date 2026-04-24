@@ -1,7 +1,9 @@
 import express from "express";
+import mongoose from "mongoose";
 import TunnelBatch from "../models/TunnelBatch.js";
 import AppSettings from "../models/AppSettings.js";
 import { requireAuth, requireAdmin, requirePermission, resolvePermissions } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
@@ -14,10 +16,10 @@ function readPositiveInt(value, fallback) {
   return rounded > 0 ? rounded : fallback;
 }
 
-async function getOrCreateSettings() {
-  let settings = await AppSettings.findOne();
+async function getOrCreateSettings(companyId) {
+  let settings = await AppSettings.findOne({ companyId });
   if (!settings) {
-    settings = await AppSettings.create({});
+    settings = await AppSettings.create({ companyId });
   }
   return settings;
 }
@@ -68,13 +70,17 @@ function nextStage(batch, config) {
 }
 
 async function canAccessTunnelOps(req) {
-  if (req.user?.role === "admin") return true;
-  const permissions = await resolvePermissions(req.user?.roleIds || []);
+  if (req.enabledModuleKeys && typeof req.enabledModuleKeys.has === "function") {
+    if (!req.enabledModuleKeys.has("tunnelBunkerOps")) return false;
+  }
+  if (req.user?.role === "admin" || req.user?.role === "super_admin") return true;
+  const permissions = await resolvePermissions(req.user?.roleIds || [], req.companyId);
   return Boolean(permissions.tunnelBunkerOps?.view || permissions.tunnelBunkerOps?.edit);
 }
 
-async function getTunnelOccupancy(config) {
+async function getTunnelOccupancy(companyId, config) {
   const activeTunnelBatches = await TunnelBatch.find({
+    companyId,
     status: "active",
     currentStageType: "tunnel"
   }).select("batchCode currentStageNumber");
@@ -128,7 +134,7 @@ function serializeBatch(batch, config, tunnelAvailability = []) {
   };
 }
 
-async function advanceBatch(batch, config, user, { notes = "", tunnelNumber } = {}) {
+async function advanceBatch(companyId, batch, config, user, { notes = "", tunnelNumber } = {}) {
   const fromType = batch.currentStageType;
   const fromNumber = batch.currentStageNumber;
   const next = nextStage(batch, config);
@@ -149,6 +155,7 @@ async function advanceBatch(batch, config, user, { notes = "", tunnelNumber } = 
       throw new Error("Select a valid tunnel number");
     }
     const occupied = await TunnelBatch.findOne({
+      companyId,
       _id: { $ne: batch._id },
       status: "active",
       currentStageType: "tunnel",
@@ -175,13 +182,13 @@ async function advanceBatch(batch, config, user, { notes = "", tunnelNumber } = 
   return batch;
 }
 
-router.get("/config", requireAuth, requireAdmin, async (_req, res) => {
-  const settings = await getOrCreateSettings();
+router.get("/config", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const settings = await getOrCreateSettings(req.companyId);
   return res.json(getConfig(settings));
 });
 
-router.put("/config", requireAuth, requireAdmin, async (req, res) => {
-  const settings = await getOrCreateSettings();
+router.put("/config", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
+  const settings = await getOrCreateSettings(req.companyId);
   const before = settings.toObject();
   settings.bunkerCount = readPositiveInt(req.body?.bunkerCount, 3);
   settings.tunnelCount = readPositiveInt(req.body?.tunnelCount, 2);
@@ -190,6 +197,7 @@ router.put("/config", requireAuth, requireAdmin, async (req, res) => {
   settings.autoAdvanceEnabled = Boolean(req.body?.autoAdvanceEnabled);
   await settings.save();
   await logChange({
+    companyId: req.companyId,
     entityType: "tunnel_bunker_config",
     entityId: settings._id,
     action: "update",
@@ -200,14 +208,14 @@ router.put("/config", requireAuth, requireAdmin, async (req, res) => {
   return res.json(getConfig(settings));
 });
 
-router.get("/alerts", requireAuth, async (req, res) => {
+router.get("/alerts", requireAuth, requireTenantContext, async (req, res) => {
   if (!(await canAccessTunnelOps(req))) {
     return res.status(403).json({ error: "Insufficient permissions" });
   }
-  const settings = await getOrCreateSettings();
+  const settings = await getOrCreateSettings(req.companyId);
   const config = getConfig(settings);
-  const tunnelAvailability = await getTunnelOccupancy(config);
-  const activeBatches = await TunnelBatch.find({ status: "active" }).sort({ stageStartedAt: 1 });
+  const tunnelAvailability = await getTunnelOccupancy(req.companyId, config);
+  const activeBatches = await TunnelBatch.find({ companyId: req.companyId, status: "active" }).sort({ stageStartedAt: 1 });
   const dueItems = activeBatches
     .map((batch) => serializeBatch(batch, config, tunnelAvailability))
     .filter((batch) => batch.due)
@@ -224,18 +232,19 @@ router.get("/alerts", requireAuth, async (req, res) => {
   return res.json({ dueItems });
 });
 
-router.post("/auto-advance", requireAuth, requirePermission("tunnelBunkerOps", "edit"), async (req, res) => {
-  const settings = await getOrCreateSettings();
+router.post("/auto-advance", requireAuth, requireTenantContext, requirePermission("tunnelBunkerOps", "edit"), async (req, res) => {
+  const settings = await getOrCreateSettings(req.companyId);
   const config = getConfig(settings);
-  const activeBatches = await TunnelBatch.find({ status: "active" }).sort({ stageStartedAt: 1 });
+  const activeBatches = await TunnelBatch.find({ companyId: req.companyId, status: "active" }).sort({ stageStartedAt: 1 });
   let moved = 0;
   for (const batch of activeBatches) {
     const due = computeDue(batch, config);
     if (!due.due) continue;
     if (batch.currentStageType === "bunker" && batch.currentStageNumber === config.bunkerCount) continue;
     const before = batch.toObject();
-    await advanceBatch(batch, config, req.user, { notes: "Auto-advanced on due time" });
+    await advanceBatch(req.companyId, batch, config, req.user, { notes: "Auto-advanced on due time" });
     await logChange({
+      companyId: req.companyId,
       entityType: "tunnel_batch",
       entityId: batch._id,
       action: "update",
@@ -248,27 +257,30 @@ router.post("/auto-advance", requireAuth, requirePermission("tunnelBunkerOps", "
   return res.json({ ok: true, moved });
 });
 
-router.get("/batches", requireAuth, async (req, res) => {
+router.get("/batches", requireAuth, requireTenantContext, async (req, res) => {
   if (!(await canAccessTunnelOps(req))) {
     return res.status(403).json({ error: "Insufficient permissions" });
   }
-  const settings = await getOrCreateSettings();
+  const settings = await getOrCreateSettings(req.companyId);
   const config = getConfig(settings);
-  const tunnelAvailability = await getTunnelOccupancy(config);
+  const tunnelAvailability = await getTunnelOccupancy(req.companyId, config);
   if (config.autoAdvanceEnabled) {
-    const dueBatches = await TunnelBatch.find({ status: "active" });
+    const dueBatches = await TunnelBatch.find({ companyId: req.companyId, status: "active" });
     for (const batch of dueBatches) {
       const due = computeDue(batch, config);
       if (due.due) {
         if (batch.currentStageType === "bunker" && batch.currentStageNumber === config.bunkerCount) {
           continue;
         }
-        await advanceBatch(batch, config, req.user, { notes: "Auto-advanced by automation setting" });
+        await advanceBatch(req.companyId, batch, config, req.user, { notes: "Auto-advanced by automation setting" });
       }
     }
   }
   const statusFilter = String(req.query.status || "").trim();
-  const filter = statusFilter === "active" || statusFilter === "shifted_to_growing_room" ? { status: statusFilter } : {};
+  const filter =
+    statusFilter === "active" || statusFilter === "shifted_to_growing_room"
+      ? { companyId: req.companyId, status: statusFilter }
+      : { companyId: req.companyId };
   const batches = await TunnelBatch.find(filter).sort({ createdAt: -1 });
   return res.json({
     config,
@@ -276,18 +288,19 @@ router.get("/batches", requireAuth, async (req, res) => {
   });
 });
 
-router.post("/batches", requireAuth, requirePermission("tunnelBunkerOps", "create"), async (req, res) => {
-  const settings = await getOrCreateSettings();
+router.post("/batches", requireAuth, requireTenantContext, requirePermission("tunnelBunkerOps", "create"), async (req, res) => {
+  const settings = await getOrCreateSettings(req.companyId);
   const config = getConfig(settings);
   const batchCode = String(req.body?.batchCode || "").trim();
   if (!batchCode) {
     return res.status(400).json({ error: "batchCode is required" });
   }
-  const exists = await TunnelBatch.findOne({ batchCode });
+  const exists = await TunnelBatch.findOne({ companyId: req.companyId, batchCode });
   if (exists) {
     return res.status(400).json({ error: "Batch code already exists" });
   }
   const batch = await TunnelBatch.create({
+    companyId: req.companyId,
     batchCode,
     compostType: String(req.body?.compostType || "Mushroom compost").trim() || "Mushroom compost",
     notes: String(req.body?.notes || "").trim(),
@@ -297,6 +310,7 @@ router.post("/batches", requireAuth, requirePermission("tunnelBunkerOps", "creat
     stageStartedAt: new Date()
   });
   await logChange({
+    companyId: req.companyId,
     entityType: "tunnel_batch",
     entityId: batch._id,
     action: "create",
@@ -307,10 +321,13 @@ router.post("/batches", requireAuth, requirePermission("tunnelBunkerOps", "creat
   return res.status(201).json(serializeBatch(batch, config, []));
 });
 
-router.post("/batches/:id/move-next", requireAuth, requirePermission("tunnelBunkerOps", "edit"), async (req, res) => {
-  const settings = await getOrCreateSettings();
+router.post("/batches/:id/move-next", requireAuth, requireTenantContext, requirePermission("tunnelBunkerOps", "edit"), async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    return res.status(400).json({ error: "Invalid batch id" });
+  }
+  const settings = await getOrCreateSettings(req.companyId);
   const config = getConfig(settings);
-  const batch = await TunnelBatch.findById(req.params.id);
+  const batch = await TunnelBatch.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!batch) {
     return res.status(404).json({ error: "Batch not found" });
   }
@@ -319,11 +336,12 @@ router.post("/batches/:id/move-next", requireAuth, requirePermission("tunnelBunk
   }
   try {
     const before = batch.toObject();
-    await advanceBatch(batch, config, req.user, {
+    await advanceBatch(req.companyId, batch, config, req.user, {
       notes: String(req.body?.notes || "").trim(),
       tunnelNumber: req.body?.tunnelNumber
     });
     await logChange({
+      companyId: req.companyId,
       entityType: "tunnel_batch",
       entityId: batch._id,
       action: "update",
@@ -331,7 +349,7 @@ router.post("/batches/:id/move-next", requireAuth, requirePermission("tunnelBunk
       before,
       after: batch.toObject()
     });
-    const tunnelAvailability = await getTunnelOccupancy(config);
+    const tunnelAvailability = await getTunnelOccupancy(req.companyId, config);
     return res.json(serializeBatch(batch, config, tunnelAvailability));
   } catch (error) {
     return res.status(400).json({ error: error.message || "Unable to move batch" });

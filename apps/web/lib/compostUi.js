@@ -71,7 +71,7 @@ export function formatDateTime(iso) {
   }
 }
 
-/** Threshold alerts for daily compost parameter logs (aligned with plant operations UI). */
+/** Threshold alerts for daily compost parameter logs (aligned with Compost Units UI). */
 export function compostParameterLogAlerts(log) {
   if (!log) {
     return { highTemperature: false, lowMoisture: false };

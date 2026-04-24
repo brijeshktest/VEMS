@@ -9,6 +9,7 @@ import {
   requireVendorBulkDelete,
   requireVendorBulkUpload
 } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { requireFields } from "../utils/validators.js";
 import { validateVendorContactPayload } from "../utils/indianValidators.js";
 import {
@@ -111,13 +112,13 @@ function parseRemovedAttachmentIds(req) {
   return [];
 }
 
-async function deleteVendorById(user, idStr) {
-  const vendor = await Vendor.findById(idStr);
+async function deleteVendorById(req, idStr) {
+  const vendor = await Vendor.findOne({ _id: idStr, companyId: req.companyId });
   if (!vendor) {
     return { ok: false, error: "Vendor not found" };
   }
   const vid = vendor._id;
-  const voucherCount = await Voucher.countDocuments({ vendorId: vid });
+  const voucherCount = await Voucher.countDocuments({ vendorId: vid, companyId: req.companyId });
   if (voucherCount > 0) {
     return { ok: false, error: `Cannot delete: ${voucherCount} voucher(s) reference this vendor` };
   }
@@ -125,24 +126,25 @@ async function deleteVendorById(user, idStr) {
   const idString = vid.toString();
   await vendor.deleteOne();
   await deleteEntityUploadFolder("vendors", idString);
-  await Material.updateMany({ vendorIds: vid }, { $pull: { vendorIds: vid } });
+  await Material.updateMany({ companyId: req.companyId, vendorIds: vid }, { $pull: { vendorIds: vid } });
   await logChange({
+    companyId: req.companyId,
     entityType: "vendor",
     entityId: idString,
     action: "delete",
-    user,
+    user: req.user,
     before,
     after: null
   });
   return { ok: true };
 }
 
-router.get("/", requireAuth, requirePermission("vendors", "view"), async (req, res) => {
-  const vendors = await Vendor.find().sort({ name: 1 });
+router.get("/", requireAuth, requireTenantContext, requirePermission("vendors", "view"), async (req, res) => {
+  const vendors = await Vendor.find({ companyId: req.companyId }).sort({ name: 1 });
   return res.json(vendors);
 });
 
-router.post("/bulk-delete", requireAuth, requireVendorBulkDelete, async (req, res) => {
+router.post("/bulk-delete", requireAuth, requireTenantContext, requireVendorBulkDelete, async (req, res) => {
   const ids = req.body?.ids;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids must be a non-empty array" });
@@ -157,18 +159,14 @@ router.post("/bulk-delete", requireAuth, requireVendorBulkDelete, async (req, re
       results.push({ id: raw, ok: false, error: "Empty id" });
       continue;
     }
-    const r = await deleteVendorById(req.user, idStr);
+    const r = await deleteVendorById(req, idStr);
     results.push({ id: idStr, ok: r.ok, error: r.error });
   }
   const deleted = results.filter((x) => x.ok).length;
   return res.json({ results, deleted, failed: results.length - deleted });
 });
 
-/**
- * Create a vendor from plain JSON (no multipart). Shared by POST / and POST /bulk.
- * @returns {Promise<{ ok: true, vendor: object } | { ok: false, error: string }>}
- */
-async function createVendorDocument(user, body, files = []) {
+async function createVendorDocument(req, body, files = []) {
   const missing = requireFields(body, ["name"]);
   if (missing.length) {
     await unlinkTmpFiles(files);
@@ -187,6 +185,7 @@ async function createVendorDocument(user, body, files = []) {
   let vendor;
   try {
     vendor = await Vendor.create({
+      companyId: req.companyId,
       name: body.name,
       address: body.address ?? "",
       contactPerson: body.contactPerson ?? "",
@@ -206,10 +205,11 @@ async function createVendorDocument(user, body, files = []) {
       await vendor.save();
     }
     await logChange({
+      companyId: req.companyId,
       entityType: "vendor",
       entityId: vendor._id,
       action: "create",
-      user,
+      user: req.user,
       before: null,
       after: vendor.toObject()
     });
@@ -224,7 +224,7 @@ async function createVendorDocument(user, body, files = []) {
   }
 }
 
-router.post("/bulk", requireAuth, requireVendorBulkUpload, async (req, res) => {
+router.post("/bulk", requireAuth, requireTenantContext, requireVendorBulkUpload, async (req, res) => {
   const vendors = req.body?.vendors;
   if (!Array.isArray(vendors)) {
     return res.status(400).json({ error: "Request body must include vendors array" });
@@ -237,7 +237,7 @@ router.post("/bulk", requireAuth, requireVendorBulkUpload, async (req, res) => {
   }
   const results = [];
   for (let i = 0; i < vendors.length; i++) {
-    const r = await createVendorDocument(req.user, vendors[i], []);
+    const r = await createVendorDocument(req, vendors[i], []);
     if (r.ok) {
       results.push({ index: i, ok: true, id: String(r.vendor._id) });
     } else {
@@ -255,9 +255,10 @@ router.post("/bulk", requireAuth, requireVendorBulkUpload, async (req, res) => {
 router.get(
   "/:id/attachments/download/:storedName",
   requireAuth,
+  requireTenantContext,
   requirePermission("vendors", "view"),
   async (req, res) => {
-    const vendor = await Vendor.findById(req.params.id);
+    const vendor = await Vendor.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!vendor) {
       return res.status(404).json({ error: "Vendor not found" });
     }
@@ -281,9 +282,10 @@ router.get(
 router.delete(
   "/:id/attachments/:attachmentId",
   requireAuth,
+  requireTenantContext,
   requirePermission("vendors", "edit"),
   async (req, res) => {
-    const vendor = await Vendor.findById(req.params.id);
+    const vendor = await Vendor.findOne({ _id: req.params.id, companyId: req.companyId });
     if (!vendor) {
       return res.status(404).json({ error: "Vendor not found" });
     }
@@ -298,83 +300,98 @@ router.delete(
   }
 );
 
-router.get("/:id", requireAuth, requirePermission("vendors", "view"), async (req, res) => {
-  const vendor = await Vendor.findById(req.params.id);
+router.get("/:id", requireAuth, requireTenantContext, requirePermission("vendors", "view"), async (req, res) => {
+  const vendor = await Vendor.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!vendor) {
     return res.status(404).json({ error: "Vendor not found" });
   }
   return res.json(vendor);
 });
 
-router.post("/", requireAuth, requirePermission("vendors", "create"), conditionalVendorFiles, async (req, res) => {
-  const body = isMultipartRequest(req) ? normalizeVendorBody(req) : req.body;
-  const files = req.files || [];
-  const r = await createVendorDocument(req.user, body, files);
-  if (!r.ok) {
-    return res.status(400).json({ error: r.error });
-  }
-  return res.status(201).json(r.vendor);
-});
-
-router.put("/:id", requireAuth, requirePermission("vendors", "edit"), conditionalVendorFiles, async (req, res) => {
-  const vendor = await Vendor.findById(req.params.id);
-  if (!vendor) {
-    await unlinkTmpFiles(req.files);
-    return res.status(404).json({ error: "Vendor not found" });
-  }
-  const body = isMultipartRequest(req) ? normalizeVendorBody(req) : req.body;
-  const before = vendor.toObject();
-  const removedIds = parseRemovedAttachmentIds(req);
-  const toRemove = vendor.attachments.filter((a) => removedIds.includes(a._id.toString()));
-  if (toRemove.length) {
-    await removeAttachmentsFromDisk("vendors", vendor._id.toString(), toRemove);
-    vendor.attachments = vendor.attachments.filter((a) => !removedIds.includes(a._id.toString()));
-  }
-  vendor.name = body.name ?? vendor.name;
-  vendor.address = body.address ?? vendor.address;
-  vendor.contactPerson = body.contactPerson ?? vendor.contactPerson;
-  vendor.gstin = body.gstin ?? vendor.gstin;
-  vendor.vendorType = body.vendorType ?? vendor.vendorType;
-  if (bodyTouchesVendorContact(body)) {
-    const contactCheck = validateVendorContactPayload(contactPayloadForPut(body, vendor));
-    if (!contactCheck.ok) {
-      await unlinkTmpFiles(req.files);
-      return res.status(400).json({ error: contactCheck.message });
+router.post(
+  "/",
+  requireAuth,
+  requireTenantContext,
+  requirePermission("vendors", "create"),
+  conditionalVendorFiles,
+  async (req, res) => {
+    const body = isMultipartRequest(req) ? normalizeVendorBody(req) : req.body;
+    const files = req.files || [];
+    const r = await createVendorDocument(req, body, files);
+    if (!r.ok) {
+      return res.status(400).json({ error: r.error });
     }
-    vendor.email = contactCheck.normalized.email;
-    vendor.gstin = contactCheck.normalized.gstin;
-    vendor.pan = contactCheck.normalized.pan;
-    vendor.aadhaar = contactCheck.normalized.aadhaar;
-    vendor.contactNumber = contactCheck.normalized.contactNumber;
+    return res.status(201).json(r.vendor);
   }
-  if (body.materialsSupplied !== undefined) {
-    vendor.materialsSupplied = body.materialsSupplied;
-  }
-  vendor.status = body.status ?? vendor.status;
-  const files = req.files || [];
-  if (files.length) {
-    try {
-      const meta = await persistMulterFiles(files, `vendors/${vendor._id}`);
-      vendor.attachments.push(...meta);
-    } catch (e) {
-      await unlinkTmpFiles(req.files);
-      throw e;
-    }
-  }
-  await vendor.save();
-  await logChange({
-    entityType: "vendor",
-    entityId: vendor._id,
-    action: "update",
-    user: req.user,
-    before,
-    after: vendor.toObject()
-  });
-  return res.json(vendor);
-});
+);
 
-router.delete("/:id", requireAuth, requirePermission("vendors", "delete"), async (req, res) => {
-  const r = await deleteVendorById(req.user, req.params.id);
+router.put(
+  "/:id",
+  requireAuth,
+  requireTenantContext,
+  requirePermission("vendors", "edit"),
+  conditionalVendorFiles,
+  async (req, res) => {
+    const vendor = await Vendor.findOne({ _id: req.params.id, companyId: req.companyId });
+    if (!vendor) {
+      await unlinkTmpFiles(req.files);
+      return res.status(404).json({ error: "Vendor not found" });
+    }
+    const body = isMultipartRequest(req) ? normalizeVendorBody(req) : req.body;
+    const before = vendor.toObject();
+    const removedIds = parseRemovedAttachmentIds(req);
+    const toRemove = vendor.attachments.filter((a) => removedIds.includes(a._id.toString()));
+    if (toRemove.length) {
+      await removeAttachmentsFromDisk("vendors", vendor._id.toString(), toRemove);
+      vendor.attachments = vendor.attachments.filter((a) => !removedIds.includes(a._id.toString()));
+    }
+    vendor.name = body.name ?? vendor.name;
+    vendor.address = body.address ?? vendor.address;
+    vendor.contactPerson = body.contactPerson ?? vendor.contactPerson;
+    vendor.gstin = body.gstin ?? vendor.gstin;
+    vendor.vendorType = body.vendorType ?? vendor.vendorType;
+    if (bodyTouchesVendorContact(body)) {
+      const contactCheck = validateVendorContactPayload(contactPayloadForPut(body, vendor));
+      if (!contactCheck.ok) {
+        await unlinkTmpFiles(req.files);
+        return res.status(400).json({ error: contactCheck.message });
+      }
+      vendor.email = contactCheck.normalized.email;
+      vendor.gstin = contactCheck.normalized.gstin;
+      vendor.pan = contactCheck.normalized.pan;
+      vendor.aadhaar = contactCheck.normalized.aadhaar;
+      vendor.contactNumber = contactCheck.normalized.contactNumber;
+    }
+    if (body.materialsSupplied !== undefined) {
+      vendor.materialsSupplied = body.materialsSupplied;
+    }
+    vendor.status = body.status ?? vendor.status;
+    const files = req.files || [];
+    if (files.length) {
+      try {
+        const meta = await persistMulterFiles(files, `vendors/${vendor._id}`);
+        vendor.attachments.push(...meta);
+      } catch (e) {
+        await unlinkTmpFiles(req.files);
+        throw e;
+      }
+    }
+    await vendor.save();
+    await logChange({
+      companyId: req.companyId,
+      entityType: "vendor",
+      entityId: vendor._id,
+      action: "update",
+      user: req.user,
+      before,
+      after: vendor.toObject()
+    });
+    return res.json(vendor);
+  }
+);
+
+router.delete("/:id", requireAuth, requireTenantContext, requirePermission("vendors", "delete"), async (req, res) => {
+  const r = await deleteVendorById(req, req.params.id);
   if (!r.ok) {
     return res.status(r.error === "Vendor not found" ? 404 : 400).json({ error: r.error });
   }

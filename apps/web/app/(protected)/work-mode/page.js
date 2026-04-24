@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "../../../lib/api.js";
+import { apiFetch, getActiveCompanyId } from "../../../lib/api.js";
 import { setWorkMode } from "../../../lib/workMode.js";
 import PageHeader from "../../../components/PageHeader.js";
 import {
@@ -10,7 +10,8 @@ import {
   canAccessTunnelOps,
   canAccessRoomOps,
   canViewModule,
-  isPermissionsAll
+  isPermissionsAll,
+  isPlatformAdminRole
 } from "../../../lib/modulePermissions.js";
 
 export default function WorkModePage() {
@@ -22,42 +23,54 @@ export default function WorkModePage() {
   const [allowPlantOps, setAllowPlantOps] = useState(false);
   const [allowSales, setAllowSales] = useState(false);
   const [allowContributions, setAllowContributions] = useState(false);
+  const [allowAdminModule, setAllowAdminModule] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
     async function load() {
       try {
         const [meData, permData] = await Promise.all([apiFetch("/auth/me"), apiFetch("/auth/permissions")]);
-        const admin = meData.user?.role === "admin";
-        const p = permData.permissions;
-        setIsAdmin(admin);
-        if (admin || isPermissionsAll(p)) {
-          setAllowExpense(true);
-          setAllowRoomOps(true);
-          setAllowTunnelOps(true);
-          setAllowPlantOps(true);
-          setAllowSales(true);
-          setAllowContributions(true);
+        if (meData?.user?.role === "super_admin" && !getActiveCompanyId()) {
+          router.replace("/admin/plant-network");
           return;
         }
-        setAllowExpense(hasExpenseAreaAccess(p));
-        setAllowRoomOps(canAccessRoomOps(p));
-        setAllowTunnelOps(canAccessTunnelOps(p));
-        const canPlantOps = Boolean(
-          p?.plantOperations?.view || p?.plantOperations?.edit || p?.plantOperations?.create
+        const admin = isPlatformAdminRole(meData.user?.role);
+        const p = permData.permissions;
+        const plantK =
+          Array.isArray(permData.plantModuleKeys) && permData.plantModuleKeys.length > 0
+            ? permData.plantModuleKeys
+            : null;
+        setIsAdmin(admin);
+        setAllowAdminModule(!plantK || ["admin", "roles", "users"].some((k) => plantK.includes(k)));
+        if (admin || isPermissionsAll(p)) {
+          setAllowExpense(hasExpenseAreaAccess(p, plantK));
+          setAllowRoomOps(canAccessRoomOps(p, plantK));
+          setAllowTunnelOps(canAccessTunnelOps(p, plantK));
+          setAllowPlantOps(
+            canViewModule(p, "plantOperations", plantK) ||
+              canViewModule(p, "growingRoomOps", plantK) ||
+              Boolean(p?.plantOperations?.edit || p?.growingRoomOps?.edit)
+          );
+          setAllowSales(canViewModule(p, "sales", plantK) || Boolean(p?.sales?.edit));
+          setAllowContributions(canViewModule(p, "contributions", plantK) || Boolean(p?.contributions?.edit));
+          return;
+        }
+        setAllowExpense(hasExpenseAreaAccess(p, plantK));
+        setAllowRoomOps(canAccessRoomOps(p, plantK));
+        setAllowTunnelOps(canAccessTunnelOps(p, plantK));
+        setAllowPlantOps(
+          canViewModule(p, "plantOperations", plantK) ||
+            canViewModule(p, "growingRoomOps", plantK) ||
+            Boolean(p?.plantOperations?.edit || p?.growingRoomOps?.edit)
         );
-        const canGrowingRoomOps = Boolean(
-          p?.growingRoomOps?.view || p?.growingRoomOps?.edit || p?.growingRoomOps?.create
-        );
-        setAllowPlantOps(canPlantOps || canGrowingRoomOps);
-        setAllowSales(canViewModule(p, "sales") || Boolean(p?.sales?.edit));
-        setAllowContributions(canViewModule(p, "contributions") || Boolean(p?.contributions?.edit));
+        setAllowSales(canViewModule(p, "sales", plantK) || Boolean(p?.sales?.edit));
+        setAllowContributions(canViewModule(p, "contributions", plantK) || Boolean(p?.contributions?.edit));
       } catch (err) {
         setError(err.message);
       }
     }
     load();
-  }, []);
+  }, [router]);
 
   function chooseMode(mode) {
     setWorkMode(mode);
@@ -131,13 +144,13 @@ export default function WorkModePage() {
             type="button"
             onClick={() => chooseMode("plant")}
           >
-            <span className="stat-value" style={{ fontSize: 22 }}>Plant operations</span>
+            <span className="stat-value" style={{ fontSize: 22 }}>Plant Operations</span>
             <span className="stat-hint">
               Compost lifecycle, lagoon/bunker/tunnel allocation, raw materials, and growing room crop cycles
             </span>
           </button>
         ) : null}
-        {isAdmin ? (
+        {isAdmin && allowAdminModule ? (
           <button className="card stat-card mode-card mode-card--admin" type="button" onClick={() => chooseMode("admin")}>
             <span className="stat-value" style={{ fontSize: 22 }}>Admin</span>
             <span className="stat-hint">Admin console and related controls</span>

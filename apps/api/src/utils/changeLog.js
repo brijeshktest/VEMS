@@ -1,8 +1,10 @@
 import ChangeLog from "../models/ChangeLog.js";
 
-export async function logChange({ entityType, entityId, action, user, before = null, after = null }) {
+export async function logChange({ entityType, entityId, action, user, before = null, after = null, companyId }) {
   try {
+    if (!companyId) return;
     await ChangeLog.create({
+      companyId,
       entityType,
       entityId: String(entityId),
       action,

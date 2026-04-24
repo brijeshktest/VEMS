@@ -9,12 +9,12 @@ import {
   requireMaterialBulkDelete,
   requireMaterialBulkUpload
 } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { requireFields } from "../utils/validators.js";
 import { logChange } from "../utils/changeLog.js";
 
 const router = express.Router();
 
-/** Dedupe and cast to ObjectId so Mongo $in / Material.vendorIds stay consistent (bulk JSON often sends strings). */
 function normalizeVendorObjectIds(vendorIds) {
   const raw = Array.isArray(vendorIds) ? vendorIds : [];
   const out = [];
@@ -29,51 +29,61 @@ function normalizeVendorObjectIds(vendorIds) {
   return out;
 }
 
-async function syncMaterialVendors(materialId, vendorIds) {
+async function syncMaterialVendors(req, materialId, vendorIds) {
   const mid =
     materialId instanceof mongoose.Types.ObjectId
       ? materialId
       : new mongoose.Types.ObjectId(String(materialId));
   const vids = normalizeVendorObjectIds(vendorIds);
-  await Vendor.updateMany({ materialsSupplied: mid }, { $pull: { materialsSupplied: mid } });
+  await Vendor.updateMany(
+    { companyId: req.companyId, materialsSupplied: mid },
+    { $pull: { materialsSupplied: mid } }
+  );
   if (vids.length) {
-    await Vendor.updateMany({ _id: { $in: vids } }, { $addToSet: { materialsSupplied: mid } });
+    await Vendor.updateMany(
+      { companyId: req.companyId, _id: { $in: vids } },
+      { $addToSet: { materialsSupplied: mid } }
+    );
   }
 }
 
-async function deleteMaterialById(user, idStr) {
-  const material = await Material.findById(idStr);
+async function deleteMaterialById(req, idStr) {
+  const material = await Material.findOne({ _id: idStr, companyId: req.companyId });
   if (!material) {
     return { ok: false, error: "Material not found" };
   }
-  const voucherCount = await Voucher.countDocuments({ "items.materialId": material._id });
+  const voucherCount = await Voucher.countDocuments({
+    companyId: req.companyId,
+    "items.materialId": material._id
+  });
   if (voucherCount > 0) {
     return { ok: false, error: `Cannot delete: used on ${voucherCount} voucher(s)` };
   }
   const before = material.toObject();
   await material.deleteOne();
   await Vendor.updateMany(
-    { materialsSupplied: material._id },
+    { companyId: req.companyId, materialsSupplied: material._id },
     { $pull: { materialsSupplied: material._id } }
   );
   const mid = String(material._id);
   await logChange({
+    companyId: req.companyId,
     entityType: "material",
     entityId: mid,
     action: "delete",
-    user,
+    user: req.user,
     before,
     after: null
   });
   return { ok: true };
 }
 
-router.get("/", requireAuth, requirePermission("materials", "view"), async (req, res) => {
-  const materials = await Material.find().sort({ name: 1 });
+router.get("/", requireAuth, requireTenantContext, requirePermission("materials", "view"), async (req, res) => {
+  const materials = await Material.find({ companyId: req.companyId }).sort({ name: 1 });
   return res.json(materials);
 });
 
-router.post("/bulk-delete", requireAuth, requireMaterialBulkDelete, async (req, res) => {
+router.post("/bulk-delete", requireAuth, requireTenantContext, requireMaterialBulkDelete, async (req, res) => {
   const ids = req.body?.ids;
   if (!Array.isArray(ids) || ids.length === 0) {
     return res.status(400).json({ error: "ids must be a non-empty array" });
@@ -88,43 +98,42 @@ router.post("/bulk-delete", requireAuth, requireMaterialBulkDelete, async (req, 
       results.push({ id: raw, ok: false, error: "Empty id" });
       continue;
     }
-    const r = await deleteMaterialById(req.user, idStr);
+    const r = await deleteMaterialById(req, idStr);
     results.push({ id: idStr, ok: r.ok, error: r.error });
   }
   const deleted = results.filter((x) => x.ok).length;
   return res.json({ results, deleted, failed: results.length - deleted });
 });
 
-/**
- * @returns {Promise<{ ok: true, material: object } | { ok: false, error: string }>}
- */
-async function createMaterialDocument(user, body) {
+async function createMaterialDocument(req, body) {
   const missing = requireFields(body, ["name"]);
   if (missing.length) {
     return { ok: false, error: `Missing fields: ${missing.join(", ")}` };
   }
   const vendorIds = normalizeVendorObjectIds(body.vendorIds);
   if (vendorIds.length) {
-    const vendors = await Vendor.countDocuments({ _id: { $in: vendorIds } });
+    const vendors = await Vendor.countDocuments({ companyId: req.companyId, _id: { $in: vendorIds } });
     if (vendors !== vendorIds.length) {
       return { ok: false, error: "One or more vendors not found" };
     }
   }
   try {
     const material = await Material.create({
+      companyId: req.companyId,
       name: body.name,
       category: body.category,
       unit: body.unit,
       description: body.description,
       vendorIds
     });
-    await syncMaterialVendors(material._id, vendorIds);
+    await syncMaterialVendors(req, material._id, vendorIds);
     const persisted = await Material.findById(material._id).lean();
     await logChange({
+      companyId: req.companyId,
       entityType: "material",
       entityId: material._id,
       action: "create",
-      user,
+      user: req.user,
       before: null,
       after: persisted || material.toObject()
     });
@@ -134,7 +143,7 @@ async function createMaterialDocument(user, body) {
   }
 }
 
-router.post("/bulk", requireAuth, requireMaterialBulkUpload, async (req, res) => {
+router.post("/bulk", requireAuth, requireTenantContext, requireMaterialBulkUpload, async (req, res) => {
   const materials = req.body?.materials;
   if (!Array.isArray(materials)) {
     return res.status(400).json({ error: "Request body must include materials array" });
@@ -147,7 +156,7 @@ router.post("/bulk", requireAuth, requireMaterialBulkUpload, async (req, res) =>
   }
   const results = [];
   for (let i = 0; i < materials.length; i++) {
-    const r = await createMaterialDocument(req.user, materials[i]);
+    const r = await createMaterialDocument(req, materials[i]);
     if (r.ok) {
       results.push({ index: i, ok: true, id: String(r.material._id) });
     } else {
@@ -162,32 +171,34 @@ router.post("/bulk", requireAuth, requireMaterialBulkUpload, async (req, res) =>
   });
 });
 
-router.get("/:id", requireAuth, requirePermission("materials", "view"), async (req, res) => {
-  const material = await Material.findById(req.params.id);
+router.get("/:id", requireAuth, requireTenantContext, requirePermission("materials", "view"), async (req, res) => {
+  const material = await Material.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!material) {
     return res.status(404).json({ error: "Material not found" });
   }
   return res.json(material);
 });
 
-router.post("/", requireAuth, requirePermission("materials", "create"), async (req, res) => {
-  const r = await createMaterialDocument(req.user, req.body);
+router.post("/", requireAuth, requireTenantContext, requirePermission("materials", "create"), async (req, res) => {
+  const r = await createMaterialDocument(req, req.body);
   if (!r.ok) {
     return res.status(400).json({ error: r.error });
   }
   return res.status(201).json(r.material);
 });
 
-router.put("/:id", requireAuth, requirePermission("materials", "edit"), async (req, res) => {
-  const material = await Material.findById(req.params.id);
+router.put("/:id", requireAuth, requireTenantContext, requirePermission("materials", "edit"), async (req, res) => {
+  const material = await Material.findOne({ _id: req.params.id, companyId: req.companyId });
   if (!material) {
     return res.status(404).json({ error: "Material not found" });
   }
   const before = material.toObject();
   const vendorIds =
-    req.body.vendorIds !== undefined ? normalizeVendorObjectIds(req.body.vendorIds) : normalizeVendorObjectIds(material.vendorIds);
+    req.body.vendorIds !== undefined
+      ? normalizeVendorObjectIds(req.body.vendorIds)
+      : normalizeVendorObjectIds(material.vendorIds);
   if (vendorIds.length) {
-    const vendors = await Vendor.countDocuments({ _id: { $in: vendorIds } });
+    const vendors = await Vendor.countDocuments({ companyId: req.companyId, _id: { $in: vendorIds } });
     if (vendors !== vendorIds.length) {
       return res.status(400).json({ error: "One or more vendors not found" });
     }
@@ -198,8 +209,9 @@ router.put("/:id", requireAuth, requirePermission("materials", "edit"), async (r
   material.description = req.body.description ?? material.description;
   material.vendorIds = vendorIds;
   await material.save();
-  await syncMaterialVendors(material._id, vendorIds);
+  await syncMaterialVendors(req, material._id, vendorIds);
   await logChange({
+    companyId: req.companyId,
     entityType: "material",
     entityId: material._id,
     action: "update",
@@ -210,8 +222,8 @@ router.put("/:id", requireAuth, requirePermission("materials", "edit"), async (r
   return res.json(material);
 });
 
-router.delete("/:id", requireAuth, requirePermission("materials", "delete"), async (req, res) => {
-  const r = await deleteMaterialById(req.user, req.params.id);
+router.delete("/:id", requireAuth, requireTenantContext, requirePermission("materials", "delete"), async (req, res) => {
+  const r = await deleteMaterialById(req, req.params.id);
   if (!r.ok) {
     return res.status(r.error === "Material not found" ? 404 : 400).json({ error: r.error });
   }

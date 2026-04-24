@@ -63,12 +63,16 @@ export default function MaterialsPage() {
       setIsAdmin(admin);
       const p = permData.permissions;
       const all = p === "all";
-      if (!admin && !all && !canViewModule(p, "materials")) {
+      const pk =
+        Array.isArray(permData.plantModuleKeys) && permData.plantModuleKeys.length > 0
+          ? permData.plantModuleKeys
+          : null;
+      if (!canViewModule(p, "materials", pk)) {
         router.replace("/dashboard");
         return;
       }
-      setCanCreateMaterial(admin || all || canCreateInModule(p, "materials"));
-      setCanEditMaterial(admin || all || canEditInModule(p, "materials"));
+      setCanCreateMaterial(admin || all || canCreateInModule(p, "materials", pk));
+      setCanEditMaterial(admin || all || canEditInModule(p, "materials", pk));
       setCanBulkDelete(admin || all || Boolean(p?.materials?.bulkDelete));
       setCanBulkUpload(admin || all || Boolean(p?.materials?.bulkUpload));
       const [materialData, vendorData] = await Promise.all([apiFetch("/materials"), apiFetch("/vendors")]);

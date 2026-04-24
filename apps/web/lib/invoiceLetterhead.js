@@ -33,9 +33,11 @@ export function buildLetterheadForPdf(apiResponse) {
   }
   const hasLogo = Boolean(apiResponse.hasLogo);
   const key = apiResponse.logoCacheKey;
+  const cid = apiResponse.companyId != null ? String(apiResponse.companyId).trim() : "";
+  const qp = cid ? `companyId=${encodeURIComponent(cid)}&` : "";
   const logoUrl =
     hasLogo && (typeof key === "number" || typeof key === "string")
-      ? `${API_URL}/settings/logo?t=${key}`
+      ? `${API_URL}/settings/logo?${qp}t=${key}`
       : null;
   return normalizeInvoiceLetterhead({
     legalName: apiResponse.legalName,

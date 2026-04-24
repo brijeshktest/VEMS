@@ -6,6 +6,7 @@ export const SALE_PAYMENT_MODES = ["Cash", "UPI", "Bank transfer", "Cheque", "Ca
 
 const SaleSchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     productCategory: {
       type: String,
       enum: SALE_PRODUCT_CATEGORIES,

@@ -23,6 +23,9 @@ export async function expensePaidTotalsByContributionMember(query = {}) {
     paymentStatus: "Paid",
     paymentMadeBy: { $exists: true, $nin: [null, ""] }
   };
+  if (query.companyId != null) {
+    match.companyId = query.companyId;
+  }
   const agg = await Voucher.aggregate([
     { $match: match },
     {

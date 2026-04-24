@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { apiFetch, getToken, setToken } from "../../../lib/api.js";
+import { apiFetch, getToken, setToken, API_URL, setActiveCompanyId } from "../../../lib/api.js";
 import { setWorkMode } from "../../../lib/workMode.js";
 
 /* Hero: home1.png; logo: shroom.png — shroomagritech.com/images */
@@ -54,6 +54,20 @@ function IconEye({ className }) {
 const LS_REMEMBER = "vems_remember_login";
 const LS_SAVED_EMAIL = "vems_login_saved_email";
 
+/** Super Admin + default plant: same session as header pill (impersonate first plant admin). */
+async function superAdminEnterDefaultPlantImpersonation(companyId) {
+  const imp = await apiFetch("/auth/impersonate/plant-primary-admin", {
+    method: "POST",
+    body: JSON.stringify({ companyId: String(companyId) })
+  });
+  if (imp?.token) setToken(imp.token);
+  setActiveCompanyId(null);
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event("vems-user-updated"));
+    window.dispatchEvent(new Event("vems-branding-updated"));
+  }
+}
+
 function IconEyeOff({ className }) {
   return (
     <svg className={className} width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden>
@@ -77,11 +91,49 @@ export default function LoginPage() {
   const [seedAvailable, setSeedAvailable] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [rememberPassword, setRememberPassword] = useState(false);
+  /** Resolved login card logo: platform provider, then first plant, then static default. */
+  const [cardLogoSrc, setCardLogoSrc] = useState("https://shroomagritech.com/images/shroom.png");
 
   useEffect(() => {
-    if (getToken()) {
-      router.replace("/work-mode");
-    }
+    const token = getToken();
+    if (!token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const me = await apiFetch("/auth/me");
+        if (cancelled) return;
+        if (me?.user?.role === "super_admin") {
+          const def =
+            me?.defaultPlantCompanyId != null && String(me.defaultPlantCompanyId).trim() !== ""
+              ? String(me.defaultPlantCompanyId)
+              : null;
+          if (def) {
+            try {
+              await superAdminEnterDefaultPlantImpersonation(def);
+            } catch {
+              setActiveCompanyId(def);
+            }
+            router.replace("/work-mode");
+          } else {
+            setActiveCompanyId(null);
+            router.replace("/admin/plant-network");
+          }
+        } else {
+          router.replace("/work-mode");
+        }
+      } catch {
+        if (!cancelled) {
+          try {
+            setToken(null);
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [router]);
 
   useEffect(() => {
@@ -97,6 +149,34 @@ export default function LoginPage() {
     } catch {
       /* ignore */
     }
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const pr = await fetch(`${API_URL}/settings/platform/branding`);
+        const pd = await pr.json().catch(() => ({}));
+        if (!cancelled && pd?.hasLogo && typeof pd.updatedAt === "number") {
+          setCardLogoSrc(`${API_URL}/settings/platform/logo?t=${pd.updatedAt}`);
+          return;
+        }
+        const r = await fetch(`${API_URL}/settings/branding`);
+        const d = await r.json().catch(() => ({}));
+        if (!cancelled && d?.hasLogo && typeof d.updatedAt === "number") {
+          setCardLogoSrc(`${API_URL}/settings/logo?t=${d.updatedAt}`);
+          return;
+        }
+        if (!cancelled) {
+          setCardLogoSrc("https://shroomagritech.com/images/shroom.png");
+        }
+      } catch {
+        if (!cancelled) setCardLogoSrc("https://shroomagritech.com/images/shroom.png");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -137,7 +217,26 @@ export default function LoginPage() {
         /* ignore */
       }
       setWorkMode("");
-      router.push("/work-mode");
+      if (data.role === "super_admin") {
+        const def =
+          data?.defaultPlantCompanyId != null && String(data.defaultPlantCompanyId).trim() !== ""
+            ? String(data.defaultPlantCompanyId)
+            : null;
+        if (def) {
+          try {
+            await superAdminEnterDefaultPlantImpersonation(def);
+          } catch (err) {
+            setActiveCompanyId(def);
+            setError(err instanceof Error ? err.message : "Could not enter plant as administrator.");
+          }
+          router.replace("/work-mode");
+        } else {
+          setActiveCompanyId(null);
+          router.replace("/admin/plant-network");
+        }
+      } else {
+        router.replace("/work-mode");
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -176,7 +275,7 @@ export default function LoginPage() {
         <div className="login-page__hero-scrim" aria-hidden />
         <div className="login-page__hero-grain" aria-hidden />
         <div className="login-page__hero-inner">
-          <span className="login-page__hero-eyebrow">Shroom Agritech LLP</span>
+          <span className="login-page__hero-eyebrow">Operations workspace</span>
           <h2 id="login-hero-title" className="login-page__hero-title login-type-display">
             Run operations safely—every day
           </h2>
@@ -204,13 +303,11 @@ export default function LoginPage() {
       <div className="login-page__panel">
         <div className="login-page__card login-form-surface">
           <div className="login-page__card-brand">
-            <Image
-              src="https://shroomagritech.com/images/shroom.png"
-              alt="Shroom Agritech"
+            <img
+              src={cardLogoSrc}
+              alt=""
               width={280}
               height={94}
-              sizes="(max-width: 1023px) 56vw, 200px"
-              priority
               className="login-page__card-logo"
             />
           </div>

@@ -1,6 +1,7 @@
 import express from "express";
 import Voucher from "../models/Voucher.js";
 import { requireAuth, requirePermission } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 import { matchExcludePaymentMadeFromVelocity, PAYMENT_MADE_FROM_CHOICES } from "../utils/paymentMadeFrom.js";
 
 const router = express.Router();
@@ -21,8 +22,12 @@ function expenseReportMatch(start, end) {
   return { ...dateMatch, ...matchExcludePaymentMadeFromVelocity() };
 }
 
-router.get("/vendor-expenses", requireAuth, requirePermission("reports", "view"), async (req, res) => {
-  const dateMatch = buildDateMatch(req.query.start, req.query.end);
+function tenantVoucherMatch(req, extra = {}) {
+  return { companyId: req.companyId, ...extra };
+}
+
+router.get("/vendor-expenses", requireAuth, requireTenantContext, requirePermission("reports", "view"), async (req, res) => {
+  const dateMatch = tenantVoucherMatch(req, buildDateMatch(req.query.start, req.query.end));
   const results = await Voucher.aggregate([
     { $match: dateMatch },
     {
@@ -47,8 +52,8 @@ router.get("/vendor-expenses", requireAuth, requirePermission("reports", "view")
   return res.json(results);
 });
 
-router.get("/material-summary", requireAuth, requirePermission("reports", "view"), async (req, res) => {
-  const dateMatch = buildDateMatch(req.query.start, req.query.end);
+router.get("/material-summary", requireAuth, requireTenantContext, requirePermission("reports", "view"), async (req, res) => {
+  const dateMatch = tenantVoucherMatch(req, buildDateMatch(req.query.start, req.query.end));
   // Allocate each voucher's paidAmount across lines by
   // share of subTotal so material totals align with vendor / expense rollups.
   const results = await Voucher.aggregate([
@@ -90,8 +95,8 @@ router.get("/material-summary", requireAuth, requirePermission("reports", "view"
   return res.json(results);
 });
 
-router.get("/expenses", requireAuth, requirePermission("reports", "view"), async (req, res) => {
-  const dateMatch = expenseReportMatch(req.query.start, req.query.end);
+router.get("/expenses", requireAuth, requireTenantContext, requirePermission("reports", "view"), async (req, res) => {
+  const dateMatch = tenantVoucherMatch(req, expenseReportMatch(req.query.start, req.query.end));
   const [summary] = await Voucher.aggregate([
     { $match: dateMatch },
     {
@@ -108,8 +113,8 @@ router.get("/expenses", requireAuth, requirePermission("reports", "view"), async
 });
 
 /** Paid vouchers aggregated by fixed "Payment made from" persons (+ other). */
-router.get("/payment-made-from-aggregate", requireAuth, requirePermission("reports", "view"), async (req, res) => {
-  const dateMatch = buildDateMatch(req.query.start, req.query.end);
+router.get("/payment-made-from-aggregate", requireAuth, requireTenantContext, requirePermission("reports", "view"), async (req, res) => {
+  const dateMatch = tenantVoucherMatch(req, buildDateMatch(req.query.start, req.query.end));
   const match = {
     ...dateMatch,
     paymentStatus: "Paid",
@@ -156,8 +161,8 @@ router.get("/payment-made-from-aggregate", requireAuth, requirePermission("repor
   return res.json(rows);
 });
 
-router.get("/tax-payments", requireAuth, requirePermission("reports", "view"), async (req, res) => {
-  const dateMatch = expenseReportMatch(req.query.start, req.query.end);
+router.get("/tax-payments", requireAuth, requireTenantContext, requirePermission("reports", "view"), async (req, res) => {
+  const dateMatch = tenantVoucherMatch(req, expenseReportMatch(req.query.start, req.query.end));
   const taxSummary = await Voucher.aggregate([
     { $match: dateMatch },
     {

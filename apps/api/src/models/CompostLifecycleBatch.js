@@ -77,7 +77,8 @@ const StageMovementSchema = new mongoose.Schema(
 
 const CompostLifecycleBatchSchema = new mongoose.Schema(
   {
-    batchName: { type: String, required: true, unique: true, trim: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    batchName: { type: String, required: true, trim: true },
     startDate: { type: Date, required: true },
     quantity: { type: Number },
     notes: { type: String, trim: true, default: "" },
@@ -96,5 +97,7 @@ const CompostLifecycleBatchSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+CompostLifecycleBatchSchema.index({ companyId: 1, batchName: 1 }, { unique: true });
 
 export default mongoose.model("CompostLifecycleBatch", CompostLifecycleBatchSchema);

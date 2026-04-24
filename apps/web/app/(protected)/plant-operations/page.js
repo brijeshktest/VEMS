@@ -464,7 +464,7 @@ export default function PlantOperationsPage() {
       {dialog}
       <PageHeader
         eyebrow="Operations"
-        title="Plant operations"
+        title="Compost Units"
         description="Compost batch lifecycle: wetting through pasteurisation with a planned calendar for reference, manual stage advances on each batch, resource allocation per movement, and raw material tracking from the expense catalogue."
       >
         <Link href="/dashboard" className="btn btn-ghost">

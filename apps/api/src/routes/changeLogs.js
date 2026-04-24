@@ -1,16 +1,17 @@
 import express from "express";
 import ChangeLog from "../models/ChangeLog.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { requireTenantContext } from "../middleware/companyScope.js";
 
 const router = express.Router();
 
-router.get("/", requireAuth, requireAdmin, async (req, res) => {
+router.get("/", requireAuth, requireTenantContext, requireAdmin, async (req, res) => {
   const entityType = String(req.query.entityType || "").trim();
   const entityId = String(req.query.entityId || "").trim();
   const limitRaw = Number(req.query.limit || 100);
   const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(500, Math.floor(limitRaw))) : 100;
 
-  const filter = {};
+  const filter = { companyId: req.companyId };
   if (entityType) {
     filter.entityType = entityType;
   }

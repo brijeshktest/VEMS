@@ -2,15 +2,17 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { API_URL, apiFetch, getToken, setToken } from "../lib/api.js";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { API_URL, apiFetch, getToken, setToken, getActiveCompanyId, setActiveCompanyId } from "../lib/api.js";
 import { getWorkMode, setWorkMode } from "../lib/workMode.js";
 import {
   canAccessTunnelOps,
   canViewModule,
-  isPermissionsAll
+  isPermissionsAll,
+  isPlatformAdminRole
 } from "../lib/modulePermissions.js";
 
+/** Fallback when no plant or platform logo is configured (first plant historically Shroom Agritech). */
 const DEFAULT_BRAND_LOGO = "https://shroomagritech.com/images/shroom.png";
 
 function linkClass(pathname, href) {
@@ -69,12 +71,14 @@ export default function Nav() {
   const userMenuRef = useRef(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [workMode, setWorkModeState] = useState("");
-  const [logoUpdatedAt, setLogoUpdatedAt] = useState(null);
+  /** Full URL for header logo, or null to use default image. */
+  const [brandLogoUrl, setBrandLogoUrl] = useState(null);
   const [density, setDensity] = useState("comfortable");
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [userProfile, setUserProfile] = useState(null);
-  /** @type {[{ isAdmin: boolean, permissions: unknown } | null, function]} */
+  const [defaultPlantImpersonateBusy, setDefaultPlantImpersonateBusy] = useState(false);
+  /** @type {[{ isAdmin: boolean, isSuperAdmin?: boolean, permissions: unknown } | null, function]} */
   const [permPayload, setPermPayload] = useState(null);
 
   useEffect(() => {
@@ -89,18 +93,53 @@ export default function Nav() {
     let cancelled = false;
     async function loadBranding() {
       try {
-        const res = await fetch(`${API_URL}/settings/branding`);
+        if (!isAuthenticated) {
+          const pr = await fetch(`${API_URL}/settings/platform/branding`);
+          const pd = await pr.json().catch(() => ({}));
+          if (!cancelled && pd?.hasLogo && typeof pd.updatedAt === "number") {
+            setBrandLogoUrl(`${API_URL}/settings/platform/logo?t=${pd.updatedAt}`);
+            return;
+          }
+          const r = await fetch(`${API_URL}/settings/branding`);
+          const d = await r.json().catch(() => ({}));
+          if (!cancelled && d?.hasLogo && typeof d.updatedAt === "number") {
+            setBrandLogoUrl(`${API_URL}/settings/logo?t=${d.updatedAt}`);
+            return;
+          }
+          if (!cancelled) setBrandLogoUrl(null);
+          return;
+        }
+
+        const role = userProfile?.role;
+        const userCo = userProfile?.companyId ? String(userProfile.companyId) : "";
+        const active = getActiveCompanyId() ? String(getActiveCompanyId()) : "";
+
+        if (role === "super_admin" && !active) {
+          const pr = await fetch(`${API_URL}/settings/platform/branding`);
+          const pd = await pr.json().catch(() => ({}));
+          if (!cancelled && pd?.hasLogo && typeof pd.updatedAt === "number") {
+            setBrandLogoUrl(`${API_URL}/settings/platform/logo?t=${pd.updatedAt}`);
+          } else if (!cancelled) {
+            setBrandLogoUrl(null);
+          }
+          return;
+        }
+
+        const plantCid = active || userCo;
+        const q = plantCid ? `?companyId=${encodeURIComponent(plantCid)}` : "";
+        const res = await fetch(`${API_URL}/settings/branding${q}`);
         const data = await res.json().catch(() => ({}));
-        if (!cancelled && data?.hasLogo) {
-          setLogoUpdatedAt(typeof data.updatedAt === "number" ? data.updatedAt : Date.now());
+        if (!cancelled && data?.hasLogo && typeof data.updatedAt === "number") {
+          const qp = plantCid ? `?companyId=${encodeURIComponent(plantCid)}&` : "?";
+          setBrandLogoUrl(`${API_URL}/settings/logo${qp}t=${data.updatedAt}`);
         } else if (!cancelled) {
-          setLogoUpdatedAt(null);
+          setBrandLogoUrl(null);
         }
       } catch {
-        if (!cancelled) setLogoUpdatedAt(null);
+        if (!cancelled) setBrandLogoUrl(null);
       }
     }
-    loadBranding();
+    void loadBranding();
     const onBranding = () => void loadBranding();
     if (typeof window !== "undefined") {
       window.addEventListener("vems-branding-updated", onBranding);
@@ -111,7 +150,7 @@ export default function Nav() {
         window.removeEventListener("vems-branding-updated", onBranding);
       }
     };
-  }, []);
+  }, [isAuthenticated, userProfile?.role, userProfile?.companyId, pathname]);
 
   useEffect(() => {
     const token = getToken();
@@ -127,13 +166,38 @@ export default function Nav() {
     try {
       const data = await apiFetch("/auth/me");
       if (data?.user) {
+        const u = data.user;
+        const role = typeof u.role === "string" ? u.role : "";
+        const defIdRaw = data.defaultPlantCompanyId;
+        const defId =
+          role === "super_admin" && defIdRaw != null && String(defIdRaw).trim() !== "" ? String(defIdRaw) : null;
+        const companies = Array.isArray(data.companies) ? data.companies : [];
+        const defCo = defId ? companies.find((c) => String(c._id ?? c.id) === defId) : null;
+        const defName =
+          defCo && typeof defCo.name === "string" && defCo.name.trim() ? defCo.name.trim() : defId ? "Default plant" : null;
+        const defActive = defCo ? defCo.isActive !== false : false;
         setUserProfile({
-          name: typeof data.user.name === "string" ? data.user.name : "",
-          email: typeof data.user.email === "string" ? data.user.email : ""
+          name: typeof u.name === "string" ? u.name : "",
+          email: typeof u.email === "string" ? u.email : "",
+          role,
+          companyId: u.companyId != null ? String(u.companyId) : "",
+          impersonation: data.impersonation && typeof data.impersonation === "object" ? data.impersonation : null,
+          defaultPlantCompanyId: defId,
+          defaultPlantName: defName,
+          defaultPlantIsActive: defId ? defActive : null
         });
       }
     } catch {
-      setUserProfile({ name: "", email: "" });
+      setUserProfile({
+        name: "",
+        email: "",
+        role: "",
+        companyId: "",
+        impersonation: null,
+        defaultPlantCompanyId: null,
+        defaultPlantName: null,
+        defaultPlantIsActive: null
+      });
     }
   }, [isAuthenticated]);
 
@@ -142,7 +206,13 @@ export default function Nav() {
   }, [loadUserProfile]);
 
   useEffect(() => {
-    if (!isAuthenticated || pathname === "/work-mode" || pathname === "/login") {
+    if (
+      !isAuthenticated ||
+      pathname === "/work-mode" ||
+      pathname === "/login" ||
+      pathname === "/admin/plant-network" ||
+      pathname === "/admin/platform"
+    ) {
       setPermPayload(null);
       return undefined;
     }
@@ -151,13 +221,17 @@ export default function Nav() {
       try {
         const [me, perm] = await Promise.all([apiFetch("/auth/me"), apiFetch("/auth/permissions")]);
         if (!cancelled) {
+          const pk =
+            Array.isArray(perm?.plantModuleKeys) && perm.plantModuleKeys.length > 0 ? perm.plantModuleKeys : null;
           setPermPayload({
-            isAdmin: me?.user?.role === "admin",
-            permissions: perm?.permissions
+            isAdmin: isPlatformAdminRole(me?.user?.role),
+            isSuperAdmin: me?.user?.role === "super_admin",
+            permissions: perm?.permissions,
+            plantModuleKeys: pk
           });
         }
       } catch {
-        if (!cancelled) setPermPayload({ isAdmin: false, permissions: {} });
+        if (!cancelled) setPermPayload({ isAdmin: false, isSuperAdmin: false, permissions: {} });
       }
     })();
     return () => {
@@ -205,6 +279,8 @@ export default function Nav() {
   useEffect(() => {
     if (!isAuthenticated) return;
     if (pathname === "/work-mode" || pathname === "/login") return;
+    /** Admin shell, dashboard, and account profile resolve work mode themselves (same as AuthGate). */
+    if (pathname?.startsWith("/admin") || pathname === "/dashboard" || pathname === "/profile") return;
     const mode = getWorkMode();
     if (!mode) {
       router.replace("/work-mode");
@@ -213,8 +289,27 @@ export default function Nav() {
     setWorkModeState(mode);
   }, [isAuthenticated, pathname, router]);
 
+  async function stopImpersonation() {
+    try {
+      const data = await apiFetch("/auth/impersonate/stop", { method: "POST" });
+      setToken(data.token);
+      setActiveCompanyId(null);
+      setWorkMode("");
+      setWorkModeState("");
+      setUserMenuOpen(false);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vems-user-updated"));
+        window.dispatchEvent(new Event("vems-branding-updated"));
+      }
+      router.replace("/admin/plant-network");
+    } catch {
+      /* ignore */
+    }
+  }
+
   function handleLogout() {
     setToken(null);
+    setActiveCompanyId(null);
     setWorkMode("");
     setIsAuthenticated(false);
     setMobileNavOpen(false);
@@ -233,18 +328,72 @@ export default function Nav() {
 
   const closeMobileNav = () => setMobileNavOpen(false);
 
+  const activeCo = getActiveCompanyId() ? String(getActiveCompanyId()) : "";
+  const defPlantCo = userProfile?.defaultPlantCompanyId ? String(userProfile.defaultPlantCompanyId) : "";
+  const showSuperadminPlatformBtn = Boolean(
+    userProfile?.role === "super_admin" &&
+      activeCo &&
+      defPlantCo &&
+      activeCo === defPlantCo &&
+      !userProfile?.impersonation &&
+      pathname !== "/admin/plant-network" &&
+      pathname !== "/admin/platform"
+  );
+
+  function goToSuperadminPlatform() {
+    setActiveCompanyId(null);
+    setWorkMode("");
+    setWorkModeState("");
+    closeMobileNav();
+    setUserMenuOpen(false);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event("vems-branding-updated"));
+    }
+    router.push("/admin/plant-network");
+  }
+
+  async function openDefaultPlantWorkspace() {
+    const id = userProfile?.defaultPlantCompanyId;
+    if (!id || defaultPlantImpersonateBusy) return;
+    setDefaultPlantImpersonateBusy(true);
+    try {
+      const data = await apiFetch("/auth/impersonate/plant-primary-admin", {
+        method: "POST",
+        body: JSON.stringify({ companyId: String(id) })
+      });
+      if (data?.token) setToken(data.token);
+      setActiveCompanyId(null);
+      setWorkMode("");
+      setWorkModeState("");
+      setUserMenuOpen(false);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("vems-branding-updated"));
+        window.dispatchEvent(new Event("vems-user-updated"));
+      }
+      router.replace("/work-mode");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not open plant as administrator.";
+      if (typeof window !== "undefined") window.alert(msg);
+    } finally {
+      setDefaultPlantImpersonateBusy(false);
+    }
+  }
+
   const links = useMemo(() => {
+    if (pathname === "/admin/plant-network" || pathname === "/admin/platform") return [];
     if (pathname === "/work-mode") return [];
     const p = permPayload?.permissions;
+    const pk = permPayload?.plantModuleKeys;
     if (p == null && isAuthenticated) {
       return [{ href: "/dashboard", label: "Dashboard" }];
     }
-    const canSalesNav = isPermissionsAll(p) || canViewModule(p, "sales") || Boolean(p?.sales?.edit);
+    const canSalesNav =
+      isPermissionsAll(p) || canViewModule(p, "sales", pk) || Boolean(p?.sales?.edit);
     const canContrNav =
-      isPermissionsAll(p) || canViewModule(p, "contributions") || Boolean(p?.contributions?.edit);
+      isPermissionsAll(p) || canViewModule(p, "contributions", pk) || Boolean(p?.contributions?.edit);
     const canGrowingNav =
       isPermissionsAll(p) ||
-      canViewModule(p, "growingRoomOps") ||
+      canViewModule(p, "growingRoomOps", pk) ||
       Boolean(p?.growingRoomOps?.edit || p?.growingRoomOps?.create);
 
     if (workMode === "room") {
@@ -254,7 +403,7 @@ export default function Nav() {
       return [{ href: "/dashboard", label: "Dashboard" }, { href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" }];
     }
     if (workMode === "plant") {
-      const out = [{ href: "/dashboard", label: "Dashboard" }, { href: "/plant-operations", label: "Plant operations" }];
+      const out = [{ href: "/dashboard", label: "Dashboard" }, { href: "/plant-operations", label: "Compost Units" }];
       if (canGrowingNav) {
         out.push({ href: "/plant-operations/growing-rooms", label: "Growing rooms" });
       }
@@ -277,16 +426,19 @@ export default function Nav() {
         out.push({ href: "/contributions", label: "Contributions" });
         out.push({ href: "/contributions/cash-withdrawals", label: "Cash withdrawals" });
       }
-      if (canAccessTunnelOps(p)) out.push({ href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" });
+      if (canAccessTunnelOps(p, pk)) out.push({ href: "/tunnel-bunker-ops", label: "Tunnel & Bunker Ops" });
       const canPlantNav =
         isPermissionsAll(p) ||
-        canViewModule(p, "plantOperations") ||
+        canViewModule(p, "plantOperations", pk) ||
         Boolean(p?.plantOperations?.edit || p?.plantOperations?.create);
       if (canPlantNav || canGrowingNav) {
-        out.push({ href: "/plant-operations", label: "Plant operations" });
+        out.push({ href: "/plant-operations", label: "Compost Units" });
       }
       if (canGrowingNav) {
         out.push({ href: "/plant-operations/growing-rooms", label: "Growing rooms" });
+      }
+      if (permPayload?.isSuperAdmin) {
+        out.push({ href: "/admin/plant-network", label: "Plant network" });
       }
       out.push(
         { href: "/admin", label: "Admin" },
@@ -297,12 +449,12 @@ export default function Nav() {
       return out;
     }
     const out = [{ href: "/dashboard", label: "Dashboard" }];
-    if (canViewModule(p, "vendors")) out.push({ href: "/vendors", label: "Vendors" });
-    if (canViewModule(p, "materials")) out.push({ href: "/materials", label: "Materials" });
-    if (canViewModule(p, "vouchers")) out.push({ href: "/vouchers", label: "Vouchers" });
-    if (canViewModule(p, "reports")) out.push({ href: "/reports", label: "Reports" });
+    if (canViewModule(p, "vendors", pk)) out.push({ href: "/vendors", label: "Vendors" });
+    if (canViewModule(p, "materials", pk)) out.push({ href: "/materials", label: "Materials" });
+    if (canViewModule(p, "vouchers", pk)) out.push({ href: "/vouchers", label: "Vouchers" });
+    if (canViewModule(p, "reports", pk)) out.push({ href: "/reports", label: "Reports" });
     return out;
-  }, [pathname, workMode, permPayload, isAuthenticated]);
+  }, [pathname, workMode, permPayload, isAuthenticated, permPayload?.isSuperAdmin]);
 
   const menuDrawerClass = isAuthenticated
     ? "nav-links nav-links--mobile-drawer" + (mobileNavOpen ? " nav-links--mobile-drawer--open" : "")
@@ -319,14 +471,43 @@ export default function Nav() {
           <div className="nav-user-dropdown-email">{userProfile?.email || "—"}</div>
         </div>
         <div className="nav-user-dropdown-sep" aria-hidden />
-        <Link
-          href="/profile"
+        <button
+          type="button"
           role="menuitem"
           className="nav-user-dropdown-item"
-          onClick={() => setUserMenuOpen(false)}
+          onClick={() => {
+            router.push("/profile");
+            setUserMenuOpen(false);
+          }}
         >
           Profile
-        </Link>
+        </button>
+        {userProfile?.role === "super_admin" && !userProfile?.impersonation && pathname === "/admin/platform" ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="nav-user-dropdown-item"
+            onClick={() => {
+              router.push("/admin/plant-network");
+              setUserMenuOpen(false);
+            }}
+          >
+            Plant network
+          </button>
+        ) : null}
+        {userProfile?.role === "super_admin" && !userProfile?.impersonation ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="nav-user-dropdown-item"
+            onClick={() => {
+              router.push("/admin/platform");
+              setUserMenuOpen(false);
+            }}
+          >
+            Setting
+          </button>
+        ) : null}
         <button
           type="button"
           role="menuitem"
@@ -338,6 +519,19 @@ export default function Nav() {
         >
           {density === "compact" ? "Comfortable" : "Compact"}
         </button>
+        {userProfile?.impersonation ? (
+          <button
+            type="button"
+            role="menuitem"
+            className="nav-user-dropdown-item"
+            onClick={() => {
+              setUserMenuOpen(false);
+              void stopImpersonation();
+            }}
+          >
+            Exit impersonation
+          </button>
+        ) : null}
         <button
           type="button"
           role="menuitem"
@@ -353,20 +547,27 @@ export default function Nav() {
     );
   }
 
+  const brandHref =
+    isAuthenticated && userProfile?.role === "super_admin" && !userProfile?.impersonation
+      ? "/admin/plant-network"
+      : isAuthenticated
+        ? "/dashboard"
+        : "/";
+
   const brandLink = (
     <Link
-      href={isAuthenticated ? "/dashboard" : "/"}
+      href={brandHref}
       className={
         "nav-cell-brand brand min-w-0 shrink-0 " +
         (isAuthenticated ? "brand--with-logo brand--logo-only" : "brand--with-logo")
       }
     >
       <span className="brand-logo-slot">
-        {logoUpdatedAt ? (
+        {brandLogoUrl ? (
           <img
             className="brand-logo-img"
-            src={`${API_URL}/settings/logo?t=${logoUpdatedAt}`}
-            alt="Organization logo"
+            src={brandLogoUrl}
+            alt="Application logo"
             width={180}
             height={48}
           />
@@ -374,7 +575,7 @@ export default function Nav() {
           <img
             className="brand-logo-img"
             src={DEFAULT_BRAND_LOGO}
-            alt="Shroom Agritech"
+            alt=""
             width={200}
             height={67}
           />
@@ -382,8 +583,8 @@ export default function Nav() {
       </span>
       {!isAuthenticated ? (
         <span className="brand-text">
-          <span className="brand-title">Shroom Agritech LLP</span>
-          <span className="brand-tagline">Vendor &amp; expense management</span>
+          <span className="brand-title">Mushroom operations platform</span>
+          <span className="brand-tagline">Vendor, production &amp; expense workspace</span>
         </span>
       ) : null}
     </Link>
@@ -419,8 +620,30 @@ export default function Nav() {
     </Link>
   );
 
+  const imp = userProfile?.impersonation;
+
   return (
-    <nav className="nav nav--full-bleed w-full min-w-0 max-w-full pt-[env(safe-area-inset-top,0px)]">
+    <Fragment>
+      {imp ? (
+        <div
+          className="w-full border-b border-amber-300 bg-amber-50 px-4 py-2 text-center text-sm text-amber-950"
+          role="status"
+        >
+          <span className="font-semibold">Impersonating</span>{" "}
+          <span className="tabular-nums">{userProfile?.email}</span>
+          {imp.impersonatorName || imp.impersonatorEmail ? (
+            <span className="text-amber-900/90">
+              {" "}
+              (signed in as {String(imp.impersonatorName || "").trim() || imp.impersonatorEmail})
+            </span>
+          ) : null}
+          . All actions apply to this user&apos;s plant only.{" "}
+          <button type="button" className="ml-2 font-semibold text-amber-950 underline" onClick={() => void stopImpersonation()}>
+            Exit impersonation
+          </button>
+        </div>
+      ) : null}
+      <nav className="nav nav--full-bleed w-full min-w-0 max-w-full pt-[env(safe-area-inset-top,0px)]">
       {isAuthenticated ? (
         <div
           className={
@@ -443,6 +666,29 @@ export default function Nav() {
                 }}
               >
                 {mobileNavOpen ? <IconClose /> : <IconMenu />}
+              </button>
+            ) : null}
+            {(pathname === "/admin/plant-network" || pathname === "/admin/platform") &&
+            userProfile?.role === "super_admin" &&
+            !userProfile?.impersonation &&
+            userProfile?.defaultPlantCompanyId && userProfile?.defaultPlantIsActive ? (
+              <button
+                type="button"
+                className="nav-default-plant-pill"
+                disabled={defaultPlantImpersonateBusy}
+                onClick={() => void openDefaultPlantWorkspace()}
+                title="Sign in as this plant’s first administrator (same account as login default). No user picker."
+              >
+                {defaultPlantImpersonateBusy ? "Opening…" : userProfile.defaultPlantName || "Plant"}
+              </button>
+            ) : null}
+            {showSuperadminPlatformBtn ? (
+              <button
+                type="button"
+                className="btn btn-secondary btn-nav-superadmin"
+                onClick={() => goToSuperadminPlatform()}
+              >
+                Superadmin
               </button>
             ) : null}
             <div className="nav-user" ref={userMenuRef}>
@@ -477,5 +723,6 @@ export default function Nav() {
         </div>
       )}
     </nav>
+    </Fragment>
   );
 }

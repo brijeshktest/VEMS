@@ -376,7 +376,7 @@ export default function CompostBatchDetailPage() {
     [batch?.rawMaterialLines]
   );
 
-  /** Same rules as plant operations list: reminder when the next stage movement should be recorded. */
+  /** Same rules as Compost Units list: reminder when the next stage movement should be recorded. */
   const stageAdvanceReminder = useMemo(() => compostStageAdvanceReminder(batch), [batch]);
 
   if (!batch) {
@@ -393,7 +393,7 @@ export default function CompostBatchDetailPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Plant operations"
+        eyebrow="Compost Units"
         title={batch.batchName}
         description={`Started ${formatShortDate(batch.startDate)} · Recorded workflow: ${compostStageDisplayLabel(batch.operationalStageKey)}. Use the workflow and timeline panel plus stage movements below to plan and advance.`}
       >
@@ -569,7 +569,7 @@ export default function CompostBatchDetailPage() {
                     Latest daily parameters
                   </h4>
                   <p className="text-muted" style={{ marginBottom: 0, fontSize: 13 }}>
-                    No daily parameter logs yet. Add logs from <strong>Plant operations</strong> using the log button on the
+                    No daily parameter logs yet. Add logs from <strong>Compost Units</strong> using the log button on the
                     batch row.
                   </p>
                 </>

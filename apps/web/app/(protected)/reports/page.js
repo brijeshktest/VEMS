@@ -24,13 +24,13 @@ export default function ReportsPage() {
     setLoading(true);
     try {
       if (!reportsAccessChecked.current) {
-        const [me, permData] = await Promise.all([
-          apiFetch("/auth/me"),
-          apiFetch("/auth/permissions").catch(() => ({ permissions: {} }))
-        ]);
-        const admin = me?.user?.role === "admin";
+        const permData = await apiFetch("/auth/permissions").catch(() => ({ permissions: {} }));
         const p = permData.permissions;
-        if (!admin && p !== "all" && !canViewModule(p, "reports")) {
+        const pk =
+          Array.isArray(permData.plantModuleKeys) && permData.plantModuleKeys.length > 0
+            ? permData.plantModuleKeys
+            : null;
+        if (!canViewModule(p, "reports", pk)) {
           router.replace("/dashboard");
           return;
         }

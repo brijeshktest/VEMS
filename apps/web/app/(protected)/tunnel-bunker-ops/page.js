@@ -40,13 +40,19 @@ export default function TunnelBunkerOpsPage() {
   const [message, setMessage] = useState("");
   const [tunnelSelections, setTunnelSelections] = useState({});
   const [perm, setPerm] = useState(null);
+  const [plantModuleKeys, setPlantModuleKeys] = useState(null);
 
   async function load() {
     try {
       const permData = await apiFetch("/auth/permissions").catch(() => ({ permissions: {} }));
       const p = permData.permissions;
+      const pk =
+        Array.isArray(permData.plantModuleKeys) && permData.plantModuleKeys.length > 0
+          ? permData.plantModuleKeys
+          : null;
       setPerm(p);
-      if (!canAccessTunnelOps(p)) {
+      setPlantModuleKeys(pk);
+      if (!canAccessTunnelOps(p, pk)) {
         router.replace("/dashboard");
         return;
       }
@@ -135,7 +141,7 @@ export default function TunnelBunkerOpsPage() {
         </div>
       ) : null}
 
-      {perm != null && canCreateTunnelBatch(perm) ? (
+      {perm != null && canCreateTunnelBatch(perm, plantModuleKeys) ? (
       <div className="card">
         <h3 className="panel-title">Start new compost batch</h3>
         <form className="grid grid-3" onSubmit={createBatch}>
@@ -168,7 +174,7 @@ export default function TunnelBunkerOpsPage() {
           <button className="btn" type="submit">
             Start batch
           </button>
-          {canEditTunnelBatch(perm) ? (
+          {canEditTunnelBatch(perm, plantModuleKeys) ? (
             <button className="btn btn-secondary" type="button" onClick={() => void autoAdvanceDue()}>
               Run auto-advance now
             </button>
@@ -232,7 +238,7 @@ export default function TunnelBunkerOpsPage() {
                     </td>
                     <td>{batch.nextStageLabel}</td>
                     <td>
-                      {perm != null && canEditTunnelBatch(perm) ? (
+                      {perm != null && canEditTunnelBatch(perm, plantModuleKeys) ? (
                         <button className="btn btn-secondary" type="button" onClick={() => moveNext(batch)}>
                           Move next
                         </button>

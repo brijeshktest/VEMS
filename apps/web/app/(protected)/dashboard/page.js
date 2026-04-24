@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { apiFetch } from "../../../lib/api.js";
+import { apiFetch, getActiveCompanyId } from "../../../lib/api.js";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import PageHeader from "../../../components/PageHeader.js";
@@ -13,7 +13,8 @@ import {
   canCreateInModule,
   canAccessTunnelOps,
   canAccessRoomOps,
-  canEditTunnelBatch
+  canEditTunnelBatch,
+  isPermissionsAll
 } from "../../../lib/modulePermissions.js";
 import { formatIndianRupee } from "../../../lib/formatIndianRupee.js";
 import { isPaymentMadeFromVelocity } from "../../../lib/paymentMadeFrom.js";
@@ -1149,10 +1150,31 @@ export default function DashboardPage() {
     createVouchers: false
   });
   const [canTunnelEditOps, setCanTunnelEditOps] = useState(false);
+  const [tenantContextKey, setTenantContextKey] = useState(0);
+
+  useEffect(() => {
+    function onTenantContext() {
+      setTenantContextKey((k) => k + 1);
+    }
+    if (typeof window !== "undefined") {
+      window.addEventListener("vems-branding-updated", onTenantContext);
+    }
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("vems-branding-updated", onTenantContext);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     async function load() {
       try {
+        const me = await apiFetch("/auth/me");
+        const activeCo = getActiveCompanyId();
+        if (me?.user?.role === "super_admin" && !activeCo && !me?.impersonation) {
+          router.replace("/admin/plant-network");
+          return;
+        }
         const selectedMode = getWorkMode();
         if (!selectedMode) {
           router.replace("/work-mode");
@@ -1161,41 +1183,44 @@ export default function DashboardPage() {
         setWorkMode(selectedMode);
         const permissionsData = await apiFetch("/auth/permissions");
         const p = permissionsData.permissions;
+        const pk =
+          Array.isArray(permissionsData.plantModuleKeys) && permissionsData.plantModuleKeys.length > 0
+            ? permissionsData.plantModuleKeys
+            : null;
         const admin = p === "all";
         setIsAdmin(admin);
+        const administrationAllowed =
+          !pk || ["admin", "roles", "users"].some((k) => pk.includes(k));
         const canPlant =
-          p === "all" ||
-          p?.plantOperations?.view ||
-          p?.plantOperations?.edit ||
-          p?.plantOperations?.create;
+          canViewModule(p, "plantOperations", pk) ||
+          (!isPermissionsAll(p) &&
+            Boolean(p?.plantOperations?.view || p?.plantOperations?.edit || p?.plantOperations?.create));
         const canGrowing =
-          p === "all" ||
-          p?.growingRoomOps?.view ||
-          p?.growingRoomOps?.edit ||
-          p?.growingRoomOps?.create;
+          canViewModule(p, "growingRoomOps", pk) ||
+          (!isPermissionsAll(p) &&
+            Boolean(p?.growingRoomOps?.view || p?.growingRoomOps?.edit || p?.growingRoomOps?.create));
         setCanPlantOps(canPlant);
         setCanGrowingRoomOps(canGrowing);
 
         const ep = {
-          viewReports: admin || canViewModule(p, "reports"),
-          viewVouchers: admin || canViewModule(p, "vouchers"),
-          viewVendors: admin || canViewModule(p, "vendors"),
-          viewMaterials: admin || canViewModule(p, "materials"),
-          createVendors: admin || canCreateInModule(p, "vendors"),
-          createMaterials: admin || canCreateInModule(p, "materials"),
-          createVouchers: admin || canCreateInModule(p, "vouchers")
+          viewReports: canViewModule(p, "reports", pk),
+          viewVouchers: canViewModule(p, "vouchers", pk),
+          viewVendors: canViewModule(p, "vendors", pk),
+          viewMaterials: canViewModule(p, "materials", pk),
+          createVendors: canCreateInModule(p, "vendors", pk),
+          createMaterials: canCreateInModule(p, "materials", pk),
+          createVouchers: canCreateInModule(p, "vouchers", pk)
         };
         setExpensePerm(ep);
-        setCanTunnelEditOps(canEditTunnelBatch(p));
+        setCanTunnelEditOps(canEditTunnelBatch(p, pk));
 
-        if (selectedMode === "admin" && !admin) {
+        if (selectedMode === "admin" && (!admin || !administrationAllowed)) {
           router.replace("/work-mode");
           return;
         }
 
         if (selectedMode === "sales") {
-          const canSales =
-            p === "all" || p?.sales?.view || p?.sales?.edit;
+          const canSales = canViewModule(p, "sales", pk);
           if (!canSales) {
             router.replace("/work-mode");
             return;
@@ -1203,8 +1228,7 @@ export default function DashboardPage() {
         }
 
         if (selectedMode === "contributions") {
-          const canContr =
-            p === "all" || p?.contributions?.view || p?.contributions?.edit;
+          const canContr = canViewModule(p, "contributions", pk);
           if (!canContr) {
             router.replace("/work-mode");
             return;
@@ -1218,12 +1242,12 @@ export default function DashboardPage() {
           }
         }
 
-        if (selectedMode === "expense" && !hasExpenseAreaAccess(p)) {
+        if (selectedMode === "expense" && !hasExpenseAreaAccess(p, pk)) {
           router.replace("/work-mode");
           return;
         }
 
-        if (selectedMode === "tunnel" && !canAccessTunnelOps(p)) {
+        if (selectedMode === "tunnel" && !canAccessTunnelOps(p, pk)) {
           router.replace("/work-mode");
           return;
         }
@@ -1266,7 +1290,7 @@ export default function DashboardPage() {
           setExpenseMaterialsCatalog([]);
         }
         if (selectedMode === "room") {
-          if (!canAccessRoomOps(p)) {
+          if (!canAccessRoomOps(p, pk)) {
             router.replace("/work-mode");
             return;
           }
@@ -1286,8 +1310,7 @@ export default function DashboardPage() {
         }
 
         if (selectedMode === "sales" || selectedMode === "admin") {
-          const canSales =
-            p === "all" || p?.sales?.view || p?.sales?.edit;
+          const canSales = canViewModule(p, "sales", pk);
           if (canSales) {
             try {
               const sm = await apiFetch("/sales/summary");
@@ -1301,8 +1324,7 @@ export default function DashboardPage() {
         }
 
         if (selectedMode === "contributions" || selectedMode === "admin") {
-          const canContr =
-            p === "all" || p?.contributions?.view || p?.contributions?.edit;
+          const canContr = canViewModule(p, "contributions", pk);
           if (canContr) {
             try {
               const cm = await apiFetch("/contributions/summary");
@@ -1341,7 +1363,7 @@ export default function DashboardPage() {
       }
     }
     load();
-  }, [router]);
+  }, [router, tenantContextKey]);
 
   useEffect(() => {
     const show =
@@ -1451,7 +1473,7 @@ export default function DashboardPage() {
             : workMode === "tunnel"
               ? "Tunnel and bunker compost movement alerts and quick actions."
               : workMode === "plant"
-                ? "Compost batch lifecycle status, progress, and quick access to plant operations."
+                ? "Compost batch lifecycle status, progress, and quick access to Compost Units."
                 : workMode === "admin"
               ? "Administrative overview with operations and financial visibility."
               : workMode === "sales"
@@ -1507,7 +1529,7 @@ export default function DashboardPage() {
               Compost lifecycle batches
             </h3>
             <Link href="/plant-operations" className="btn btn-secondary">
-              Open plant operations
+              Open Compost Units
             </Link>
           </div>
           <p className="page-lead">
@@ -1529,7 +1551,7 @@ export default function DashboardPage() {
                 {compostBatches.length === 0 ? (
                   <tr>
                     <td colSpan={5}>
-                      <span className="cell-empty">No batches yet. Create one in Plant operations.</span>
+                      <span className="cell-empty">No batches yet. Create one in Compost Units.</span>
                     </td>
                   </tr>
                 ) : (

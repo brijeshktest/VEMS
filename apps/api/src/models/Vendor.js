@@ -3,6 +3,7 @@ import AttachmentSchema from "./Attachment.js";
 
 const VendorSchema = new mongoose.Schema(
   {
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     name: { type: String, required: true, trim: true },
     address: { type: String, trim: true },
     contactPerson: { type: String, trim: true },

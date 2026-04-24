@@ -32,8 +32,17 @@ export default function ProfilePage() {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [role, setRole] = useState("");
+  /** When JWT is a plant user but Super Admin is in `superAdminSelf`, form edits the real super account. */
+  const [editingSuperWhileImpersonating, setEditingSuperWhileImpersonating] = useState(false);
+  const [plantSessionEmail, setPlantSessionEmail] = useState("");
 
   const initials = useMemo(() => profileInitials(name, email), [name, email]);
+
+  const backHref =
+    editingSuperWhileImpersonating || role !== "super_admin" ? "/dashboard" : "/admin/plant-network";
+  const backLabel =
+    editingSuperWhileImpersonating || role !== "super_admin" ? "← Dashboard" : "← Plant network";
 
   useEffect(() => {
     let cancelled = false;
@@ -41,12 +50,30 @@ export default function ProfilePage() {
       setError("");
       try {
         const data = await apiFetch("/auth/me");
-        if (!cancelled && data?.user) {
+        if (cancelled || !data?.user) return;
+        const sa =
+          data.superAdminSelf && typeof data.superAdminSelf === "object"
+            ? {
+                name: typeof data.superAdminSelf.name === "string" ? data.superAdminSelf.name : "",
+                email: typeof data.superAdminSelf.email === "string" ? data.superAdminSelf.email : ""
+              }
+            : null;
+        if (sa && (sa.name || sa.email)) {
+          setEditingSuperWhileImpersonating(true);
+          setName(sa.name);
+          setInitialName(sa.name);
+          setEmail(sa.email);
+          setPlantSessionEmail(typeof data.user.email === "string" ? data.user.email : "");
+          setRole(typeof data.user.role === "string" ? data.user.role : "");
+        } else {
+          setEditingSuperWhileImpersonating(false);
+          setPlantSessionEmail("");
           const n = typeof data.user.name === "string" ? data.user.name : "";
           const e = typeof data.user.email === "string" ? data.user.email : "";
           setName(n);
           setInitialName(n);
           setEmail(e);
+          setRole(typeof data.user.role === "string" ? data.user.role : "");
         }
       } catch (err) {
         if (!cancelled) setError(err.message || "Could not load profile");
@@ -96,7 +123,8 @@ export default function ProfilePage() {
 
     setSaving(true);
     try {
-      const data = await apiFetch("/auth/profile", {
+      const path = editingSuperWhileImpersonating ? "/auth/profile/super" : "/auth/profile";
+      const data = await apiFetch(path, {
         method: "PATCH",
         body: JSON.stringify(body)
       });
@@ -120,11 +148,17 @@ export default function ProfilePage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="Account"
-        title="User profile"
-        description="Update the name shown in the app and change your sign-in password."
+        title={editingSuperWhileImpersonating ? "Super Administrator profile" : "User profile"}
+        description={
+          editingSuperWhileImpersonating
+            ? `Your real Super Admin sign-in identity. Current password is your Super Admin password. You are still working in the plant as ${plantSessionEmail || "the current user"}.`
+            : role === "super_admin"
+              ? "Platform super administrator — update your display name and password the same way as other users."
+              : "Update the name shown in the app and change your sign-in password."
+        }
       >
-        <Link href="/dashboard" className="btn btn-ghost">
-          ← Dashboard
+        <Link href={backHref} className="btn btn-ghost">
+          {backLabel}
         </Link>
       </PageHeader>
 
@@ -152,9 +186,16 @@ export default function ProfilePage() {
                   <div className="profile-page-avatar" aria-hidden="true">
                     {initials}
                   </div>
-                  <p className="profile-page-hero__label">Signed in as</p>
+                  <p className="profile-page-hero__label">
+                    {editingSuperWhileImpersonating ? "Super Administrator" : "Signed in as"}
+                  </p>
                   <p className="profile-page-hero__name">{(name || "").trim() || "Your account"}</p>
                   {email ? <p className="profile-page-hero__email">{email}</p> : null}
+                  {editingSuperWhileImpersonating && plantSessionEmail ? (
+                    <p className="profile-field-hint" style={{ marginTop: 10, maxWidth: "36rem" }}>
+                      Plant session: <strong>{plantSessionEmail}</strong> (unchanged here).
+                    </p>
+                  ) : null}
                 </div>
 
                 <section className="profile-page-section" aria-labelledby="profile-account-heading">
