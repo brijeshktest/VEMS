@@ -115,6 +115,154 @@ async function dedupeSpawnRunMonitoringTasks(companyId, cycleId) {
   }
 }
 
+const RUFFLING_CASE_DAILY_TASK_KEY = "ruffling_case_daily";
+const RUFFLING_CASE_DAILY_TITLE =
+  "Ruffling and case run — humidity, light watering (optional), ruffling & thumping (once on each day)";
+const RUFFLING_CASE_DAILY_TITLE_PREV =
+  "Ruffling and case run — humidity, light watering (optional), ruffling & thumping";
+
+/**
+ * One row per scheduled day for ruffling_case_run:
+ * - merges legacy four taskKeys into `ruffling_case_daily`
+ * - collapses duplicate `ruffling_case_daily` rows (e.g. template merged twice into instances)
+ */
+async function dedupeRufflingCaseRunDailyTasks(companyId, cycleId) {
+  const cycle = await GrowingRoomCycle.findOne({ _id: cycleId, companyId }).select("cycleStartedAt").lean();
+  if (!cycle) return;
+
+  const all = await GrowingRoomCycleTask.find({ companyId, cycleId, stageKey: "ruffling_case_run" }).lean();
+  if (all.length === 0) return;
+
+  const byDay = new Map();
+  for (const t of all) {
+    const d = Number(t.scheduledDay) || 0;
+    if (d <= 0) continue;
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push(t);
+  }
+
+  for (const [day, rows] of byDay) {
+    if (rows.length <= 1) continue;
+
+    const statuses = rows.map((t) => t.status);
+    let newStatus = "pending";
+    if (statuses.some((s) => s === "completed")) newStatus = "completed";
+    else if (statuses.length > 0 && statuses.every((s) => s === "skipped")) newStatus = "skipped";
+    else if (statuses.some((s) => s === "in_progress")) newStatus = "in_progress";
+
+    const completedAt =
+      newStatus === "completed"
+        ? rows.reduce((best, t) => {
+            const c = t.completedAt ? new Date(t.completedAt).getTime() : 0;
+            return Math.max(best, c);
+          }, 0)
+        : 0;
+
+    await GrowingRoomCycleTask.deleteMany({ _id: { $in: rows.map((r) => r._id) }, companyId });
+    const sample = rows[0];
+    await GrowingRoomCycleTask.create({
+      companyId,
+      cycleId: sample.cycleId,
+      growingRoomId: sample.growingRoomId,
+      compostLifecycleBatchId: sample.compostLifecycleBatchId,
+      stageKey: "ruffling_case_run",
+      taskKey: RUFFLING_CASE_DAILY_TASK_KEY,
+      title: RUFFLING_CASE_DAILY_TITLE,
+      scheduledDay: day,
+      dueDate: dueDateForScheduledDay(cycle.cycleStartedAt, day),
+      recurrenceKind: "daily",
+      assignedRoleHint: sample.assignedRoleHint || "",
+      isOptional: false,
+      isCritical: true,
+      status: newStatus,
+      completedAt: newStatus === "completed" && completedAt > 0 ? new Date(completedAt) : null
+    });
+  }
+
+  await GrowingRoomCycleTask.updateMany(
+    {
+      companyId,
+      cycleId,
+      stageKey: "ruffling_case_run",
+      taskKey: RUFFLING_CASE_DAILY_TASK_KEY,
+      title: RUFFLING_CASE_DAILY_TITLE_PREV
+    },
+    { $set: { title: RUFFLING_CASE_DAILY_TITLE } }
+  );
+}
+
+const PINHEADS_FRUITING_DAILY_TASK_KEY = "pinheads_fruiting_daily";
+const PINHEADS_FRUITING_DAILY_TITLE =
+  "Pinheads & fruiting — controlled watering, fresh air adjustment & pin observation (once each day)";
+
+/**
+ * One row per scheduled day for pinheads_fruiting: legacy three dailies → `pinheads_fruiting_daily`;
+ * also collapses duplicate bundled rows.
+ */
+async function dedupePinheadsFruitingDailyTasks(companyId, cycleId) {
+  const cycle = await GrowingRoomCycle.findOne({ _id: cycleId, companyId }).select("cycleStartedAt").lean();
+  if (!cycle) return;
+
+  const all = await GrowingRoomCycleTask.find({ companyId, cycleId, stageKey: "pinheads_fruiting" }).lean();
+  if (all.length === 0) return;
+
+  const byDay = new Map();
+  for (const t of all) {
+    const d = Number(t.scheduledDay) || 0;
+    if (d <= 0) continue;
+    if (!byDay.has(d)) byDay.set(d, []);
+    byDay.get(d).push(t);
+  }
+
+  for (const [day, rows] of byDay) {
+    if (rows.length <= 1) continue;
+
+    const statuses = rows.map((t) => t.status);
+    let newStatus = "pending";
+    if (statuses.some((s) => s === "completed")) newStatus = "completed";
+    else if (statuses.length > 0 && statuses.every((s) => s === "skipped")) newStatus = "skipped";
+    else if (statuses.some((s) => s === "in_progress")) newStatus = "in_progress";
+
+    const completedAt =
+      newStatus === "completed"
+        ? rows.reduce((best, t) => {
+            const c = t.completedAt ? new Date(t.completedAt).getTime() : 0;
+            return Math.max(best, c);
+          }, 0)
+        : 0;
+
+    await GrowingRoomCycleTask.deleteMany({ _id: { $in: rows.map((r) => r._id) }, companyId });
+    const sample = rows[0];
+    await GrowingRoomCycleTask.create({
+      companyId,
+      cycleId: sample.cycleId,
+      growingRoomId: sample.growingRoomId,
+      compostLifecycleBatchId: sample.compostLifecycleBatchId,
+      stageKey: "pinheads_fruiting",
+      taskKey: PINHEADS_FRUITING_DAILY_TASK_KEY,
+      title: PINHEADS_FRUITING_DAILY_TITLE,
+      scheduledDay: day,
+      dueDate: dueDateForScheduledDay(cycle.cycleStartedAt, day),
+      recurrenceKind: "daily",
+      assignedRoleHint: sample.assignedRoleHint || "",
+      isOptional: false,
+      isCritical: true,
+      status: newStatus,
+      completedAt: newStatus === "completed" && completedAt > 0 ? new Date(completedAt) : null
+    });
+  }
+}
+
+/** Flush stages: separate Harvesting rows are redundant with yield entry (log yield = harvest done). */
+async function removeFlushHarvestingTasks(companyId, cycleId) {
+  await GrowingRoomCycleTask.deleteMany({
+    companyId,
+    cycleId,
+    stageKey: { $in: ["first_flush", "second_flush", "third_flush"] },
+    taskKey: "harvesting"
+  });
+}
+
 const LEGACY_CLEANING_TASK_KEYS = ["room_emptying", "cleaning_disinfection"];
 
 /**
@@ -385,6 +533,10 @@ async function toCycleView(cycle, { includeTaskStats = false } = {}) {
   let overdueCount = 0;
   let taskLean = [];
   if (c.status === "active" || c.status === "cleaning" || includeTaskStats) {
+    await dedupeSpawnRunMonitoringTasks(tenantCo, c._id);
+    await dedupeRufflingCaseRunDailyTasks(tenantCo, c._id);
+    await dedupePinheadsFruitingDailyTasks(tenantCo, c._id);
+    await removeFlushHarvestingTasks(tenantCo, c._id);
     taskLean = await GrowingRoomCycleTask.find({ companyId: tenantCo, cycleId: c._id })
       .select("status dueDate scheduledDay stageKey")
       .lean();
@@ -925,6 +1077,9 @@ router.get("/cycles/:id/tasks", requireAuth, requireTenantContext, requirePermis
   }
   await migrateLegacyTaskStageKeysForCycle(req.companyId, cycle._id);
   await dedupeSpawnRunMonitoringTasks(req.companyId, cycle._id);
+  await dedupeRufflingCaseRunDailyTasks(req.companyId, cycle._id);
+  await dedupePinheadsFruitingDailyTasks(req.companyId, cycle._id);
+  await removeFlushHarvestingTasks(req.companyId, cycle._id);
   await migrateLegacyCleaningTasksForCycle(req.companyId, cycle._id);
   const tasks = await GrowingRoomCycleTask.find({ companyId: req.companyId, cycleId: cycle._id })
     .populate("assignedUserId", "name email")
@@ -978,7 +1133,7 @@ router.patch("/tasks/:id", requireAuth, requireTenantContext, requirePermission(
       const taskSk = normalizeGrowStageKey(task.stageKey);
       if (taskSk !== op) {
         return res.status(400).json({
-          error: `Work only on tasks for the current operational stage (${boundsMap[op]?.label || op}). When every task and activity there is done or skipped, use Advance grow stage.`
+          error: `Work only on tasks for the current operational stage (${boundsMap[op]?.label || op}). When every task there is done or skipped, use Advance grow stage.`
         });
       }
     }
@@ -1048,7 +1203,7 @@ router.get("/grow-stage-param-targets", requireAuth, requireTenantContext, requi
   });
 });
 
-/** POST /growing-room/cycles/:id/advance-grow-stage — after all tasks + stage activities in current stage are done */
+/** POST /growing-room/cycles/:id/advance-grow-stage — after all tasks in the current operational stage are done or skipped */
 router.post("/cycles/:id/advance-grow-stage", requireAuth, requireTenantContext, requirePermission("growingRoomOps", "edit"), async (req, res) => {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ error: "Invalid cycle id" });

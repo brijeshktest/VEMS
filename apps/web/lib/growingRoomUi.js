@@ -165,9 +165,9 @@ export const STAGE_FOCUS_LINE = {
   casing: "Apply casing soil and manage watering per bag schedule; maintain casing depth and moisture.",
   ruffling_case_run: "Ruffling, thumping, and light watering until pinheads appear.",
   pinheads_fruiting: "Manage air and water for pinset; check CO₂ and humidity twice daily.",
-  first_flush: "Harvest, log yield, and manage watering through the first pick wave.",
-  second_flush: "Second harvest wave — yield entry, watering, light ruffling.",
-  third_flush: "Final flush — yield and quality check; high disease risk.",
+  first_flush: "Log yield as you pick (yield entry covers harvest for the day), then post-harvest watering through the first wave.",
+  second_flush: "Second harvest wave — log yield as you pick, then watering and light ruffling.",
+  third_flush: "Final flush — log yield and check quality; high disease risk.",
   end_cycle: "Close out the crop calendar before cleaning.",
   cleaning: "Final stage: clean and disinfect the room, then explicitly release it so a new cycle can start."
 };
@@ -184,30 +184,26 @@ export const STAGE_EXPECTED_TASK_TYPES = {
     { title: "Casing Hold Monitoring", note: "daily" }
   ],
   ruffling_case_run: [
-    { title: "Humidity Maintenance", note: "daily" },
-    { title: "Light Watering", note: "daily · optional" },
-    { title: "Ruffling", note: "daily" },
-    { title: "Thumping", note: "daily" }
+    {
+      title: "Ruffling and case run (daily)",
+      note: "humidity, optional light watering, ruffling & thumping — once on each cycle day, one row per day"
+    }
   ],
   pinheads_fruiting: [
-    { title: "Controlled Watering", note: "daily" },
-    { title: "Fresh Air Adjustment", note: "daily" },
-    { title: "Pin Observation", note: "daily" }
+    {
+      title: "Pinheads & fruiting (daily bundle)",
+      note: "controlled watering, fresh air adjustment & pin observation — once on each cycle day, one row per day"
+    }
   ],
   first_flush: [
-    { title: "Harvesting", note: "daily" },
-    { title: "Yield Entry", note: "daily" },
+    { title: "Yield Entry", note: "daily · logging yield covers harvest for that day" },
     { title: "Post-harvest Watering", note: "daily" }
   ],
   second_flush: [
-    { title: "Harvesting", note: "daily" },
-    { title: "Yield Entry", note: "daily" },
+    { title: "Yield Entry", note: "daily · logging yield covers harvest for that day" },
     { title: "Watering", note: "daily" }
   ],
-  third_flush: [
-    { title: "Harvesting", note: "daily" },
-    { title: "Yield Entry", note: "daily" }
-  ],
+  third_flush: [{ title: "Yield Entry", note: "daily · logging yield covers harvest for that day" }],
   end_cycle: [],
   cleaning: [
     { title: "Cleaning", note: "once · empty, clean, disinfect" },

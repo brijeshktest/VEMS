@@ -3224,6 +3224,11 @@ tr.table-row--warn td {
   background: rgba(26, 28, 26, 0.48);
 }
 
+/* Growing room cycle — advance error must sit above layout stacking (portal to body) */
+.gr-advance-err-backdrop {
+  z-index: 14000;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;
@@ -4150,6 +4155,110 @@ tr.table-row--warn td {
 
 .grow-stage-advance-card--risky {
   border-left: 4px solid #ca8a04;
+}
+
+/* Growing room cycle — single workbench: guide + tasks + advance */
+.grow-stage-workbench-card--risky {
+  border-left: 4px solid #ca8a04;
+}
+
+.grow-stage-workbench-advance {
+  margin-top: 20px;
+  padding: 16px 16px 2px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--surface-muted) 0%, var(--surface) 100%);
+}
+
+.grow-stage-workbench-advance__title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+
+.grow-stage-workbench-advance__lead {
+  margin: 0 0 14px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-soft, var(--ink));
+}
+
+.grow-stage-workbench-advance__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+
+.grow-stage-workbench-advance__next {
+  margin: 0;
+  flex: 1 1 200px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.grow-stage-workbench-advance__hint {
+  margin: 12px 0 0;
+  font-size: 13px;
+}
+
+.grow-playbook-card__lead-em {
+  color: #15803d;
+  font-weight: 700;
+}
+
+.grow-stage-details__title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.grow-stage-details__done-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  background: #16a34a;
+  line-height: 1;
+}
+
+.grow-stage-details__done-tag {
+  margin-left: 2px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #166534;
+  background: rgba(22, 163, 74, 0.16);
+}
+
+.grow-stage-details--done {
+  border-color: rgba(22, 163, 74, 0.45);
+  background: linear-gradient(180deg, rgba(22, 163, 74, 0.07) 0%, var(--surface-elevated) 100%);
+}
+
+.grow-stage-details--done .grow-stage-details__summary {
+  background: rgba(22, 163, 74, 0.06);
+}
+
+.grow-stage-details--future .grow-stage-details__title {
+  color: var(--muted);
+}
+
+.grow-stage-details--current {
+  border-color: rgba(109, 40, 217, 0.42);
+  box-shadow: 0 0 0 1px rgba(109, 40, 217, 0.1);
 }
 
 .grow-howto-card__lead,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiFetch } from "../../../../../../lib/api.js";
@@ -55,9 +56,8 @@ function groupTasksByScheduledDay(tasks) {
   }
   return [...m.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([scheduledDay, taskList]) => ({
-      scheduledDay,
-      tasks: [...taskList].sort((a, b) => {
+    .map(([scheduledDay, taskList]) => {
+      const sorted = [...taskList].sort((a, b) => {
         const da = a.dueDate ? new Date(a.dueDate).getTime() : 0;
         const db = b.dueDate ? new Date(b.dueDate).getTime() : 0;
         if (da !== db) return da - db;
@@ -66,8 +66,17 @@ function groupTasksByScheduledDay(tasks) {
           if (co !== 0) return co;
         }
         return String(a.title || "").localeCompare(String(b.title || ""));
-      })
-    }));
+      });
+      const seenTaskKey = new Set();
+      const deduped = [];
+      for (const t of sorted) {
+        const tk = String(t.taskKey || "").trim();
+        if (tk && seenTaskKey.has(tk)) continue;
+        if (tk) seenTaskKey.add(tk);
+        deduped.push(t);
+      }
+      return { scheduledDay, tasks: deduped };
+    });
 }
 
 function taskStatusLabel(t) {
@@ -86,6 +95,13 @@ function targetRangeSummary(spec) {
     return `${lo}–${hi}${unit}`;
   };
   return `Targets for ${spec.label}: temperature ${fmt(spec.temperatureC, "°C")}, RH ${fmt(spec.humidityPercent, "%")}, CO₂ ${fmt(spec.co2Ppm, " ppm")}.`;
+}
+
+function apiErrorMessage(err) {
+  if (err == null) return "Could not advance grow stage.";
+  if (typeof err === "string") return err;
+  if (typeof err.message === "string" && err.message.trim()) return err.message.trim();
+  return "Could not advance grow stage.";
 }
 
 function timelineClassForStep(cycleDay, currentStageKey, entryKey, thirdFlushEnabled) {
@@ -120,6 +136,7 @@ export default function GrowingRoomCycleDetailPage() {
   const [emergencyReason, setEmergencyReason] = useState("");
   const [paramLogAlerts, setParamLogAlerts] = useState([]);
   const [advancingStage, setAdvancingStage] = useState(false);
+  const [advanceStageError, setAdvanceStageError] = useState("");
   const [growParamTargets, setGrowParamTargets] = useState(null);
 
   const canEdit = permissions === "all" || Boolean(permissions?.growingRoomOps?.edit);
@@ -160,6 +177,15 @@ export default function GrowingRoomCycleDetailPage() {
     if (!cycleId) return;
     loadAll().catch((err) => setError(err.message));
   }, [cycleId, loadAll]);
+
+  useEffect(() => {
+    if (!advanceStageError) return;
+    function onKeyDown(e) {
+      if (e.key === "Escape") setAdvanceStageError("");
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [advanceStageError]);
 
   const thirdFlush = Boolean(cycle?.thirdFlushEnabled);
   const calendarBounds = useMemo(() => buildGrowingStageBounds(thirdFlush), [thirdFlush]);
@@ -258,36 +284,8 @@ export default function GrowingRoomCycleDetailPage() {
       "Log temperature, humidity, and CO₂ as often as needed for this stage; out-of-range values show a warning after save.",
       overdueCount > 0 ? `${overdueCount} task(s) are overdue — complete them as soon as possible.` : null
     ];
-    const checklist = Array.isArray(cycle.stageActivityChecklist) ? cycle.stageActivityChecklist : [];
-    if (checklist.length > 0) {
-      const openAct = checklist.filter((a) => !a.completed).length;
-      lines.push(
-        openAct > 0
-          ? `${openAct} manual activit${openAct === 1 ? "y" : "ies"} still open for this stage — mark them in Stage activities (below).`
-          : "All manual activities for this stage are complete — advance is allowed once tasks in this stage are done too."
-      );
-    }
     return lines.filter(Boolean);
   }, [cycle, rawStage, tasks, cleaningTasks, overdueCount, calendarBounds]);
-
-  async function toggleStageActivity(activityKey, completed) {
-    if (!cycleId || !cycle) return;
-    setError("");
-    try {
-      await apiFetch(`/growing-room/cycles/${cycleId}/stage-activities`, {
-        method: "POST",
-        body: JSON.stringify({
-          stageKey: cycle.recordedGrowStageKey,
-          activityKey,
-          completed
-        })
-      });
-      setMessage(completed ? "Activity marked complete." : "Activity cleared.");
-      await loadAll();
-    } catch (err) {
-      setError(err.message);
-    }
-  }
 
   async function patchTask(taskId, body) {
     setError("");
@@ -418,6 +416,7 @@ export default function GrowingRoomCycleDetailPage() {
   async function advanceGrowStage() {
     if (!cycleId) return;
     setError("");
+    setAdvanceStageError("");
     setAdvancingStage(true);
     try {
       await apiFetch(`/growing-room/cycles/${cycleId}/advance-grow-stage`, { method: "POST", body: JSON.stringify({}) });
@@ -425,7 +424,8 @@ export default function GrowingRoomCycleDetailPage() {
       setMessage("Grow stage advanced.");
       await loadAll();
     } catch (err) {
-      setError(err.message);
+      setError("");
+      setAdvanceStageError(apiErrorMessage(err));
     } finally {
       setAdvancingStage(false);
     }
@@ -470,6 +470,30 @@ export default function GrowingRoomCycleDetailPage() {
         : "—";
 
   const recs = Array.isArray(cycle?.recommendations) ? cycle.recommendations : [];
+
+  /** Current operational stage first so guide + tasks + advance read as one vertical flow. */
+  const guideStageKeysOrdered = useMemo(() => {
+    const keys = growStagesForGuide(thirdFlush);
+    const cur = recordedGrowKey;
+    if (!cur || !keys.includes(cur)) return keys;
+    return [cur, ...keys.filter((k) => k !== cur)];
+  }, [thirdFlush, recordedGrowKey]);
+
+  const growGuideOrder = useMemo(() => growStagesForGuide(thirdFlush), [thirdFlush]);
+
+  const stageWorkbenchRowState = useCallback(
+    (stageKey) => {
+      const sk = normalizeGrowStageKey(stageKey);
+      const rk = normalizeGrowStageKey(String(recordedGrowKey || "spawn_run").trim());
+      const i = growGuideOrder.indexOf(sk);
+      const bi = growGuideOrder.indexOf(rk);
+      if (bi < 0 || i < 0) return sk === rk ? "current" : "future";
+      if (i < bi) return "done";
+      if (i === bi) return "current";
+      return "future";
+    },
+    [growGuideOrder, recordedGrowKey]
+  );
 
   const paramSpecForLog = useMemo(() => {
     if (!cycle) return null;
@@ -517,8 +541,8 @@ export default function GrowingRoomCycleDetailPage() {
             <h3 className="panel-title">Crop lifecycle</h3>
             <p className="page-lead grow-lifecycle-card__lead">
               Planned stages from spawn through flush{thirdFlush ? "es" : " (third flush off)"}. The active step follows cycle
-              day — open <strong>How to proceed</strong> and <strong>Stage guide &amp; your tasks</strong> below for details and
-              work lines.
+              day — open <strong>How to proceed</strong> and <strong>This stage — guide, tasks &amp; advance</strong> below for
+              details, work lines, and when to move to the next operational stage.
             </p>
             <div className="compost-timeline grow-timeline" role="list">
               {timelineEntries.map((e) => (
@@ -614,87 +638,14 @@ export default function GrowingRoomCycleDetailPage() {
             </div>
           </div>
 
-          {cycle.status === "active" ? (
-            <div
-              className={`card grow-stage-advance-card${cycle.recordedStageRisky ? " grow-stage-advance-card--risky" : ""}`}
-            >
-              <h3 className="panel-title">Stage movement</h3>
-              {cycle.recordedStageRisky ? (
-                <p className="alert alert-warn" style={{ marginBottom: 12 }}>
-                  This stage has elevated disease / quality risk — monitor closely per SOP.
-                </p>
-              ) : null}
-              <p className="page-lead" style={{ marginBottom: 12 }}>
-                You advance the operational stage only after every <strong>task</strong> and (when listed) every{" "}
-                <strong>manual activity</strong> in{" "}
-                <strong>{cycle.recordedGrowStageLabel || calendarBounds[recordedGrowKey]?.label || recordedGrowKey}</strong> is
-                complete. Parameter logs stay tied to the stage you are in.
-              </p>
-              <div className="section-stack" style={{ gap: 10 }}>
-                <p className="page-lead" style={{ margin: 0, fontSize: 14 }}>
-                  {cycle.nextGrowStageKey ? (
-                    <>
-                      Next stage after advance:{" "}
-                      <strong>{calendarBounds[cycle.nextGrowStageKey]?.label || cycle.nextGrowStageKey}</strong>
-                    </>
-                  ) : (
-                    <span className="text-muted">No further grow stage (use clean &amp; release when the grow is finished).</span>
-                  )}
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-secondary"
-                  onClick={() => void advanceGrowStage()}
-                  disabled={!canEdit || !cycle.canAdvanceGrowStage || advancingStage}
-                >
-                  {advancingStage ? "Advancing…" : "Advance grow stage"}
-                </button>
-                {!cycle.canAdvanceGrowStage ? (
-                  <p className="text-muted" style={{ margin: 0, fontSize: 13 }}>
-                    Complete tasks and any manual activities for this stage to unlock advance.
-                  </p>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-
-          {cycle.status === "active" && Array.isArray(cycle.stageActivityChecklist) && cycle.stageActivityChecklist.length > 0 ? (
-            <div className="card grow-stage-activities-card">
-              <h3 className="panel-title">Stage activities (manual checklist)</h3>
-              <p className="page-lead" style={{ marginBottom: 12 }}>
-                Mark each activity when done for this operational stage. Stage advance stays blocked until all are checked (in
-                addition to generated tasks above).
-              </p>
-              <ul className="grow-stage-activities-list" style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {cycle.stageActivityChecklist.map((item) => (
-                  <li key={item.key} style={{ marginBottom: 10 }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: canEdit ? "pointer" : "default" }}>
-                      <input
-                        type="checkbox"
-                        checked={item.completed}
-                        disabled={!canEdit}
-                        onChange={(e) => void toggleStageActivity(item.key, e.target.checked)}
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  </li>
-                ))}
-              </ul>
-              {!cycle.activitiesCompleteForRecordedStage ? (
-                <p className="text-muted" style={{ marginTop: 8, marginBottom: 0, fontSize: 13 }}>
-                  All activities must be checked before you can advance the grow stage.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
-
           {cycle && (cycle.status === "active" || cycle.status === "cleaning" || cycle.status === "completed") ? (
             <div className="card grow-howto-card">
               <h3 className="panel-title">How to proceed</h3>
               <p className="page-lead grow-howto-card__lead">
-                Follow the <strong>stage guide</strong> below for what each phase means, which interventions are usually
-                scheduled, and your <strong>actual tasks</strong> for this room. Complete or skip lines as you go; parameter logs
-                support daily monitoring tasks.
+                Follow <strong>This stage — guide, tasks &amp; advance</strong> below for what each phase means, which
+                interventions are usually scheduled, and your <strong>actual tasks</strong> for this room — including when to use
+                <strong> Advance grow stage</strong>. Complete or skip lines as you go; parameter logs support daily monitoring
+                tasks.
               </p>
               <div className="panel-inset panel-inset--strong grow-howto-callout">
                 <ul className="grow-howto-list">
@@ -707,17 +658,38 @@ export default function GrowingRoomCycleDetailPage() {
           ) : null}
 
           {cycle && cycle.status === "active" ? (
-            <div className="card grow-playbook-card">
-              <h3 className="panel-title">Stage guide &amp; your tasks</h3>
+            <div
+              className={`card grow-playbook-card grow-stage-workbench-card${
+                cycle.recordedStageRisky ? " grow-stage-workbench-card--risky" : ""
+              }`}
+            >
+              <h3 className="panel-title">This stage — guide, tasks &amp; advance</h3>
               <p className="page-lead grow-playbook-card__lead">
-                Open the stage you are in (highlighted). <strong>Expected tasks</strong> describe the default plan;{" "}
-                <strong>Your tasks</strong> are the lines generated for this cycle (complete, skip, or log yield as shown).
+                Your operational stage is listed first (highlighted). Stages you have already finished show a{" "}
+                <strong className="grow-playbook-card__lead-em">green check</strong>. Use <strong>Expected tasks</strong> for the
+                default plan and <strong>Your tasks</strong> for this cycle&apos;s lines. When every task for this stage is done or
+                skipped, use <strong>Advance grow stage</strong> at the bottom. Parameter logs stay tied to the stage you are in.
               </p>
+              {cycle.recordedStageRisky ? (
+                <p className="alert alert-warn" style={{ marginBottom: 12 }}>
+                  This stage has elevated disease / quality risk — monitor closely per SOP.
+                </p>
+              ) : null}
+
               <div className="grow-stage-details-stack">
-                {growStagesForGuide(thirdFlush).map((stageKey) => {
+                {guideStageKeysOrdered.map((stageKey) => {
                   const bounds = calendarBounds[stageKey];
                   if (!bounds) return null;
                   const isCurrent = recordedGrowKey === stageKey;
+                  const rowState = stageWorkbenchRowState(stageKey);
+                  const detailsClass = [
+                    "grow-stage-details",
+                    rowState === "done" && "grow-stage-details--done",
+                    rowState === "future" && "grow-stage-details--future",
+                    rowState === "current" && "grow-stage-details--current"
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
                   const tips = STAGE_RECOMMENDATIONS[stageKey] || [];
                   const focus = STAGE_FOCUS_LINE[stageKey] || "";
                   const sopNotes = masterStageNotes(stageKey);
@@ -725,19 +697,32 @@ export default function GrowingRoomCycleDetailPage() {
                   const stageTasks = sortTasksForDisplay(tasksByGrowStage.get(stageKey) || []);
                   const openN = tasksOpenInStage(tasks, stageKey);
                   return (
-                    <details key={stageKey} className="grow-stage-details" open={isCurrent}>
+                    <details key={stageKey} className={detailsClass} open={isCurrent}>
                       <summary className="grow-stage-details__summary">
-                        <span className="grow-stage-details__title">{bounds.label}</span>
+                        <span className="grow-stage-details__title-row">
+                          {rowState === "done" ? (
+                            <span className="grow-stage-details__done-icon" aria-label="Completed stage">
+                              ✓
+                            </span>
+                          ) : null}
+                          <span className="grow-stage-details__title">{bounds.label}</span>
+                        </span>
                         <span className="grow-stage-details__meta">
                           Days {bounds.dayStart}–{bounds.dayEnd}
-                          {isCurrent ? <span className="tag grow-stage-details__current">Current</span> : null}
-                          {openN > 0 ? (
-                            <span className="grow-stage-details__open-count">
-                              {openN} open
-                            </span>
-                          ) : (
-                            <span className="text-muted grow-stage-details__open-count">—</span>
-                          )}
+                          {rowState === "done" ? (
+                            <span className="grow-stage-details__done-tag">Completed</span>
+                          ) : isCurrent ? (
+                            <span className="tag grow-stage-details__current">Current</span>
+                          ) : null}
+                          {rowState !== "done" ? (
+                            openN > 0 ? (
+                              <span className="grow-stage-details__open-count">{openN} open</span>
+                            ) : (
+                              <span className="text-muted grow-stage-details__open-count">
+                                {rowState === "future" ? "Later" : "—"}
+                              </span>
+                            )
+                          ) : null}
                         </span>
                       </summary>
                       <div className="grow-stage-details__body">
@@ -775,6 +760,18 @@ export default function GrowingRoomCycleDetailPage() {
                               All work due on the same cycle day is grouped in <strong>one row</strong>. Daily{" "}
                               <strong>Temperature / Humidity / CO₂ Monitoring</strong>: fill all three fields and use{" "}
                               <strong>Record &amp; complete</strong> (no separate Done).
+                            </p>
+                          ) : stageKey === "ruffling_case_run" ? (
+                            <p className="text-muted" style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.45 }}>
+                              <strong>Once on each day</strong> in this stage: one row per cycle day for humidity, optional light
+                              watering, ruffling, and thumping — use <strong>Done</strong> or <strong>Skip</strong> when that
+                              day&apos;s work is finished.
+                            </p>
+                          ) : stageKey === "pinheads_fruiting" ? (
+                            <p className="text-muted" style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.45 }}>
+                              <strong>Once on each day</strong>: one row combines controlled watering, fresh air adjustment, and
+                              pin observation — use <strong>Done</strong> or <strong>Skip</strong> when that day&apos;s bundle is
+                              finished.
                             </p>
                           ) : (
                             <p className="text-muted" style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.45 }}>
@@ -978,6 +975,40 @@ export default function GrowingRoomCycleDetailPage() {
                     </details>
                   );
                 })}
+              </div>
+
+              <div className="grow-stage-workbench-advance" role="region" aria-label="Advance operational grow stage">
+                <h4 className="grow-stage-workbench-advance__title">When this stage is complete</h4>
+                <p className="grow-stage-workbench-advance__lead">
+                  Advance only after every <strong>task</strong> in{" "}
+                  <strong>{cycle.recordedGrowStageLabel || calendarBounds[recordedGrowKey]?.label || recordedGrowKey}</strong> is
+                  done or skipped.
+                </p>
+                <div className="grow-stage-workbench-advance__row">
+                  <p className="grow-stage-workbench-advance__next">
+                    {cycle.nextGrowStageKey ? (
+                      <>
+                        Next stage after advance:{" "}
+                        <strong>{calendarBounds[cycle.nextGrowStageKey]?.label || cycle.nextGrowStageKey}</strong>
+                      </>
+                    ) : (
+                      <span className="text-muted">No further grow stage (use clean &amp; release when the grow is finished).</span>
+                    )}
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => void advanceGrowStage()}
+                    disabled={!canEdit || !cycle.canAdvanceGrowStage || advancingStage}
+                  >
+                    {advancingStage ? "Advancing…" : "Advance grow stage"}
+                  </button>
+                </div>
+                {!cycle.canAdvanceGrowStage ? (
+                  <p className="grow-stage-workbench-advance__hint text-muted">
+                    Complete or skip every task for this stage to unlock advance.
+                  </p>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -1483,6 +1514,52 @@ export default function GrowingRoomCycleDetailPage() {
           </table>
         </div>
       </div>
+
+      {advanceStageError && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="voucher-modal-backdrop gr-advance-err-backdrop"
+              role="presentation"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setAdvanceStageError("");
+              }}
+            >
+              <div
+                className="voucher-modal-dialog voucher-modal-dialog--narrow"
+                role="alertdialog"
+                aria-modal="true"
+                aria-labelledby="gr-advance-err-title"
+                aria-describedby="gr-advance-err-desc"
+                onClick={(ev) => ev.stopPropagation()}
+              >
+                <div className="voucher-modal-header">
+                  <h3 id="gr-advance-err-title" className="voucher-modal-title">
+                    Cannot advance grow stage
+                  </h3>
+                  <button
+                    type="button"
+                    className="voucher-modal-close"
+                    aria-label="Close"
+                    onClick={() => setAdvanceStageError("")}
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="voucher-modal-body">
+                  <div id="gr-advance-err-desc" className="alert alert-error" style={{ margin: 0 }}>
+                    {advanceStageError}
+                  </div>
+                  <div className="voucher-modal-actions" style={{ marginTop: 18 }}>
+                    <button type="button" className="btn" onClick={() => setAdvanceStageError("")}>
+                      OK
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }

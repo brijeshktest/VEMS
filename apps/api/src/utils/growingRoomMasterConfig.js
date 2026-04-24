@@ -31,9 +31,7 @@ export const MASTER_GROW_STAGE_ROWS = [
     humidityPercent: { min: 88, max: 92 },
     temperatureC: { min: 23, max: 25 },
     co2Ppm: { min: 7000, max: 9000 },
-    activities: [
-      { key: "watering", label: "Watering" }
-    ],
+    activities: /** @type {ActivityDef[]} */ ([]),
     risky: false,
     notes:
       "400 ml water per bag 2–3 times on first day. After that, no watering unless mycelium visible (else 200 ml twice daily). Maintain 66% casing. Depth: 3–4 cm. Use moist porous casing. Avoid standing water."
@@ -46,11 +44,7 @@ export const MASTER_GROW_STAGE_ROWS = [
     humidityPercent: { min: 88, max: 92 },
     temperatureC: { min: 23, max: 25 },
     co2Ppm: { min: 4000, max: 8000 },
-    activities: [
-      { key: "watering", label: "Watering" },
-      { key: "ruffling", label: "Ruffling" },
-      { key: "thumping", label: "Thumping" }
-    ],
+    activities: /** @type {ActivityDef[]} */ ([]),
     risky: false,
     notes:
       "Break soil and add remaining casing. 100–200 ml water per bag twice daily until pinheads appear. Light misting only if dry. Avoid water logging. CO₂ range 4000–8000 ppm."
@@ -63,7 +57,7 @@ export const MASTER_GROW_STAGE_ROWS = [
     humidityPercent: { min: 82, max: 88 },
     temperatureC: { min: 16, max: 18 },
     co2Ppm: { min: 800, max: 1200 },
-    activities: [{ key: "watering", label: "Watering" }],
+    activities: /** @type {ActivityDef[]} */ ([]),
     risky: false,
     notes:
       "Check CO₂ and humidity twice daily. Maintain 16–18°C. Ensure sudden drop in temperature and CO₂ for pinhead formation."
@@ -76,7 +70,7 @@ export const MASTER_GROW_STAGE_ROWS = [
     humidityPercent: { min: 82, max: 88 },
     temperatureC: { min: 16, max: 18 },
     co2Ppm: { min: 800, max: 1200 },
-    activities: [{ key: "watering", label: "Watering" }],
+    activities: /** @type {ActivityDef[]} */ ([]),
     risky: false,
     notes: "Major yield stage (50–60%). Harvest daily. Avoid overwatering."
   },
@@ -88,7 +82,7 @@ export const MASTER_GROW_STAGE_ROWS = [
     humidityPercent: { min: 82, max: 88 },
     temperatureC: { min: 17, max: 19 },
     co2Ppm: { min: 1200, max: 1800 },
-    activities: [{ key: "ruffling", label: "Ruffling" }],
+    activities: /** @type {ActivityDef[]} */ ([]),
     risky: false,
     notes: "Light ruffling after first flush. Yield ~25–30%."
   },

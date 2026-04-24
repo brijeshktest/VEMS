@@ -94,35 +94,9 @@ export const DEFAULT_TASK_TEMPLATES = [
   },
   {
     stageKey: "ruffling_case_run",
-    taskKey: "light_watering",
-    title: "Light Watering (as needed)",
-    dayStart: 21,
-    dayEnd: 25,
-    recurrence: "daily",
-    isOptional: true
-  },
-  {
-    stageKey: "ruffling_case_run",
-    taskKey: "ruffling",
-    title: "Ruffling",
-    dayStart: 21,
-    dayEnd: 25,
-    recurrence: "daily",
-    isCritical: true
-  },
-  {
-    stageKey: "ruffling_case_run",
-    taskKey: "thumping",
-    title: "Thumping",
-    dayStart: 21,
-    dayEnd: 25,
-    recurrence: "daily",
-    isCritical: true
-  },
-  {
-    stageKey: "ruffling_case_run",
-    taskKey: "humidity_maintenance",
-    title: "Humidity Maintenance",
+    taskKey: "ruffling_case_daily",
+    title:
+      "Ruffling and case run — humidity, light watering (optional), ruffling & thumping (once on each day)",
     dayStart: 21,
     dayEnd: 25,
     recurrence: "daily",
@@ -130,36 +104,11 @@ export const DEFAULT_TASK_TEMPLATES = [
   },
   {
     stageKey: "pinheads_fruiting",
-    taskKey: "controlled_watering",
-    title: "Controlled Watering",
+    taskKey: "pinheads_fruiting_daily",
+    title:
+      "Pinheads & fruiting — controlled watering, fresh air adjustment & pin observation (once each day)",
     dayStart: 26,
     dayEnd: 31,
-    recurrence: "daily",
-    isCritical: true
-  },
-  {
-    stageKey: "pinheads_fruiting",
-    taskKey: "fresh_air_adjustment",
-    title: "Fresh Air Adjustment",
-    dayStart: 26,
-    dayEnd: 31,
-    recurrence: "daily",
-    isCritical: true
-  },
-  {
-    stageKey: "pinheads_fruiting",
-    taskKey: "pin_observation",
-    title: "Pin Observation",
-    dayStart: 26,
-    dayEnd: 31,
-    recurrence: "daily"
-  },
-  {
-    stageKey: "first_flush",
-    taskKey: "harvesting",
-    title: "Harvesting",
-    dayStart: 32,
-    dayEnd: 40,
     recurrence: "daily",
     isCritical: true
   },
@@ -183,15 +132,6 @@ export const DEFAULT_TASK_TEMPLATES = [
   },
   {
     stageKey: "second_flush",
-    taskKey: "harvesting",
-    title: "Harvesting",
-    dayStart: 41,
-    dayEnd: 48,
-    recurrence: "daily",
-    isCritical: true
-  },
-  {
-    stageKey: "second_flush",
     taskKey: "yield_entry",
     title: "Yield Entry",
     dayStart: 41,
@@ -205,15 +145,6 @@ export const DEFAULT_TASK_TEMPLATES = [
     title: "Watering",
     dayStart: 41,
     dayEnd: 48,
-    recurrence: "daily",
-    isCritical: true
-  },
-  {
-    stageKey: "third_flush",
-    taskKey: "harvesting",
-    title: "Harvesting",
-    dayStart: 49,
-    dayEnd: 53,
     recurrence: "daily",
     isCritical: true
   },
@@ -372,7 +303,15 @@ export function expandTemplatesToInstances(templates, opts = {}) {
       }
     }
   }
-  return out;
+  const seen = new Set();
+  const deduped = [];
+  for (const row of out) {
+    const k = `${row.stageKey}:${row.taskKey}:${row.scheduledDay}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    deduped.push(row);
+  }
+  return deduped;
 }
 
 export function expandCleaningTasks(scheduledDay) {
